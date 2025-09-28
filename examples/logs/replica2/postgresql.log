@@ -257,3 +257,9 @@
 2025-09-28 21:59:20.241 GMT [27863] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
 2025-09-28 21:59:25.246 GMT [27863] LOG:  pgraft: Background worker running... (alive check)
 2025-09-28 21:59:25.246 GMT [27863] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:30.250 GMT [27863] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:35.254 GMT [27863] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:59:35.254 GMT [27863] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:40.259 GMT [27863] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:45.263 GMT [27863] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:59:45.263 GMT [27863] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3

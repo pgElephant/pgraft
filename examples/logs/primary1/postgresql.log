@@ -325,3 +325,9 @@ raft2025/09/29 02:50:36 INFO: raft.node: 1 elected leader 1 at term 2
 2025-09-28 21:59:20.070 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
 2025-09-28 21:59:25.075 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
 2025-09-28 21:59:25.075 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:30.079 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:35.084 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:59:35.084 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:40.089 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:45.093 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:59:45.093 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
