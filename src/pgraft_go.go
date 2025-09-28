@@ -537,10 +537,8 @@ func pgraft_go_get_leader() C.int64_t {
 	raftMutex.RLock()
 	defer raftMutex.RUnlock()
 
-	if atomic.LoadInt32(&running) == 0 {
-		log.Printf("pgraft: get_leader - not running")
-		return -1
-	}
+	// Note: Don't check running flag as SQL functions run in different processes
+	// The Go library is already loaded and initialized
 
 	if raftNode == nil {
 		log.Printf("pgraft: get_leader - raftNode is nil")
@@ -548,7 +546,12 @@ func pgraft_go_get_leader() C.int64_t {
 	}
 
 	status := raftNode.Status()
-	log.Printf("pgraft: get_leader - status.Lead=%d", status.Lead)
+	log.Printf("pgraft: get_leader - status.Lead=%d, status.RaftState=%d", status.Lead, status.RaftState)
+
+	// Return the leader ID - if this node is the leader, return its ID, otherwise return status.Lead
+	if status.RaftState == raft.StateLeader {
+		return C.int64_t(raftConfig.ID)
+	}
 	return C.int64_t(status.Lead)
 }
 
@@ -565,10 +568,8 @@ func pgraft_go_get_term() C.int32_t {
 	raftMutex.RLock()
 	defer raftMutex.RUnlock()
 
-	if atomic.LoadInt32(&running) == 0 {
-		log.Printf("pgraft: get_term - not running")
-		return -1
-	}
+	// Note: Don't check running flag as SQL functions run in different processes
+	// The Go library is already loaded and initialized
 
 	if raftNode == nil {
 		log.Printf("pgraft: get_term - raftNode is nil")
@@ -848,7 +849,7 @@ func processReady(rd raft.Ready) {
 	clusterState.CurrentTerm = rd.HardState.Term
 	committedIndex = rd.HardState.Commit
 
-	// 5. Check for state changes
+	// 5. Check for state changes and update shared memory
 	status := raftNode.Status()
 	if status.RaftState == raft.StateLeader {
 		if clusterState.LeaderID != raftConfig.ID {
@@ -866,6 +867,22 @@ func processReady(rd raft.Ready) {
 			clusterState.State = "candidate"
 			log.Printf("pgraft: Node %d is now CANDIDATE in term %d", raftConfig.ID, rd.HardState.Term)
 		}
+	}
+
+	// Update shared memory with current leader from Raft status
+	if rd.HardState.Term != 0 {
+		currentLeader := int64(0)
+		if status.RaftState == raft.StateLeader {
+			currentLeader = int64(raftConfig.ID)
+		} else if status.Lead != 0 {
+			currentLeader = int64(status.Lead)
+		}
+
+		// Update internal cluster state
+		clusterState.LeaderID = uint64(currentLeader)
+		clusterState.CurrentTerm = rd.HardState.Term
+
+		log.Printf("pgraft: Updated cluster state - leader=%d, term=%d, state=%s", currentLeader, rd.HardState.Term, clusterState.State)
 	}
 
 	// 6. Advance the Raft node

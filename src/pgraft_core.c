@@ -180,8 +180,13 @@ pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 	pgraft_go_get_leader_func get_leader_func;
 	pgraft_go_get_term_func get_term_func;
 	
+	elog(LOG, "pgraft: pgraft_core_get_cluster_state called");
+	
 	if (!cluster)
+	{
+		elog(WARNING, "pgraft: cluster parameter is NULL");
 		return -1;
+	}
 	
 	/* Get shared memory */
 	shm_cluster = pgraft_core_get_shared_memory();
@@ -193,47 +198,21 @@ pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 	if (!shm_cluster->initialized)
 	{
 		SpinLockRelease(&shm_cluster->mutex);
-		return -1;
+		elog(LOG, "pgraft: Core system not initialized in shared memory, trying Go library");
+		/* Don't return -1, continue to try Go library */
+		memset(cluster, 0, sizeof(pgraft_cluster_t));
 	}
-	
-	*cluster = *shm_cluster;
-	SpinLockRelease(&shm_cluster->mutex);
-	
-	/* Try to get updated state from Go library if available */
-	if (pgraft_go_is_loaded())
+	else
 	{
-		get_leader_func = pgraft_go_get_get_leader_func();
-		get_term_func = pgraft_go_get_get_term_func();
-		
-		if (get_leader_func && get_term_func)
-		{
-			/* Update cluster state with current Go state */
-			cluster->leader_id = get_leader_func();
-			cluster->current_term = get_term_func();
-			
-			/* Update state based on leader status */
-			if (cluster->leader_id > 0)
-			{
-				/* Check if current node is the leader */
-				pgraft_worker_state_t *worker_state = pgraft_worker_get_state();
-				if (worker_state && cluster->leader_id == (int64_t)worker_state->node_id)
-				{
-					strncpy(cluster->state, "leader", sizeof(cluster->state) - 1);
-					cluster->state[sizeof(cluster->state) - 1] = '\0';
-				}
-				else
-				{
-					strncpy(cluster->state, "follower", sizeof(cluster->state) - 1);
-					cluster->state[sizeof(cluster->state) - 1] = '\0';
-				}
-			}
-			else
-			{
-				strncpy(cluster->state, "follower", sizeof(cluster->state) - 1);
-				cluster->state[sizeof(cluster->state) - 1] = '\0';
-			}
-		}
+		*cluster = *shm_cluster;
+		SpinLockRelease(&shm_cluster->mutex);
+		elog(LOG, "pgraft: Got cluster state from shared memory: leader=%lld, term=%d", 
+			 (long long)cluster->leader_id, cluster->current_term);
 	}
+	
+	/* SQL functions should NEVER call Go library functions directly */
+	/* Only the background worker should call Go functions and update shared memory */
+	/* SQL functions should only read from shared memory */
 	
 	return 0;
 }

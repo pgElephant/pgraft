@@ -276,7 +276,7 @@ pgraft_get_leader(PG_FUNCTION_ARGS)
 	elog(INFO, "pgraft: pgraft_get_leader() function called");
 	
 	/* Get cluster state from shared memory */
-	if (pgraft_core_get_cluster_state(&cluster_state))
+	if (pgraft_core_get_cluster_state(&cluster_state) == 0)
 	{
 		leader_id = cluster_state.leader_id;
 		elog(INFO, "pgraft: Got leader ID from shared memory: %lld", (long long)leader_id);
@@ -301,7 +301,7 @@ pgraft_get_term(PG_FUNCTION_ARGS)
 	elog(INFO, "pgraft: pgraft_get_term() function called");
 	
 	/* Get cluster state from shared memory */
-	if (pgraft_core_get_cluster_state(&cluster_state))
+	if (pgraft_core_get_cluster_state(&cluster_state) == 0)
 	{
 		term = (int32_t)cluster_state.current_term;
 		elog(INFO, "pgraft: Got term from shared memory: %d", term);
@@ -327,7 +327,7 @@ pgraft_is_leader(PG_FUNCTION_ARGS)
 	elog(INFO, "pgraft: pgraft_is_leader() function called");
 	
 	/* Get cluster state from shared memory */
-	if (pgraft_core_get_cluster_state(&cluster_state))
+	if (pgraft_core_get_cluster_state(&cluster_state) == 0)
 	{
 		worker_state = pgraft_worker_get_state();
 		

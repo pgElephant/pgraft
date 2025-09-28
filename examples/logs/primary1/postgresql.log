@@ -1,333 +1,366 @@
-2025-09-28 21:50:14.442 GMT [27733] INFO:  pgraft: Initializing extension version 1.0.0
-2025-09-28 21:50:14.442 GMT [27733] LOG:  pgraft: Shared memory request hook installed
-2025-09-28 21:50:14.442 GMT [27733] LOG:  pgraft: Shared memory startup hook installed
-2025-09-28 21:50:14.442 GMT [27733] LOG:  pgraft: GUC variables registered
-2025-09-28 21:50:14.442 GMT [27733] LOG:  pgraft: background worker registered during preload (will start after consistent state)
-2025-09-28 21:50:14.442 GMT [27733] LOG:  pgraft: Background worker registration completed
-2025-09-28 21:50:14.442 GMT [27733] INFO:  pgraft: Extension initialized successfully
-2025-09-28 21:50:14.442 GMT [27733] LOG:  pgraft: Shared memory request hook completed
-2025-09-28 21:50:14.445 GMT [27733] LOG:  pgraft: Shared memory startup hook called
-2025-09-28 21:50:14.445 GMT [27733] INFO:  pgraft: Initializing shared memory
-2025-09-28 21:50:14.445 GMT [27733] INFO:  pgraft: Creating new shared memory
-2025-09-28 21:50:14.445 GMT [27733] INFO:  pgraft: Shared memory initialized
-2025-09-28 21:50:14.445 GMT [27733] LOG:  pgraft: Go shared memory initialization completed
-2025-09-28 21:50:14.445 GMT [27733] INFO:  pgraft: Initializing log replication shared memory
-2025-09-28 21:50:14.445 GMT [27733] INFO:  pgraft: Creating new log replication shared memory
-2025-09-28 21:50:14.445 GMT [27733] INFO:  pgraft: Log replication shared memory initialized
-2025-09-28 21:50:14.445 GMT [27733] LOG:  pgraft: Worker shared memory initialization completed
-2025-09-28 21:50:14.445 GMT [27733] LOG:  pgraft: All shared memory structures initialized
-2025-09-28 21:50:14.458 GMT [27733] LOG:  starting PostgreSQL 17.6 on aarch64-apple-darwin24.5.0, compiled by Apple clang version 17.0.0 (clang-1700.0.13.5), 64-bit
-2025-09-28 21:50:14.461 GMT [27733] LOG:  listening on IPv6 address "::", port 5432
-2025-09-28 21:50:14.461 GMT [27733] LOG:  listening on IPv4 address "0.0.0.0", port 5432
-2025-09-28 21:50:14.461 GMT [27733] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
-2025-09-28 21:50:14.464 GMT [27744] LOG:  database system was shut down at 2025-09-28 21:50:12 GMT
-2025-09-28 21:50:14.467 GMT [27733] LOG:  database system is ready to accept connections
-2025-09-28 21:50:14.468 GMT [27747] LOG:  pgraft: Background worker main function started
-2025-09-28 21:50:14.468 GMT [27747] LOG:  pgraft: Background worker signal handling set up
-2025-09-28 21:50:14.468 GMT [27747] LOG:  pgraft: Worker state obtained successfully
-2025-09-28 21:50:14.468 GMT [27747] LOG:  pgraft: Worker status set to RUNNING
-2025-09-28 21:50:14.468 GMT [27747] LOG:  pgraft: Background worker started and running
-2025-09-28 21:50:14.468 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
-2025-09-28 21:50:19.473 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
-2025-09-28 21:50:24.476 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:50:24.476 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
-2025-09-28 21:50:29.481 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
-2025-09-28 21:50:34.485 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:50:34.485 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
-2025-09-28 21:50:34.832 GMT [27952] INFO:  pgraft: Queuing INIT command for node 1 at 127.0.0.1:7001 (cluster: pgraft_cluster)
-2025-09-28 21:50:34.832 GMT [27952] LOG:  pgraft: pgraft_queue_command called with type=1, node_id=1, address=127.0.0.1, port=7001
-2025-09-28 21:50:34.832 GMT [27952] STATEMENT:  SELECT pgraft_init()
-2025-09-28 21:50:34.832 GMT [27952] LOG:  pgraft: Command 1 queued for node 1 at 127.0.0.1:7001 (count=1)
-2025-09-28 21:50:34.832 GMT [27952] STATEMENT:  SELECT pgraft_init()
-2025-09-28 21:50:34.832 GMT [27952] INFO:  pgraft: INIT command queued successfully - background worker will process it
-2025-09-28 21:50:34.833 GMT [27952] INFO:  pgraft: pgraft_get_worker_state() function called
-2025-09-28 21:50:34.861 GMT [27955] INFO:  pgraft: Queuing ADD_NODE command for node 2 at 127.0.0.1:7002
-2025-09-28 21:50:34.861 GMT [27955] LOG:  pgraft: pgraft_queue_command called with type=2, node_id=2, address=127.0.0.1, port=7002
-2025-09-28 21:50:34.861 GMT [27955] STATEMENT:  SELECT pgraft_add_node(2, '127.0.0.1', 7002)
-2025-09-28 21:50:34.861 GMT [27955] LOG:  pgraft: Command 2 queued for node 2 at 127.0.0.1:7002 (count=2)
-2025-09-28 21:50:34.861 GMT [27955] STATEMENT:  SELECT pgraft_add_node(2, '127.0.0.1', 7002)
-2025-09-28 21:50:34.861 GMT [27955] INFO:  pgraft: ADD_NODE command queued successfully - background worker will process it
-2025-09-28 21:50:34.861 GMT [27955] INFO:  pgraft: Queuing ADD_NODE command for node 3 at 127.0.0.1:7003
-2025-09-28 21:50:34.861 GMT [27955] LOG:  pgraft: pgraft_queue_command called with type=2, node_id=3, address=127.0.0.1, port=7003
-2025-09-28 21:50:34.861 GMT [27955] STATEMENT:  SELECT pgraft_add_node(3, '127.0.0.1', 7003)
-2025-09-28 21:50:34.861 GMT [27955] LOG:  pgraft: Command 2 queued for node 3 at 127.0.0.1:7003 (count=3)
-2025-09-28 21:50:34.861 GMT [27955] STATEMENT:  SELECT pgraft_add_node(3, '127.0.0.1', 7003)
-2025-09-28 21:50:34.861 GMT [27955] INFO:  pgraft: ADD_NODE command queued successfully - background worker will process it
-2025-09-28 21:50:34.871 GMT [27958] ERROR:  pgraft: Failed to get cluster state
-2025-09-28 21:50:34.871 GMT [27958] STATEMENT:  SELECT * FROM pgraft_get_cluster_status()
-2025-09-28 21:50:35.486 GMT [27747] LOG:  pgraft: Worker processing command 1 for node 1
-2025-09-28 21:50:35.486 GMT [27747] INFO:  pgraft: Core initialized node 1 at 127.0.0.1:7001
-2025-09-28 21:50:35.486 GMT [27747] INFO:  pgraft: Cluster state: term=0, leader=-1, state=follower
-2025-09-28 21:50:35.486 GMT [27747] LOG:  pgraft: Core system initialized
-2025-09-28 21:50:35.486 GMT [27747] LOG:  pgraft: Using default Go library path: /usr/local/pgsql.17/lib/pgraft_go.dylib
-2025-09-28 21:50:35.486 GMT [27747] LOG:  pgraft: Loading Go library from /usr/local/pgsql.17/lib/pgraft_go.dylib
-2025-09-28 21:50:35.562 GMT [27747] LOG:  pgraft: Go library loaded successfully
-2025-09-28 21:50:35.562 GMT [27747] LOG:  pgraft: All Go library symbols loaded successfully
-2025-09-28 21:50:35.565 GMT [27747] LOG:  pgraft: Version check passed - 1.0.0
-2025-09-28 21:50:35.565 GMT [27747] INFO:  pgraft: Initializing Go state shared memory
-2025-09-28 21:50:35.565 GMT [27747] INFO:  pgraft: Creating new Go state shared memory
-2025-09-28 21:50:35.565 GMT [27747] INFO:  pgraft: Go state shared memory initialized
-2025-09-28 21:50:35.565 GMT [27747] INFO:  pgraft: Go library loaded successfully
-2025-09-28 21:50:35.565 GMT [27747] LOG:  pgraft: Go library loaded
-2025/09/29 02:50:35 pgraft: INFO - Initializing node 1 at 127.0.0.1:7001
-2025/09/29 02:50:35 pgraft: DEBUG - Memory storage initialized
-2025/09/29 02:50:35 pgraft: DEBUG - Raft configuration created
-2025/09/29 02:50:35 pgraft: DEBUG - Communication channels initialized
-2025/09/29 02:50:35 pgraft: INFO - Self node registered: 1 -> 127.0.0.1:7001
-raft2025/09/29 02:50:35 INFO: 1 switched to configuration voters=()
-raft2025/09/29 02:50:35 INFO: 1 became follower at term 0
-raft2025/09/29 02:50:35 INFO: newRaft 1 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
-raft2025/09/29 02:50:35 INFO: 1 became follower at term 1
-raft2025/09/29 02:50:35 INFO: 1 switched to configuration voters=(1)
-2025/09/29 02:50:35 pgraft: INFO - Bootstrap node 1 created with 1 initial peers
-2025/09/29 02:50:35 pgraft: DEBUG - Context initialized, background processing deferred to PostgreSQL workers
-2025/09/29 02:50:35 pgraft: INFO - Raft node initialized, goroutines will be started separately
-2025/09/29 02:50:35 pgraft: DEBUG - Ticker initialization deferred
-2025/09/29 02:50:35 pgraft: INFO - Raft initialization complete, ready to start goroutines
-2025/09/29 02:50:35 pgraft: DEBUG - All Raft processing goroutines started successfully
-2025/09/29 02:50:35 pgraft: INFO - Initialization completed successfully for node 1 at 127.0.0.1:7001
-2025/09/29 02:50:35 pgraft: INFO - Returning success from initialization
-2025-09-28 21:50:35.565 GMT [27747] LOG:  pgraft: Go Raft library initialized
-2025-09-28 21:50:35.565 GMT [27747] INFO:  pgraft: Returning pgraft_go_start_ptr
-2025/09/29 02:50:35 pgraft: INFO - Starting background processing
-2025/09/29 02:50:35 pgraft: INFO - Started successfully
-2025-09-28 21:50:35.565 GMT [27747] LOG:  pgraft: Go Raft goroutines started successfully
-2025/09/29 02:50:35 pgraft: Single Ready processing loop started
-2025/09/29 02:50:35 pgraft: Persisted HardState: term=1, vote=0, commit=1
-2025/09/29 02:50:35 pgraft: Persisted 1 entries
-2025/09/29 02:50:35 pgraft: Ticker loop started (integrated with Ready loop)
-2025/09/29 02:50:35 pgraft: Message receiver started (routing to main loop)
-2025/09/29 02:50:35 pgraft: Applying committed entry: index=1, term=1, type=1
-2025/09/29 02:50:35 pgraft: Applying ConfChange: type=0, node=1
-2025/09/29 02:50:35 pgraft: Added node 1 to cluster
-2025/09/29 02:50:35 pgraft: Applied 1 committed entries
-2025-09-28 21:50:36.566 GMT [27747] LOG:  pgraft: Worker processing command 2 for node 2
-2025-09-28 21:50:36.566 GMT [27747] INFO:  pgraft: Added node 2 at 127.0.0.1:7002
-2025-09-28 21:50:36.566 GMT [27747] INFO:  pgraft: Total nodes in cluster: 2
-2025-09-28 21:50:36.566 GMT [27747] LOG:  pgraft: Node 2 added to core system
-2025/09/29 02:50:36 pgraft: pgraft_go_add_peer called with nodeID=2, address=127.0.0.1, port=7002
-2025/09/29 02:50:36 pgraft: adding peer node 2 at 127.0.0.1:7002
-2025/09/29 02:50:36 pgraft: added node to map: 2 -> 127.0.0.1:7002
-2025/09/29 02:50:36 pgraft: adding peer to Raft cluster configuration
-2025/09/29 02:50:36 pgraft: added peer node 2 at 127.0.0.1:7002 (configuration change applied)
-2025-09-28 21:50:36.566 GMT [27747] LOG:  pgraft: Node 2 added to Go Raft library
-2025/09/29 02:50:36 pgraft: proposing configuration change for node 2
-2025-09-28 21:50:36.566 GMT [27747] INFO:  pgraft: Node 2 successfully added to cluster
-raft2025/09/29 02:50:36 INFO: 1 is starting a new election at term 1
-raft2025/09/29 02:50:36 INFO: 1 became pre-candidate at term 1
-raft2025/09/29 02:50:36 INFO: 1 received MsgPreVoteResp from 1 at term 1
-raft2025/09/29 02:50:36 INFO: 1 has received 1 MsgPreVoteResp votes and 0 vote rejections
-raft2025/09/29 02:50:36 INFO: 1 became candidate at term 2
-2025/09/29 02:50:36 pgraft: Persisted HardState: term=2, vote=1, commit=1
-2025/09/29 02:50:36 pgraft: Node 1 is now CANDIDATE in term 2
-raft2025/09/29 02:50:36 INFO: 1 received MsgVoteResp from 1 at term 2
-raft2025/09/29 02:50:36 INFO: 1 has received 1 MsgVoteResp votes and 0 vote rejections
-raft2025/09/29 02:50:36 INFO: 1 became leader at term 2
-raft2025/09/29 02:50:36 INFO: raft.node: 1 elected leader 1 at term 2
-2025/09/29 02:50:36 pgraft: configuration change proposed successfully for node 2
-2025/09/29 02:50:36 pgraft: Persisted 1 entries
-2025/09/29 02:50:36 pgraft: Node 1 is now LEADER in term 0
-2025/09/29 02:50:36 pgraft: Persisted HardState: term=2, vote=1, commit=2
-2025/09/29 02:50:36 pgraft: Persisted 1 entries
-2025/09/29 02:50:36 pgraft: Applying committed entry: index=2, term=2, type=0
-2025/09/29 02:50:36 pgraft: Applied normal entry: 
-2025/09/29 02:50:36 pgraft: Applied 1 committed entries
-2025/09/29 02:50:36 pgraft: Persisted HardState: term=2, vote=1, commit=3
-2025/09/29 02:50:36 pgraft: Applying committed entry: index=3, term=2, type=1
-2025/09/29 02:50:36 pgraft: Applying ConfChange: type=0, node=2
-2025/09/29 02:50:36 pgraft: Added node 2 to cluster
-2025/09/29 02:50:36 pgraft: Applied 1 committed entries
-2025-09-28 21:50:37.567 GMT [27747] LOG:  pgraft: Worker processing command 2 for node 3
-2025-09-28 21:50:37.567 GMT [27747] INFO:  pgraft: Added node 3 at 127.0.0.1:7003
-2025-09-28 21:50:37.567 GMT [27747] INFO:  pgraft: Total nodes in cluster: 3
-2025-09-28 21:50:37.567 GMT [27747] LOG:  pgraft: Node 3 added to core system
-2025/09/29 02:50:37 pgraft: pgraft_go_add_peer called with nodeID=3, address=127.0.0.1, port=7003
-2025/09/29 02:50:37 pgraft: adding peer node 3 at 127.0.0.1:7003
-2025/09/29 02:50:37 pgraft: added node to map: 3 -> 127.0.0.1:7003
-2025/09/29 02:50:37 pgraft: adding peer to Raft cluster configuration
-2025/09/29 02:50:37 pgraft: added peer node 3 at 127.0.0.1:7003 (configuration change applied)
-2025-09-28 21:50:37.567 GMT [27747] LOG:  pgraft: Node 3 added to Go Raft library
-2025-09-28 21:50:37.567 GMT [27747] INFO:  pgraft: Node 3 successfully added to cluster
-2025/09/29 02:50:37 pgraft: proposing configuration change for node 3
-2025/09/29 02:50:37 pgraft: configuration change proposed successfully for node 3
-2025/09/29 02:50:37 pgraft: Persisted 1 entries
-2025/09/29 02:50:37 pgraft: Persisted HardState: term=2, vote=1, commit=4
-2025/09/29 02:50:37 pgraft: Applying committed entry: index=4, term=2, type=1
-2025/09/29 02:50:37 pgraft: Applying ConfChange: type=0, node=3
-2025/09/29 02:50:37 pgraft: Added node 3 to cluster
-2025/09/29 02:50:37 pgraft: Applied 1 committed entries
-2025-09-28 21:50:39.569 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:50:44.574 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:50:44.574 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:50:49.578 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:50:54.583 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:50:54.583 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:50:59.588 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:04.593 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:51:04.593 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:09.598 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:14.603 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:51:14.603 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:19.608 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:24.613 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:51:24.613 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:29.618 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:34.623 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:51:34.623 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:39.628 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:44.633 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:51:44.633 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:49.638 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:54.642 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:51:54.642 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:51:59.646 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:04.651 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:52:04.652 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:09.656 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:14.661 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:52:14.661 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:19.666 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:24.669 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:52:24.669 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:29.673 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:34.678 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:52:34.679 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:39.683 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:44.688 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:52:44.688 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:49.693 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:54.610 GMT [29346] INFO:  pgraft: pgraft_get_leader() function called
-2025-09-28 21:52:54.610 GMT [29346] INFO:  pgraft: Initializing Go state shared memory
-2025-09-28 21:52:54.610 GMT [29346] INFO:  pgraft: Go state shared memory already exists
-2025-09-28 21:52:54.610 GMT [29346] WARNING:  pgraft: Failed to get cluster state from shared memory
-2025-09-28 21:52:54.610 GMT [29346] INFO:  pgraft: pgraft_get_term() function called
-2025-09-28 21:52:54.610 GMT [29346] WARNING:  pgraft: Failed to get cluster state from shared memory
-2025-09-28 21:52:54.610 GMT [29346] INFO:  pgraft: pgraft_is_leader() function called
-2025-09-28 21:52:54.610 GMT [29346] WARNING:  pgraft: Failed to get cluster state from shared memory
-2025-09-28 21:52:54.698 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:52:54.698 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:52:59.706 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:04.713 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:53:04.713 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:09.722 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:14.731 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:53:14.731 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:19.736 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:24.743 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:53:24.743 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:29.750 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:34.756 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:53:34.756 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:39.763 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:44.772 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:53:44.772 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:49.780 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:54.790 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:53:54.790 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:53:59.799 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:04.808 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:54:04.808 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:09.815 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:14.821 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:54:14.821 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:19.828 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:24.833 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:54:24.834 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:29.840 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:34.848 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:54:34.849 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:39.857 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:44.864 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:54:44.864 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:49.871 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:54.877 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:54:54.878 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:54:59.885 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:04.895 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:55:04.895 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:09.903 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:14.465 GMT [27742] LOG:  checkpoint starting: time
-2025-09-28 21:55:14.909 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:55:14.910 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:19.917 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:24.927 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:55:24.927 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:26.008 GMT [27742] LOG:  checkpoint complete: wrote 116 buffers (2.8%); 0 WAL file(s) added, 0 removed, 0 recycled; write=11.538 s, sync=0.002 s, total=11.544 s; sync files=53, longest=0.001 s, average=0.001 s; distance=588 kB, estimate=588 kB; lsn=0/1530420, redo lsn=0/1530390
-2025-09-28 21:55:29.934 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:34.940 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:55:34.940 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:39.946 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:44.954 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:55:44.954 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:49.962 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:54.970 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:55:54.970 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:55:59.976 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:04.985 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:56:04.985 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:09.991 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:15.000 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:56:15.000 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:20.007 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:25.015 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:56:25.015 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:30.022 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:35.028 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:56:35.028 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:40.034 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:45.041 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:56:45.041 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:50.048 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:56:55.055 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:56:55.055 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:00.060 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:05.065 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:57:05.065 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:10.071 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:15.079 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:57:15.079 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:20.086 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:25.091 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:57:25.091 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:30.100 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:35.106 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:57:35.106 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:40.113 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:45.122 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:57:45.122 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:50.129 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:57:55.136 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:57:55.137 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:00.143 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:05.150 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:58:05.150 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:10.156 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:15.164 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:58:15.164 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:20.173 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:25.182 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:58:25.182 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:30.189 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:35.197 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:58:35.197 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:40.203 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:45.213 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:58:45.213 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:50.220 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:58:55.223 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:58:55.223 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:00.227 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:05.231 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:59:05.231 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:10.236 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:15.065 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:59:15.065 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:20.070 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:25.075 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:59:25.075 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:30.079 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:35.084 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:59:35.084 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:40.089 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
-2025-09-28 21:59:45.093 GMT [27747] LOG:  pgraft: Background worker running... (alive check)
-2025-09-28 21:59:45.093 GMT [27747] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:17:50.393 GMT [50045] INFO:  pgraft: Initializing extension version 1.0.0
+2025-09-28 22:17:50.393 GMT [50045] LOG:  pgraft: Shared memory request hook installed
+2025-09-28 22:17:50.393 GMT [50045] LOG:  pgraft: Shared memory startup hook installed
+2025-09-28 22:17:50.393 GMT [50045] LOG:  pgraft: GUC variables registered
+2025-09-28 22:17:50.393 GMT [50045] LOG:  pgraft: background worker registered during preload (will start after consistent state)
+2025-09-28 22:17:50.393 GMT [50045] LOG:  pgraft: Background worker registration completed
+2025-09-28 22:17:50.393 GMT [50045] INFO:  pgraft: Extension initialized successfully
+2025-09-28 22:17:50.393 GMT [50045] LOG:  pgraft: Shared memory request hook completed
+2025-09-28 22:17:50.396 GMT [50045] LOG:  pgraft: Shared memory startup hook called
+2025-09-28 22:17:50.396 GMT [50045] INFO:  pgraft: Initializing shared memory
+2025-09-28 22:17:50.396 GMT [50045] INFO:  pgraft: Creating new shared memory
+2025-09-28 22:17:50.396 GMT [50045] INFO:  pgraft: Shared memory initialized
+2025-09-28 22:17:50.396 GMT [50045] LOG:  pgraft: Go shared memory initialization completed
+2025-09-28 22:17:50.396 GMT [50045] INFO:  pgraft: Initializing log replication shared memory
+2025-09-28 22:17:50.396 GMT [50045] INFO:  pgraft: Creating new log replication shared memory
+2025-09-28 22:17:50.396 GMT [50045] INFO:  pgraft: Log replication shared memory initialized
+2025-09-28 22:17:50.396 GMT [50045] LOG:  pgraft: Worker shared memory initialization completed
+2025-09-28 22:17:50.396 GMT [50045] LOG:  pgraft: All shared memory structures initialized
+2025-09-28 22:17:50.414 GMT [50045] LOG:  starting PostgreSQL 17.6 on aarch64-apple-darwin24.5.0, compiled by Apple clang version 17.0.0 (clang-1700.0.13.5), 64-bit
+2025-09-28 22:17:50.417 GMT [50045] LOG:  listening on IPv6 address "::", port 5432
+2025-09-28 22:17:50.417 GMT [50045] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2025-09-28 22:17:50.418 GMT [50045] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2025-09-28 22:17:50.423 GMT [50066] LOG:  database system was shut down at 2025-09-28 22:17:48 GMT
+2025-09-28 22:17:50.429 GMT [50045] LOG:  database system is ready to accept connections
+2025-09-28 22:17:50.429 GMT [50069] LOG:  pgraft: Background worker main function started
+2025-09-28 22:17:50.429 GMT [50069] LOG:  pgraft: Background worker signal handling set up
+2025-09-28 22:17:50.429 GMT [50069] LOG:  pgraft: Worker state obtained successfully
+2025-09-28 22:17:50.429 GMT [50069] LOG:  pgraft: Worker status set to RUNNING
+2025-09-28 22:17:50.429 GMT [50069] LOG:  pgraft: Background worker started and running
+2025-09-28 22:17:50.429 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 22:17:50.429 GMT [50069] INFO:  pgraft: Initializing Go state shared memory
+2025-09-28 22:17:50.429 GMT [50069] INFO:  pgraft: Creating new Go state shared memory
+2025-09-28 22:17:50.429 GMT [50069] INFO:  pgraft: Go state shared memory initialized
+2025-09-28 22:17:55.433 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 22:18:00.438 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:18:00.438 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 22:18:05.443 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 22:18:10.448 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:18:10.448 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 22:18:10.847 GMT [50280] INFO:  pgraft: Queuing INIT command for node 1 at 127.0.0.1:7001 (cluster: pgraft_cluster)
+2025-09-28 22:18:10.847 GMT [50280] LOG:  pgraft: pgraft_queue_command called with type=1, node_id=1, address=127.0.0.1, port=7001
+2025-09-28 22:18:10.847 GMT [50280] STATEMENT:  SELECT pgraft_init()
+2025-09-28 22:18:10.847 GMT [50280] LOG:  pgraft: Command 1 queued for node 1 at 127.0.0.1:7001 (count=1)
+2025-09-28 22:18:10.847 GMT [50280] STATEMENT:  SELECT pgraft_init()
+2025-09-28 22:18:10.847 GMT [50280] INFO:  pgraft: INIT command queued successfully - background worker will process it
+2025-09-28 22:18:10.847 GMT [50280] INFO:  pgraft: pgraft_get_worker_state() function called
+2025-09-28 22:18:10.888 GMT [50283] INFO:  pgraft: Queuing ADD_NODE command for node 2 at 127.0.0.1:7002
+2025-09-28 22:18:10.888 GMT [50283] LOG:  pgraft: pgraft_queue_command called with type=2, node_id=2, address=127.0.0.1, port=7002
+2025-09-28 22:18:10.888 GMT [50283] STATEMENT:  SELECT pgraft_add_node(2, '127.0.0.1', 7002)
+2025-09-28 22:18:10.888 GMT [50283] LOG:  pgraft: Command 2 queued for node 2 at 127.0.0.1:7002 (count=2)
+2025-09-28 22:18:10.888 GMT [50283] STATEMENT:  SELECT pgraft_add_node(2, '127.0.0.1', 7002)
+2025-09-28 22:18:10.888 GMT [50283] INFO:  pgraft: ADD_NODE command queued successfully - background worker will process it
+2025-09-28 22:18:10.888 GMT [50283] INFO:  pgraft: Queuing ADD_NODE command for node 3 at 127.0.0.1:7003
+2025-09-28 22:18:10.888 GMT [50283] LOG:  pgraft: pgraft_queue_command called with type=2, node_id=3, address=127.0.0.1, port=7003
+2025-09-28 22:18:10.888 GMT [50283] STATEMENT:  SELECT pgraft_add_node(3, '127.0.0.1', 7003)
+2025-09-28 22:18:10.888 GMT [50283] LOG:  pgraft: Command 2 queued for node 3 at 127.0.0.1:7003 (count=3)
+2025-09-28 22:18:10.888 GMT [50283] STATEMENT:  SELECT pgraft_add_node(3, '127.0.0.1', 7003)
+2025-09-28 22:18:10.888 GMT [50283] INFO:  pgraft: ADD_NODE command queued successfully - background worker will process it
+2025-09-28 22:18:10.899 GMT [50286] LOG:  pgraft: pgraft_core_get_cluster_state called
+2025-09-28 22:18:10.899 GMT [50286] STATEMENT:  SELECT * FROM pgraft_get_cluster_status()
+2025-09-28 22:18:10.899 GMT [50286] LOG:  pgraft: Core system not initialized in shared memory, trying Go library
+2025-09-28 22:18:10.899 GMT [50286] STATEMENT:  SELECT * FROM pgraft_get_cluster_status()
+2025-09-28 22:18:10.909 GMT [50289] LOG:  pgraft: pgraft_core_get_cluster_state called
+2025-09-28 22:18:10.909 GMT [50289] STATEMENT:  SELECT * FROM pgraft_get_cluster_status()
+2025-09-28 22:18:10.909 GMT [50289] LOG:  pgraft: Core system not initialized in shared memory, trying Go library
+2025-09-28 22:18:10.909 GMT [50289] STATEMENT:  SELECT * FROM pgraft_get_cluster_status()
+2025-09-28 22:18:11.449 GMT [50069] LOG:  pgraft: Worker processing command 1 for node 1
+2025-09-28 22:18:11.449 GMT [50069] INFO:  pgraft: Core initialized node 1 at 127.0.0.1:7001
+2025-09-28 22:18:11.449 GMT [50069] INFO:  pgraft: Cluster state: term=0, leader=-1, state=follower
+2025-09-28 22:18:11.449 GMT [50069] LOG:  pgraft: Core system initialized
+2025-09-28 22:18:11.449 GMT [50069] LOG:  pgraft: Using default Go library path: /usr/local/pgsql.17/lib/pgraft_go.dylib
+2025-09-28 22:18:11.450 GMT [50069] LOG:  pgraft: Loading Go library from /usr/local/pgsql.17/lib/pgraft_go.dylib
+2025-09-28 22:18:11.539 GMT [50069] LOG:  pgraft: Go library loaded successfully
+2025-09-28 22:18:11.539 GMT [50069] LOG:  pgraft: All Go library symbols loaded successfully
+2025-09-28 22:18:11.541 GMT [50069] LOG:  pgraft: Version check passed - 1.0.0
+2025-09-28 22:18:11.541 GMT [50069] INFO:  pgraft: Go library loaded successfully
+2025-09-28 22:18:11.541 GMT [50069] LOG:  pgraft: Go library loaded
+2025/09/29 03:18:11 pgraft: INFO - Initializing node 1 at 127.0.0.1:7001
+2025/09/29 03:18:11 pgraft: DEBUG - Memory storage initialized
+2025/09/29 03:18:11 pgraft: DEBUG - Raft configuration created
+2025/09/29 03:18:11 pgraft: DEBUG - Communication channels initialized
+2025/09/29 03:18:11 pgraft: INFO - Self node registered: 1 -> 127.0.0.1:7001
+raft2025/09/29 03:18:11 INFO: 1 switched to configuration voters=()
+raft2025/09/29 03:18:11 INFO: 1 became follower at term 0
+raft2025/09/29 03:18:11 INFO: newRaft 1 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2025/09/29 03:18:11 INFO: 1 became follower at term 1
+raft2025/09/29 03:18:11 INFO: 1 switched to configuration voters=(1)
+2025/09/29 03:18:11 pgraft: INFO - Bootstrap node 1 created with 1 initial peers
+2025/09/29 03:18:11 pgraft: DEBUG - Context initialized, background processing deferred to PostgreSQL workers
+2025/09/29 03:18:11 pgraft: INFO - Raft node initialized, goroutines will be started separately
+2025/09/29 03:18:11 pgraft: DEBUG - Ticker initialization deferred
+2025/09/29 03:18:11 pgraft: INFO - Raft initialization complete, ready to start goroutines
+2025/09/29 03:18:11 pgraft: DEBUG - All Raft processing goroutines started successfully
+2025/09/29 03:18:11 pgraft: INFO - Initialization completed successfully for node 1 at 127.0.0.1:7001
+2025/09/29 03:18:11 pgraft: INFO - Returning success from initialization
+2025-09-28 22:18:11.542 GMT [50069] LOG:  pgraft: Go Raft library initialized
+2025-09-28 22:18:11.542 GMT [50069] INFO:  pgraft: Returning pgraft_go_start_ptr
+2025/09/29 03:18:11 pgraft: INFO - Starting background processing
+2025/09/29 03:18:11 pgraft: INFO - Started successfully
+2025-09-28 22:18:11.542 GMT [50069] LOG:  pgraft: Go Raft goroutines started successfully
+2025/09/29 03:18:11 pgraft: Message receiver started (routing to main loop)
+2025/09/29 03:18:11 pgraft: Single Ready processing loop started
+2025/09/29 03:18:11 pgraft: Persisted HardState: term=1, vote=0, commit=1
+2025/09/29 03:18:11 pgraft: Persisted 1 entries
+2025/09/29 03:18:11 pgraft: Ticker loop started (integrated with Ready loop)
+2025/09/29 03:18:11 pgraft: Applying committed entry: index=1, term=1, type=1
+2025/09/29 03:18:11 pgraft: Applying ConfChange: type=0, node=1
+2025/09/29 03:18:11 pgraft: Added node 1 to cluster
+2025/09/29 03:18:11 pgraft: Applied 1 committed entries
+2025/09/29 03:18:11 pgraft: Updated cluster state - leader=0, term=1, state=follower
+2025-09-28 22:18:12.543 GMT [50069] LOG:  pgraft: Worker processing command 2 for node 2
+2025-09-28 22:18:12.543 GMT [50069] INFO:  pgraft: Added node 2 at 127.0.0.1:7002
+2025-09-28 22:18:12.543 GMT [50069] INFO:  pgraft: Total nodes in cluster: 2
+2025-09-28 22:18:12.543 GMT [50069] LOG:  pgraft: Node 2 added to core system
+2025/09/29 03:18:12 pgraft: pgraft_go_add_peer called with nodeID=2, address=127.0.0.1, port=7002
+2025/09/29 03:18:12 pgraft: adding peer node 2 at 127.0.0.1:7002
+2025/09/29 03:18:12 pgraft: added node to map: 2 -> 127.0.0.1:7002
+2025/09/29 03:18:12 pgraft: adding peer to Raft cluster configuration
+2025/09/29 03:18:12 pgraft: added peer node 2 at 127.0.0.1:7002 (configuration change applied)
+2025-09-28 22:18:12.543 GMT [50069] LOG:  pgraft: Node 2 added to Go Raft library
+2025-09-28 22:18:12.543 GMT [50069] INFO:  pgraft: Node 2 successfully added to cluster
+2025/09/29 03:18:12 pgraft: proposing configuration change for node 2
+raft2025/09/29 03:18:12 INFO: 1 is starting a new election at term 1
+raft2025/09/29 03:18:12 INFO: 1 became pre-candidate at term 1
+raft2025/09/29 03:18:12 INFO: 1 received MsgPreVoteResp from 1 at term 1
+raft2025/09/29 03:18:12 INFO: 1 has received 1 MsgPreVoteResp votes and 0 vote rejections
+raft2025/09/29 03:18:12 INFO: 1 became candidate at term 2
+2025/09/29 03:18:12 pgraft: Persisted HardState: term=2, vote=1, commit=1
+2025/09/29 03:18:12 pgraft: Node 1 is now CANDIDATE in term 2
+2025/09/29 03:18:12 pgraft: Updated cluster state - leader=0, term=2, state=candidate
+raft2025/09/29 03:18:12 INFO: 1 received MsgVoteResp from 1 at term 2
+raft2025/09/29 03:18:12 INFO: 1 has received 1 MsgVoteResp votes and 0 vote rejections
+raft2025/09/29 03:18:12 INFO: 1 became leader at term 2
+raft2025/09/29 03:18:12 INFO: raft.node: 1 elected leader 1 at term 2
+2025/09/29 03:18:12 pgraft: configuration change proposed successfully for node 2
+2025/09/29 03:18:12 pgraft: Persisted 2 entries
+2025/09/29 03:18:12 pgraft: Node 1 is now LEADER in term 0
+2025/09/29 03:18:12 pgraft: Persisted HardState: term=2, vote=1, commit=3
+2025/09/29 03:18:12 pgraft: Applying committed entry: index=2, term=2, type=0
+2025/09/29 03:18:12 pgraft: Applied normal entry: 
+2025/09/29 03:18:12 pgraft: Applying committed entry: index=3, term=2, type=1
+2025/09/29 03:18:12 pgraft: Applying ConfChange: type=0, node=2
+2025/09/29 03:18:12 pgraft: Added node 2 to cluster
+2025/09/29 03:18:12 pgraft: Applied 2 committed entries
+2025/09/29 03:18:12 pgraft: Updated cluster state - leader=1, term=2, state=leader
+2025-09-28 22:18:13.544 GMT [50069] LOG:  pgraft: Worker processing command 2 for node 3
+2025-09-28 22:18:13.544 GMT [50069] INFO:  pgraft: Added node 3 at 127.0.0.1:7003
+2025-09-28 22:18:13.544 GMT [50069] INFO:  pgraft: Total nodes in cluster: 3
+2025-09-28 22:18:13.544 GMT [50069] LOG:  pgraft: Node 3 added to core system
+2025/09/29 03:18:13 pgraft: pgraft_go_add_peer called with nodeID=3, address=127.0.0.1, port=7003
+2025/09/29 03:18:13 pgraft: adding peer node 3 at 127.0.0.1:7003
+2025/09/29 03:18:13 pgraft: added node to map: 3 -> 127.0.0.1:7003
+2025/09/29 03:18:13 pgraft: adding peer to Raft cluster configuration
+2025/09/29 03:18:13 pgraft: added peer node 3 at 127.0.0.1:7003 (configuration change applied)
+2025-09-28 22:18:13.544 GMT [50069] LOG:  pgraft: Node 3 added to Go Raft library
+2025-09-28 22:18:13.544 GMT [50069] INFO:  pgraft: Node 3 successfully added to cluster
+2025/09/29 03:18:13 pgraft: proposing configuration change for node 3
+2025/09/29 03:18:13 pgraft: configuration change proposed successfully for node 3
+2025/09/29 03:18:13 pgraft: Persisted 1 entries
+2025/09/29 03:18:13 pgraft: Persisted HardState: term=2, vote=1, commit=4
+2025/09/29 03:18:13 pgraft: Applying committed entry: index=4, term=2, type=1
+2025/09/29 03:18:13 pgraft: Applying ConfChange: type=0, node=3
+2025/09/29 03:18:13 pgraft: Added node 3 to cluster
+2025/09/29 03:18:13 pgraft: Applied 1 committed entries
+2025/09/29 03:18:13 pgraft: Updated cluster state - leader=1, term=2, state=leader
+2025-09-28 22:18:15.546 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:18:20.551 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:18:20.551 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:18:20 pgraft: pgraft_go_get_leader called
+2025/09/29 03:18:20 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:18:20 pgraft: pgraft_go_get_term called
+2025/09/29 03:18:20 pgraft: get_term - returning term: 2
+2025-09-28 22:18:25.556 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:18:30.560 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:18:30.560 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:18:30 pgraft: pgraft_go_get_leader called
+2025/09/29 03:18:30 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:18:30 pgraft: pgraft_go_get_term called
+2025/09/29 03:18:30 pgraft: get_term - returning term: 2
+2025-09-28 22:18:30.747 GMT [50532] LOG:  pgraft: pgraft_core_get_cluster_state called
+2025-09-28 22:18:30.747 GMT [50532] STATEMENT:  SELECT * FROM pgraft_get_cluster_status()
+2025-09-28 22:18:30.747 GMT [50532] LOG:  pgraft: Got cluster state from shared memory: leader=1, term=2
+2025-09-28 22:18:30.747 GMT [50532] STATEMENT:  SELECT * FROM pgraft_get_cluster_status()
+2025-09-28 22:18:35.566 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:18:40.569 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:18:40.569 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:18:40 pgraft: pgraft_go_get_leader called
+2025/09/29 03:18:40 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:18:40 pgraft: pgraft_go_get_term called
+2025/09/29 03:18:40 pgraft: get_term - returning term: 2
+2025-09-28 22:18:45.574 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:18:50.579 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:18:50.579 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:18:50 pgraft: pgraft_go_get_leader called
+2025/09/29 03:18:50 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:18:50 pgraft: pgraft_go_get_term called
+2025/09/29 03:18:50 pgraft: get_term - returning term: 2
+2025-09-28 22:18:55.584 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:19:00.589 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:19:00.589 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:19:00 pgraft: pgraft_go_get_leader called
+2025/09/29 03:19:00 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:19:00 pgraft: pgraft_go_get_term called
+2025/09/29 03:19:00 pgraft: get_term - returning term: 2
+2025-09-28 22:19:05.594 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:19:10.597 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:19:10.598 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:19:10 pgraft: pgraft_go_get_leader called
+2025/09/29 03:19:10 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:19:10 pgraft: pgraft_go_get_term called
+2025/09/29 03:19:10 pgraft: get_term - returning term: 2
+2025-09-28 22:19:15.602 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:19:20.605 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:19:20.605 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:19:20 pgraft: pgraft_go_get_leader called
+2025/09/29 03:19:20 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:19:20 pgraft: pgraft_go_get_term called
+2025/09/29 03:19:20 pgraft: get_term - returning term: 2
+2025-09-28 22:19:25.609 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:19:30.612 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:19:30.612 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:19:30 pgraft: pgraft_go_get_leader called
+2025/09/29 03:19:30 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:19:30 pgraft: pgraft_go_get_term called
+2025/09/29 03:19:30 pgraft: get_term - returning term: 2
+2025-09-28 22:19:35.617 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:19:40.623 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:19:40.623 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:19:40 pgraft: pgraft_go_get_leader called
+2025/09/29 03:19:40 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:19:40 pgraft: pgraft_go_get_term called
+2025/09/29 03:19:40 pgraft: get_term - returning term: 2
+2025-09-28 22:19:45.627 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:19:50.629 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:19:50.631 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:19:50 pgraft: pgraft_go_get_leader called
+2025/09/29 03:19:50 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:19:50 pgraft: pgraft_go_get_term called
+2025/09/29 03:19:50 pgraft: get_term - returning term: 2
+2025-09-28 22:19:55.635 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:20:00.638 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:20:00.639 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:20:00 pgraft: pgraft_go_get_leader called
+2025/09/29 03:20:00 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:20:00 pgraft: pgraft_go_get_term called
+2025/09/29 03:20:00 pgraft: get_term - returning term: 2
+2025-09-28 22:20:05.642 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:20:10.647 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:20:10.647 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:20:10 pgraft: pgraft_go_get_leader called
+2025/09/29 03:20:10 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:20:10 pgraft: pgraft_go_get_term called
+2025/09/29 03:20:10 pgraft: get_term - returning term: 2
+2025-09-28 22:20:15.651 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:20:20.656 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:20:20.656 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:20:20 pgraft: pgraft_go_get_leader called
+2025/09/29 03:20:20 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:20:20 pgraft: pgraft_go_get_term called
+2025/09/29 03:20:20 pgraft: get_term - returning term: 2
+2025-09-28 22:20:25.661 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:20:30.665 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:20:30.665 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:20:30 pgraft: pgraft_go_get_leader called
+2025/09/29 03:20:30 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:20:30 pgraft: pgraft_go_get_term called
+2025/09/29 03:20:30 pgraft: get_term - returning term: 2
+2025-09-28 22:20:35.668 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:20:40.671 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:20:40.671 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:20:40 pgraft: pgraft_go_get_leader called
+2025/09/29 03:20:40 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:20:40 pgraft: pgraft_go_get_term called
+2025/09/29 03:20:40 pgraft: get_term - returning term: 2
+2025-09-28 22:20:45.676 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:20:50.678 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:20:50.678 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:20:50 pgraft: pgraft_go_get_leader called
+2025/09/29 03:20:50 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:20:50 pgraft: pgraft_go_get_term called
+2025/09/29 03:20:50 pgraft: get_term - returning term: 2
+2025-09-28 22:20:55.683 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:21:00.687 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:21:00.687 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:21:00 pgraft: pgraft_go_get_leader called
+2025/09/29 03:21:00 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:21:00 pgraft: pgraft_go_get_term called
+2025/09/29 03:21:00 pgraft: get_term - returning term: 2
+2025-09-28 22:21:05.691 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:21:10.697 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:21:10.697 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:21:10 pgraft: pgraft_go_get_leader called
+2025/09/29 03:21:10 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:21:10 pgraft: pgraft_go_get_term called
+2025/09/29 03:21:10 pgraft: get_term - returning term: 2
+2025-09-28 22:21:15.701 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:21:20.706 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:21:20.706 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:21:20 pgraft: pgraft_go_get_leader called
+2025/09/29 03:21:20 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:21:20 pgraft: pgraft_go_get_term called
+2025/09/29 03:21:20 pgraft: get_term - returning term: 2
+2025-09-28 22:21:25.710 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:21:30.714 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:21:30.714 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:21:30 pgraft: pgraft_go_get_leader called
+2025/09/29 03:21:30 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:21:30 pgraft: pgraft_go_get_term called
+2025/09/29 03:21:30 pgraft: get_term - returning term: 2
+2025-09-28 22:21:35.719 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:21:40.724 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:21:40.724 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:21:40 pgraft: pgraft_go_get_leader called
+2025/09/29 03:21:40 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:21:40 pgraft: pgraft_go_get_term called
+2025/09/29 03:21:40 pgraft: get_term - returning term: 2
+2025-09-28 22:21:45.729 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:21:50.734 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:21:50.734 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:21:50 pgraft: pgraft_go_get_leader called
+2025/09/29 03:21:50 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:21:50 pgraft: pgraft_go_get_term called
+2025/09/29 03:21:50 pgraft: get_term - returning term: 2
+2025-09-28 22:21:55.739 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:22:00.744 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:22:00.744 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:22:00 pgraft: pgraft_go_get_leader called
+2025/09/29 03:22:00 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:22:00 pgraft: pgraft_go_get_term called
+2025/09/29 03:22:00 pgraft: get_term - returning term: 2
+2025-09-28 22:22:05.749 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:22:10.754 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:22:10.754 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:22:10 pgraft: pgraft_go_get_leader called
+2025/09/29 03:22:10 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:22:10 pgraft: pgraft_go_get_term called
+2025/09/29 03:22:10 pgraft: get_term - returning term: 2
+2025-09-28 22:22:15.758 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:22:20.762 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:22:20.764 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:22:20 pgraft: pgraft_go_get_leader called
+2025/09/29 03:22:20 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:22:20 pgraft: pgraft_go_get_term called
+2025/09/29 03:22:20 pgraft: get_term - returning term: 2
+2025-09-28 22:22:25.768 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:22:30.772 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:22:30.772 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:22:30 pgraft: pgraft_go_get_leader called
+2025/09/29 03:22:30 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:22:30 pgraft: pgraft_go_get_term called
+2025/09/29 03:22:30 pgraft: get_term - returning term: 2
+2025-09-28 22:22:35.777 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:22:40.781 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:22:40.782 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:22:40 pgraft: pgraft_go_get_leader called
+2025/09/29 03:22:40 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:22:40 pgraft: pgraft_go_get_term called
+2025/09/29 03:22:40 pgraft: get_term - returning term: 2
+2025-09-28 22:22:45.786 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 22:22:50.417 GMT [50064] LOG:  checkpoint starting: time
+2025-09-28 22:22:50.792 GMT [50069] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 22:22:50.792 GMT [50069] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025/09/29 03:22:50 pgraft: pgraft_go_get_leader called
+2025/09/29 03:22:50 pgraft: get_leader - status.Lead=1, status.RaftState=2
+2025/09/29 03:22:50 pgraft: pgraft_go_get_term called
+2025/09/29 03:22:50 pgraft: get_term - returning term: 2

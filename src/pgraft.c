@@ -34,6 +34,7 @@ static int pgraft_remove_node_system(int node_id);
 static int pgraft_log_append_system(const char *log_data, int log_index);
 static int pgraft_log_commit_system(int log_index);
 static int pgraft_log_apply_system(int log_index);
+static void pgraft_update_shared_memory_from_go(void);
 
 
 PG_MODULE_MAGIC;
@@ -214,6 +215,11 @@ pgraft_main(Datum main_arg)
 		if (sleep_count % 5 == 0) {
 			elog(LOG, "pgraft: Worker loop - command_count=%d, head=%d, tail=%d", 
 				 state->command_count, state->command_head, state->command_tail);
+		}
+		
+		/* Update shared memory with current Go library state every 10 iterations */
+		if (sleep_count % 10 == 0) {
+			pgraft_update_shared_memory_from_go();
 		}
 		
 		/* Process commands from queue */
@@ -415,6 +421,70 @@ pgraft_init_system(int node_id, const char *address, int port)
 	elog(LOG, "pgraft: Go Raft goroutines started successfully");
 
 	return 0;
+}
+
+/*
+ * Update shared memory with current state from Go library
+ * This function is called by the background worker to keep shared memory in sync
+ */
+static void
+pgraft_update_shared_memory_from_go(void)
+{
+	pgraft_cluster_t *shm_cluster;
+	pgraft_go_get_leader_func get_leader_func;
+	pgraft_go_get_term_func get_term_func;
+	
+	/* Only update if Go library is loaded */
+	if (!pgraft_go_is_loaded()) {
+		return;
+	}
+	
+	/* Get function pointers */
+	get_leader_func = pgraft_go_get_get_leader_func();
+	get_term_func = pgraft_go_get_get_term_func();
+	
+	if (!get_leader_func || !get_term_func) {
+		return;
+	}
+	
+	/* Get shared memory */
+	shm_cluster = pgraft_core_get_shared_memory();
+	if (!shm_cluster) {
+		return;
+	}
+	
+	/* Get current state from Go library */
+	int64_t current_leader;
+	int32_t current_term;
+	
+	current_leader = get_leader_func();
+	current_term = get_term_func();
+	
+	/* Update shared memory with current Go state */
+	SpinLockAcquire(&shm_cluster->mutex);
+	shm_cluster->leader_id = current_leader;
+	shm_cluster->current_term = current_term;
+	
+	/* Update state based on leader status */
+	if (current_leader > 0) {
+		/* Check if current node is the leader */
+		pgraft_worker_state_t *worker_state = pgraft_worker_get_state();
+		if (worker_state && current_leader == (int64_t)worker_state->node_id) {
+			strncpy(shm_cluster->state, "leader", sizeof(shm_cluster->state) - 1);
+			shm_cluster->state[sizeof(shm_cluster->state) - 1] = '\0';
+		} else {
+			strncpy(shm_cluster->state, "follower", sizeof(shm_cluster->state) - 1);
+			shm_cluster->state[sizeof(shm_cluster->state) - 1] = '\0';
+		}
+	} else {
+		strncpy(shm_cluster->state, "follower", sizeof(shm_cluster->state) - 1);
+		shm_cluster->state[sizeof(shm_cluster->state) - 1] = '\0';
+	}
+	
+	SpinLockRelease(&shm_cluster->mutex);
+	
+	elog(DEBUG1, "pgraft: Updated shared memory from Go library - leader=%lld, term=%d, state=%s", 
+		 (long long)current_leader, current_term, shm_cluster->state);
 }
 
 /*
