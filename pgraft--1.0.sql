@@ -49,6 +49,17 @@ RETURNS TABLE(
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_cluster_status_table';
 
+-- Get nodes information
+CREATE OR REPLACE FUNCTION pgraft_get_nodes()
+RETURNS TABLE(
+    node_id integer,
+    address text,
+    port integer,
+    is_leader boolean
+)
+LANGUAGE C
+AS 'pgraft', 'pgraft_get_nodes_table';
+
 -- Get current leader ID
 CREATE OR REPLACE FUNCTION pgraft_get_leader()
 RETURNS bigint
@@ -179,18 +190,68 @@ RETURNS TABLE(
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_queue_status';
 
--- Background worker status views
+-- Core cluster state view (reads from shared memory)
+CREATE VIEW pgraft_cluster_state AS
+SELECT 
+    c.leader_id,
+    c.current_term,
+    c.state,
+    c.num_nodes,
+    c.messages_processed,
+    c.heartbeats_sent,
+    c.elections_triggered,
+    w.node_id,
+    w.address,
+    w.port,
+    w.worker_status,
+    w.initialized,
+    (c.leader_id = w.node_id) as is_leader
+FROM pgraft_get_cluster_status() c,
+     LATERAL (
+         SELECT 
+             pgraft_get_worker_state()::text as worker_status,
+             CASE 
+                 WHEN pgraft_get_worker_state() = 'RUNNING' THEN true
+                 ELSE false
+             END as initialized,
+             1 as node_id,  -- Current node ID (should be from config)
+             '127.0.0.1' as address,  -- Current node address (should be from config)
+             5432 as port  -- Current node port (should be from config)
+     ) w;
+
+-- Background worker status view
 CREATE VIEW pgraft_worker_status AS
 SELECT 
-    pgraft_get_worker_state() as worker_state;
+    pgraft_get_worker_state() as worker_state,
+    CASE 
+        WHEN pgraft_get_worker_state() = 'RUNNING' THEN true
+        ELSE false
+    END as is_running;
 
 -- Cluster overview view combining worker and node status
 CREATE VIEW pgraft_cluster_overview AS
 SELECT
     pgraft_get_worker_state() as worker_state,
-    pgraft_get_leader() as leader_id,
-    pgraft_get_term() as current_term,
-    pgraft_is_leader() as is_leader;
+    c.leader_id,
+    c.current_term,
+    c.state,
+    (c.leader_id = 1) as is_leader,  -- Assuming node 1 is current node
+    c.num_nodes,
+    c.messages_processed
+FROM pgraft_cluster_state c
+LIMIT 1;
+
+-- Node information view
+CREATE VIEW pgraft_nodes AS
+SELECT 
+    n.node_id,
+    n.address,
+    n.port,
+    n.is_leader,
+    c.current_term,
+    c.state
+FROM pgraft_get_nodes() n,
+     LATERAL (SELECT * FROM pgraft_cluster_state LIMIT 1) c;
 
 -- Log replication status view (simplified)
 CREATE VIEW pgraft_log_status AS

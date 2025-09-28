@@ -12,6 +12,7 @@
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "storage/shmem.h"
+#include "storage/ipc.h"
 #include "utils/elog.h"
 #include "postmaster/bgworker.h"
 #include "utils/ps_status.h"
@@ -22,6 +23,10 @@
 #include "../include/pgraft_state.h"
 #include "../include/pgraft_log.h"
 #include "../include/pgraft_guc.h"
+
+/* Function declarations */
+void pgraft_go_init_shared_memory(void);
+void pgraft_worker_init_shared_memory(void);
 /* Forward declarations */
 static int pgraft_init_system(int node_id, const char *address, int port);
 static int pgraft_add_node_system(int node_id, const char *address, int port);
@@ -38,6 +43,7 @@ PG_MODULE_MAGIC;
 
 /* Shared memory request hook */
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
 /*
  * Shared memory request hook
@@ -66,6 +72,23 @@ pgraft_shmem_request_hook(void)
 
 
 /*
+ * Shared memory startup hook
+ */
+static void
+pgraft_shmem_startup_hook(void)
+{
+	elog(LOG, "pgraft: Shared memory startup hook called");
+	
+	/* Initialize shared memory structures */
+	pgraft_core_init_shared_memory();
+	pgraft_go_init_shared_memory();
+	pgraft_log_init_shared_memory();
+	pgraft_worker_init_shared_memory();
+	
+	elog(LOG, "pgraft: All shared memory structures initialized");
+}
+
+/*
  * Extension initialization
  */
 void
@@ -77,6 +100,11 @@ _PG_init(void)
 	prev_shmem_request_hook = shmem_request_hook;
 	shmem_request_hook = pgraft_shmem_request_hook;
 	elog(LOG, "pgraft: Shared memory request hook installed");
+
+	/* Install shared memory startup hook */
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = pgraft_shmem_startup_hook;
+	elog(LOG, "pgraft: Shared memory startup hook installed");
 
 	/* Register GUC variables */
 	pgraft_register_guc_variables();
@@ -116,10 +144,11 @@ pgraft_register_worker(void)
 
 	if (process_shared_preload_libraries_in_progress)
 	{
-		/* Static worker at postmaster start */
+		/* Register worker during preload but start it later to avoid multithreading issues */
+		worker.bgw_start_time = BgWorkerStart_ConsistentState;
 		worker.bgw_notify_pid = 0;
 		RegisterBackgroundWorker(&worker);
-		elog(LOG, "pgraft: background worker registered (preload)");
+		elog(LOG, "pgraft: background worker registered during preload (will start after consistent state)");
 		return;
 	}
 
@@ -181,6 +210,12 @@ pgraft_main(Datum main_arg)
 
 	/* Main worker loop - process command queue */
 	while (state->status != WORKER_STATUS_STOPPED) {
+		/* Debug: Log command count every loop iteration */
+		if (sleep_count % 5 == 0) {
+			elog(LOG, "pgraft: Worker loop - command_count=%d, head=%d, tail=%d", 
+				 state->command_count, state->command_head, state->command_tail);
+		}
+		
 		/* Process commands from queue */
 		if (pgraft_dequeue_command(&cmd)) {
 			elog(LOG, "pgraft: Worker processing command %d for node %d", cmd.type, cmd.node_id);
@@ -344,7 +379,6 @@ pgraft_init_system(int node_id, const char *address, int port)
 {
 	/* Variable declarations at the top - PostgreSQL C standard */
 	pgraft_go_init_func init_func;
-	pgraft_go_start_network_server_func start_network_server;
 
 	/* Initialize core system */
 	if (pgraft_core_init(node_id, (char *)address, port) != 0) {
@@ -373,18 +407,12 @@ pgraft_init_system(int node_id, const char *address, int port)
 	}
 	elog(LOG, "pgraft: Go Raft library initialized");
 
-	/* Start network server */
-	start_network_server = pgraft_go_get_start_network_server_func();
-	if (!start_network_server) {
-		elog(WARNING, "pgraft: Failed to get Go network server function");
+	/* Start Go Raft goroutines */
+	if (pgraft_go_start() != 0) {
+		elog(WARNING, "pgraft: Failed to start Go Raft goroutines");
 		return -1;
 	}
-
-	if (start_network_server(port) != 0) {
-		elog(WARNING, "pgraft: Failed to start Go network server");
-		return -1;
-	}
-	elog(LOG, "pgraft: Go network server started on port %d", port);
+	elog(LOG, "pgraft: Go Raft goroutines started successfully");
 
 	return 0;
 }

@@ -1,18 +1,260 @@
-2025-09-28 20:27:38.896 GMT [67902] INFO:  pgraft: Initializing extension version 1.0.0
-2025-09-28 20:27:38.896 GMT [67902] LOG:  pgraft: Shared memory request hook installed
-2025-09-28 20:27:38.896 GMT [67902] LOG:  pgraft: GUC variables registered
-2025-09-28 20:27:38.896 GMT [67902] LOG:  pgraft: background worker registered (preload)
-2025-09-28 20:27:38.896 GMT [67902] LOG:  pgraft: Background worker registration completed
-2025-09-28 20:27:38.896 GMT [67902] INFO:  pgraft: Extension initialized successfully
-2025-09-28 20:27:38.896 GMT [67902] LOG:  pgraft: Shared memory request hook completed
-2025-09-28 20:27:38.907 GMT [67902] LOG:  starting PostgreSQL 17.6 on aarch64-apple-darwin24.5.0, compiled by Apple clang version 17.0.0 (clang-1700.0.13.5), 64-bit
-2025-09-28 20:27:38.908 GMT [67902] LOG:  listening on IPv6 address "::", port 5433
-2025-09-28 20:27:38.908 GMT [67902] LOG:  listening on IPv4 address "0.0.0.0", port 5433
-2025-09-28 20:27:38.908 GMT [67902] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5433"
-2025-09-28 20:27:38.910 GMT [67905] LOG:  database system was shut down at 2025-09-28 20:27:32 GMT
-2025-09-28 20:27:38.913 GMT [67902] LOG:  database system is ready to accept connections
-2025-09-28 20:27:38.913 GMT [67908] LOG:  pgraft: Background worker main function started
-2025-09-28 20:27:38.913 GMT [67908] LOG:  pgraft: Background worker signal handling set up
-2025-09-28 20:27:38.913 GMT [67908] LOG:  pgraft: Worker state obtained successfully
-2025-09-28 20:27:38.913 GMT [67908] LOG:  pgraft: Worker status set to RUNNING
-2025-09-28 20:27:38.913 GMT [67908] LOG:  pgraft: Background worker started and running
+2025-09-28 21:50:19.557 GMT [27803] INFO:  pgraft: Initializing extension version 1.0.0
+2025-09-28 21:50:19.557 GMT [27803] LOG:  pgraft: Shared memory request hook installed
+2025-09-28 21:50:19.557 GMT [27803] LOG:  pgraft: Shared memory startup hook installed
+2025-09-28 21:50:19.557 GMT [27803] LOG:  pgraft: GUC variables registered
+2025-09-28 21:50:19.557 GMT [27803] LOG:  pgraft: background worker registered during preload (will start after consistent state)
+2025-09-28 21:50:19.557 GMT [27803] LOG:  pgraft: Background worker registration completed
+2025-09-28 21:50:19.557 GMT [27803] INFO:  pgraft: Extension initialized successfully
+2025-09-28 21:50:19.557 GMT [27803] LOG:  pgraft: Shared memory request hook completed
+2025-09-28 21:50:19.558 GMT [27803] LOG:  pgraft: Shared memory startup hook called
+2025-09-28 21:50:19.558 GMT [27803] INFO:  pgraft: Initializing shared memory
+2025-09-28 21:50:19.558 GMT [27803] INFO:  pgraft: Creating new shared memory
+2025-09-28 21:50:19.558 GMT [27803] INFO:  pgraft: Shared memory initialized
+2025-09-28 21:50:19.558 GMT [27803] LOG:  pgraft: Go shared memory initialization completed
+2025-09-28 21:50:19.558 GMT [27803] INFO:  pgraft: Initializing log replication shared memory
+2025-09-28 21:50:19.558 GMT [27803] INFO:  pgraft: Creating new log replication shared memory
+2025-09-28 21:50:19.558 GMT [27803] INFO:  pgraft: Log replication shared memory initialized
+2025-09-28 21:50:19.558 GMT [27803] LOG:  pgraft: Worker shared memory initialization completed
+2025-09-28 21:50:19.558 GMT [27803] LOG:  pgraft: All shared memory structures initialized
+2025-09-28 21:50:19.573 GMT [27803] LOG:  starting PostgreSQL 17.6 on aarch64-apple-darwin24.5.0, compiled by Apple clang version 17.0.0 (clang-1700.0.13.5), 64-bit
+2025-09-28 21:50:19.574 GMT [27803] LOG:  listening on IPv6 address "::", port 5433
+2025-09-28 21:50:19.574 GMT [27803] LOG:  listening on IPv4 address "0.0.0.0", port 5433
+2025-09-28 21:50:19.575 GMT [27803] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5433"
+2025-09-28 21:50:19.576 GMT [27806] LOG:  database system was shut down at 2025-09-28 21:50:12 GMT
+2025-09-28 21:50:19.578 GMT [27803] LOG:  database system is ready to accept connections
+2025-09-28 21:50:19.578 GMT [27809] LOG:  pgraft: Background worker main function started
+2025-09-28 21:50:19.578 GMT [27809] LOG:  pgraft: Background worker signal handling set up
+2025-09-28 21:50:19.578 GMT [27809] LOG:  pgraft: Worker state obtained successfully
+2025-09-28 21:50:19.578 GMT [27809] LOG:  pgraft: Worker status set to RUNNING
+2025-09-28 21:50:19.578 GMT [27809] LOG:  pgraft: Background worker started and running
+2025-09-28 21:50:19.578 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 21:50:24.582 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 21:50:29.585 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:50:29.586 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 21:50:34.591 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=0, tail=0
+2025-09-28 21:50:34.845 GMT [27953] INFO:  pgraft: Queuing INIT command for node 2 at 127.0.0.1:7002 (cluster: pgraft_cluster)
+2025-09-28 21:50:34.845 GMT [27953] LOG:  pgraft: pgraft_queue_command called with type=1, node_id=2, address=127.0.0.1, port=7002
+2025-09-28 21:50:34.845 GMT [27953] STATEMENT:  SELECT pgraft_init()
+2025-09-28 21:50:34.845 GMT [27953] LOG:  pgraft: Command 1 queued for node 2 at 127.0.0.1:7002 (count=1)
+2025-09-28 21:50:34.845 GMT [27953] STATEMENT:  SELECT pgraft_init()
+2025-09-28 21:50:34.845 GMT [27953] INFO:  pgraft: INIT command queued successfully - background worker will process it
+2025-09-28 21:50:34.845 GMT [27953] INFO:  pgraft: pgraft_get_worker_state() function called
+2025-09-28 21:50:34.864 GMT [27956] INFO:  pgraft: Queuing ADD_NODE command for node 1 at 127.0.0.1:7001
+2025-09-28 21:50:34.864 GMT [27956] LOG:  pgraft: pgraft_queue_command called with type=2, node_id=1, address=127.0.0.1, port=7001
+2025-09-28 21:50:34.864 GMT [27956] STATEMENT:  SELECT pgraft_add_node(1, '127.0.0.1', 7001)
+2025-09-28 21:50:34.864 GMT [27956] LOG:  pgraft: Command 2 queued for node 1 at 127.0.0.1:7001 (count=2)
+2025-09-28 21:50:34.864 GMT [27956] STATEMENT:  SELECT pgraft_add_node(1, '127.0.0.1', 7001)
+2025-09-28 21:50:34.864 GMT [27956] INFO:  pgraft: ADD_NODE command queued successfully - background worker will process it
+2025-09-28 21:50:34.864 GMT [27956] INFO:  pgraft: Queuing ADD_NODE command for node 3 at 127.0.0.1:7003
+2025-09-28 21:50:34.864 GMT [27956] LOG:  pgraft: pgraft_queue_command called with type=2, node_id=3, address=127.0.0.1, port=7003
+2025-09-28 21:50:34.864 GMT [27956] STATEMENT:  SELECT pgraft_add_node(3, '127.0.0.1', 7003)
+2025-09-28 21:50:34.864 GMT [27956] LOG:  pgraft: Command 2 queued for node 3 at 127.0.0.1:7003 (count=3)
+2025-09-28 21:50:34.864 GMT [27956] STATEMENT:  SELECT pgraft_add_node(3, '127.0.0.1', 7003)
+2025-09-28 21:50:34.864 GMT [27956] INFO:  pgraft: ADD_NODE command queued successfully - background worker will process it
+2025-09-28 21:50:35.591 GMT [27809] LOG:  pgraft: Worker processing command 1 for node 2
+2025-09-28 21:50:35.591 GMT [27809] INFO:  pgraft: Core initialized node 2 at 127.0.0.1:7002
+2025-09-28 21:50:35.591 GMT [27809] INFO:  pgraft: Cluster state: term=0, leader=-1, state=follower
+2025-09-28 21:50:35.591 GMT [27809] LOG:  pgraft: Core system initialized
+2025-09-28 21:50:35.591 GMT [27809] LOG:  pgraft: Using default Go library path: /usr/local/pgsql.17/lib/pgraft_go.dylib
+2025-09-28 21:50:35.591 GMT [27809] LOG:  pgraft: Loading Go library from /usr/local/pgsql.17/lib/pgraft_go.dylib
+2025-09-28 21:50:35.593 GMT [27809] LOG:  pgraft: Go library loaded successfully
+2025-09-28 21:50:35.593 GMT [27809] LOG:  pgraft: All Go library symbols loaded successfully
+2025-09-28 21:50:35.594 GMT [27809] LOG:  pgraft: Version check passed - 1.0.0
+2025-09-28 21:50:35.594 GMT [27809] INFO:  pgraft: Initializing Go state shared memory
+2025-09-28 21:50:35.594 GMT [27809] INFO:  pgraft: Creating new Go state shared memory
+2025-09-28 21:50:35.594 GMT [27809] INFO:  pgraft: Go state shared memory initialized
+2025-09-28 21:50:35.594 GMT [27809] INFO:  pgraft: Go library loaded successfully
+2025-09-28 21:50:35.594 GMT [27809] LOG:  pgraft: Go library loaded
+2025/09/29 02:50:35 pgraft: INFO - Initializing node 2 at 127.0.0.1:7002
+2025/09/29 02:50:35 pgraft: DEBUG - Memory storage initialized
+2025/09/29 02:50:35 pgraft: DEBUG - Raft configuration created
+2025/09/29 02:50:35 pgraft: DEBUG - Communication channels initialized
+2025/09/29 02:50:35 pgraft: INFO - Self node registered: 2 -> 127.0.0.1:7002
+2025/09/29 02:50:35 pgraft: PANIC in pgraft_go_init: no peers given; use RestartNode instead
+2025-09-28 21:50:35.595 GMT [27809] LOG:  pgraft: Go Raft library initialized
+2025-09-28 21:50:35.595 GMT [27809] INFO:  pgraft: Returning pgraft_go_start_ptr
+2025/09/29 02:50:35 pgraft: ERROR - Not initialized
+2025-09-28 21:50:35.595 GMT [27809] WARNING:  pgraft: Failed to start Go Raft goroutines
+2025-09-28 21:50:36.596 GMT [27809] LOG:  pgraft: Worker processing command 2 for node 1
+2025-09-28 21:50:36.596 GMT [27809] INFO:  pgraft: Added node 1 at 127.0.0.1:7001
+2025-09-28 21:50:36.596 GMT [27809] INFO:  pgraft: Total nodes in cluster: 2
+2025-09-28 21:50:36.596 GMT [27809] LOG:  pgraft: Node 1 added to core system
+2025/09/29 02:50:36 pgraft: pgraft_go_add_peer called with nodeID=1, address=127.0.0.1, port=7001
+2025/09/29 02:50:36 pgraft: adding peer node 1 at 127.0.0.1:7001
+2025/09/29 02:50:36 pgraft: added node to map: 1 -> 127.0.0.1:7001
+2025/09/29 02:50:36 pgraft: WARNING - Raft node is nil, cannot add peer to configuration
+2025/09/29 02:50:36 pgraft: added peer node 1 at 127.0.0.1:7001 (configuration change applied)
+2025-09-28 21:50:36.596 GMT [27809] LOG:  pgraft: Node 1 added to Go Raft library
+2025-09-28 21:50:36.596 GMT [27809] INFO:  pgraft: Node 1 successfully added to cluster
+2025-09-28 21:50:37.597 GMT [27809] LOG:  pgraft: Worker processing command 2 for node 3
+2025-09-28 21:50:37.597 GMT [27809] INFO:  pgraft: Added node 3 at 127.0.0.1:7003
+2025-09-28 21:50:37.597 GMT [27809] INFO:  pgraft: Total nodes in cluster: 3
+2025-09-28 21:50:37.597 GMT [27809] LOG:  pgraft: Node 3 added to core system
+2025/09/29 02:50:37 pgraft: pgraft_go_add_peer called with nodeID=3, address=127.0.0.1, port=7003
+2025/09/29 02:50:37 pgraft: adding peer node 3 at 127.0.0.1:7003
+2025/09/29 02:50:37 pgraft: added node to map: 3 -> 127.0.0.1:7003
+2025/09/29 02:50:37 pgraft: WARNING - Raft node is nil, cannot add peer to configuration
+2025/09/29 02:50:37 pgraft: added peer node 3 at 127.0.0.1:7003 (configuration change applied)
+2025-09-28 21:50:37.597 GMT [27809] LOG:  pgraft: Node 3 added to Go Raft library
+2025-09-28 21:50:37.597 GMT [27809] INFO:  pgraft: Node 3 successfully added to cluster
+2025-09-28 21:50:39.599 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:50:39.599 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:50:44.604 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:50:49.609 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:50:49.609 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:50:54.614 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:50:59.619 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:50:59.619 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:04.625 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:09.630 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:51:09.630 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:14.635 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:19.638 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:51:19.638 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:24.643 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:29.647 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:51:29.647 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:34.652 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:39.657 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:51:39.657 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:44.661 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:49.666 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:51:49.666 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:54.671 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:51:59.676 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:51:59.676 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:04.682 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:09.687 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:52:09.687 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:14.691 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:19.695 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:52:19.695 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:24.700 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:29.705 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:52:29.705 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:34.710 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:39.715 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:52:39.715 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:44.720 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:49.725 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:52:49.725 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:54.729 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:52:59.734 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:52:59.734 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:04.741 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:09.746 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:53:09.746 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:14.752 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:19.760 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:53:19.760 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:24.766 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:29.772 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:53:29.772 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:34.780 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:39.787 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:53:39.787 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:44.794 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:49.803 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:53:49.803 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:54.810 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:53:59.819 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:53:59.819 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:04.827 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:09.834 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:54:09.835 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:14.843 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:19.852 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:54:19.852 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:24.860 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:29.867 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:54:29.867 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:34.873 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:39.879 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:54:39.879 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:44.887 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:49.894 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:54:49.894 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:54.899 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:54:59.902 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:54:59.902 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:04.912 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:09.921 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:55:09.921 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:14.927 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:19.577 GMT [27804] LOG:  checkpoint starting: time
+2025-09-28 21:55:19.933 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:55:19.933 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:24.941 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:29.948 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:55:29.948 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:31.114 GMT [27804] LOG:  checkpoint complete: wrote 116 buffers (2.8%); 0 WAL file(s) added, 0 removed, 0 recycled; write=11.532 s, sync=0.003 s, total=11.538 s; sync files=53, longest=0.001 s, average=0.001 s; distance=588 kB, estimate=588 kB; lsn=0/15303E8, redo lsn=0/1530358
+2025-09-28 21:55:34.956 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:39.962 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:55:39.962 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:44.970 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:49.978 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:55:49.978 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:54.984 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:55:59.992 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:55:59.992 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:04.999 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:10.006 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:56:10.006 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:15.013 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:20.022 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:56:20.022 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:25.027 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:30.035 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:56:30.036 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:35.043 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:40.051 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:56:40.051 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:45.057 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:50.064 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:56:50.064 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:56:55.067 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:00.072 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:57:00.072 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:05.080 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:10.088 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:57:10.088 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:15.094 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:20.101 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:57:20.102 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:25.108 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:30.114 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:57:30.114 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:35.118 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:40.125 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:57:40.125 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:45.134 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:50.141 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:57:50.141 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:57:55.148 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:00.155 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:58:00.155 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:05.162 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:10.169 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:58:10.169 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:15.178 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:20.185 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:58:20.185 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:25.190 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:30.199 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:58:30.199 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:35.206 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:40.213 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:58:40.213 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:45.219 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:50.222 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:58:50.222 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:58:55.226 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:00.229 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:59:00.229 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:05.233 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:10.239 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:59:10.239 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:15.067 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:20.072 GMT [27809] LOG:  pgraft: Background worker running... (alive check)
+2025-09-28 21:59:20.072 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3
+2025-09-28 21:59:25.077 GMT [27809] LOG:  pgraft: Worker loop - command_count=0, head=3, tail=3

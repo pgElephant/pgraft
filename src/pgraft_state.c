@@ -376,3 +376,13 @@ void pgraft_state_set_go_running(bool running) {
     state->go_running = running ? 1 : 0;
     SpinLockRelease(&state->mutex);
 }
+
+/*
+ * Initialize shared memory for worker state
+ */
+void
+pgraft_worker_init_shared_memory(void)
+{
+	/* Worker state is managed in pgraft_core.c */
+	elog(LOG, "pgraft: Worker shared memory initialization completed");
+}

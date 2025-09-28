@@ -210,6 +210,28 @@ pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 			/* Update cluster state with current Go state */
 			cluster->leader_id = get_leader_func();
 			cluster->current_term = get_term_func();
+			
+			/* Update state based on leader status */
+			if (cluster->leader_id > 0)
+			{
+				/* Check if current node is the leader */
+				pgraft_worker_state_t *worker_state = pgraft_worker_get_state();
+				if (worker_state && cluster->leader_id == (int64_t)worker_state->node_id)
+				{
+					strncpy(cluster->state, "leader", sizeof(cluster->state) - 1);
+					cluster->state[sizeof(cluster->state) - 1] = '\0';
+				}
+				else
+				{
+					strncpy(cluster->state, "follower", sizeof(cluster->state) - 1);
+					cluster->state[sizeof(cluster->state) - 1] = '\0';
+				}
+			}
+			else
+			{
+				strncpy(cluster->state, "follower", sizeof(cluster->state) - 1);
+				cluster->state[sizeof(cluster->state) - 1] = '\0';
+			}
 		}
 	}
 	

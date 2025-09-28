@@ -18,4 +18,4 @@ export PATH="/usr/local/pgsql.17/bin:$PATH"
 
 # Activate virtual environment and run the script
 source venv/bin/activate
-python pgraft_cluster.py "$@"
+python3 pgraft_cluster.py "$@"

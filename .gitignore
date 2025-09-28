@@ -27,14 +27,21 @@ lib/
 vendor/
 go.sum
 
-# Go module files
-go.mod
+# Go module files (keep go.mod for dependencies)
+# go.mod - commented out to keep dependency tracking
 go.work
 go.work.sum
 
 # Go specific
 *.go~
 *.go.bak
+
+# pgraft Go library build artifacts
+src/pgraft_go.dylib
+src/pgraft_go.so
+src/pgraft_go.h
+src/*.dylib
+src/*.so
 
 # Executables
 raled/raled
@@ -73,6 +80,14 @@ pgraft/*.dylib
 pgraft/src/*.o
 pgraft/src/*.bc
 pgraft/Makefile.in
+
+# pgraft specific build artifacts
+*.dylib
+*.so
+src/*.o
+src/*.bc
+libpgraft.a
+libpgraft.pc
 
 # Backup files
 *.backup

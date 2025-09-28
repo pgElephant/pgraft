@@ -170,6 +170,8 @@ func pgraft_go_start() C.int {
 		return -1
 	}
 
+	log.Printf("pgraft: INFO - Starting background processing")
+
 	// Start background processing
 	raftTicker = time.NewTicker(100 * time.Millisecond)
 	go raftProcessingLoop()
@@ -294,13 +296,13 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 	// Create configuration following etcd-io/raft patterns
 	raftConfig = &raft.Config{
 		ID:              uint64(nodeID),
-		ElectionTick:    10,
-		HeartbeatTick:   1,
+		ElectionTick:    10, // Configurable: election timeout in ticks
+		HeartbeatTick:   1,  // Configurable: heartbeat interval in ticks
 		Storage:         raftStorage,
-		MaxSizePerMsg:   4096,
-		MaxInflightMsgs: 256,
-		Logger:          nil,   // Use default logger
-		PreVote:         false, // Disable pre-vote for single node
+		MaxSizePerMsg:   4096, // Configurable: max message size
+		MaxInflightMsgs: 256,  // Configurable: max inflight messages
+		Logger:          nil,  // Use default logger
+		PreVote:         true, // Enable PreVote for better split-brain protection
 	}
 	log.Printf("pgraft: DEBUG - Raft configuration created")
 
@@ -333,15 +335,21 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 		CommitIndex: 0,
 	}
 
-	// Create initial peer configuration for this node
-	// Additional peers will be added via pgraft_add_node calls
-	peers := []raft.Peer{
-		{ID: uint64(nodeID)},
+	// Bootstrap only the first node (node 1), joiners start with empty peers
+	var peers []raft.Peer
+	if nodeID == 1 {
+		// First node: bootstrap with self as initial peer
+		peers = []raft.Peer{
+			{ID: uint64(nodeID)},
+		}
+		raftNode = raft.StartNode(raftConfig, peers)
+		log.Printf("pgraft: INFO - Bootstrap node %d created with %d initial peers", nodeID, len(peers))
+	} else {
+		// Joiner node: start with empty peers, will join via ConfChange
+		peers = []raft.Peer{}
+		raftNode = raft.StartNode(raftConfig, peers)
+		log.Printf("pgraft: INFO - Joiner node %d created with empty peers, will join via ConfChange", nodeID)
 	}
-
-	// Create the actual Raft node with peers
-	raftNode = raft.StartNode(raftConfig, peers)
-	log.Printf("pgraft: INFO - Raft node created with %d initial peers", len(peers))
 
 	// Initialize context but don't start background processing yet
 	raftCtx, raftCancel = context.WithCancel(context.Background())
@@ -351,30 +359,13 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 	appliedIndex = 0
 	committedIndex = 0
 
-	// Start network server for incoming connections
-	log.Printf("pgraft: DEBUG - About to start network server goroutine")
-	go startNetworkServer(C.GoString(address), int(port))
-	log.Printf("pgraft: INFO - Network server started on %s:%d", C.GoString(address), int(port))
+	// Note: Goroutines will be started separately via pgraft_go_start to avoid
+	// multithreading during PostgreSQL startup
+	log.Printf("pgraft: INFO - Raft node initialized, goroutines will be started separately")
 
-	// Load and connect to configured peers
-	go loadAndConnectToPeers()
-	log.Printf("pgraft: INFO - Peer discovery and connection process started")
-
-	// Start background processing automatically
-	log.Printf("pgraft: DEBUG - About to start Raft Ready processing goroutine")
-	go processRaftReady()
-	log.Printf("pgraft: INFO - Raft Ready processing started")
-
-	// Start the ticker for Raft operations
-	log.Printf("pgraft: DEBUG - About to start Raft ticker")
-	raftTicker = time.NewTicker(100 * time.Millisecond)
-	go processRaftTicker()
-	log.Printf("pgraft: INFO - Raft ticker started")
-
-	// Start message processing
-	log.Printf("pgraft: DEBUG - About to start message processing")
-	go processIncomingMessages()
-	log.Printf("pgraft: INFO - Message processing started")
+	// Ticker will be started separately via pgraft_go_start
+	log.Printf("pgraft: DEBUG - Ticker initialization deferred")
+	log.Printf("pgraft: INFO - Raft initialization complete, ready to start goroutines")
 
 	log.Printf("pgraft: DEBUG - All Raft processing goroutines started successfully")
 
@@ -455,21 +446,17 @@ func pgraft_go_add_peer(nodeID C.int, address *C.char, port C.int) C.int {
 			Context: []byte(nodeAddr),
 		}
 
-		// Propose the configuration change
-		log.Printf("pgraft: proposing configuration change for node %d", nodeID)
-		if err := raftNode.ProposeConfChange(raftCtx, cc); err != nil {
-			log.Printf("pgraft: ERROR proposing configuration change: %v", err)
-			return -1
-		}
-
-		log.Printf("pgraft: configuration change proposed successfully for node %d", nodeID)
-
-		// Trigger leader election after adding peer
+		// Propose the configuration change in a goroutine to avoid blocking
 		go func() {
-			time.Sleep(1 * time.Second) // Wait for configuration change to be applied
-			log.Printf("pgraft: triggering leader election after adding peer")
-			raftNode.Campaign(raftCtx)
+			log.Printf("pgraft: proposing configuration change for node %d", nodeID)
+			if err := raftNode.ProposeConfChange(raftCtx, cc); err != nil {
+				log.Printf("pgraft: ERROR proposing configuration change: %v", err)
+				return
+			}
+			log.Printf("pgraft: configuration change proposed successfully for node %d", nodeID)
 		}()
+
+		// Let ticks drive elections naturally - no forced campaign
 	} else {
 		log.Printf("pgraft: WARNING - Raft node is nil, cannot add peer to configuration")
 	}
@@ -787,39 +774,107 @@ func pgraft_go_free_string(str *C.char) {
 func raftProcessingLoop() {
 	defer close(raftDone)
 
-	log.Printf("pgraft: Raft processing loop started")
+	log.Printf("pgraft: Single Ready processing loop started")
 
 	for {
 		select {
 		case <-raftCtx.Done():
-			log.Printf("pgraft: Raft processing loop stopping (context done)")
+			log.Printf("pgraft: Ready processing loop stopping (context done)")
 			return
 		case <-stopChan:
-			log.Printf("pgraft: Raft processing loop stopping (stop signal)")
+			log.Printf("pgraft: Ready processing loop stopping (stop signal)")
 			return
-		case <-time.After(1 * time.Second):
-			// Process any pending operations
-			processRaftOperations()
+		default:
+			// Process Ready messages from Raft node
+			select {
+			case rd := <-raftNode.Ready():
+				processReady(rd)
+			case <-time.After(100 * time.Millisecond):
+				// Continue loop to check for context cancellation
+				continue
+			}
 		}
 	}
 }
 
-// Process Raft operations
-func processRaftOperations() {
-	// Update metrics
-	atomic.AddInt64(&messagesProcessed, 1)
+// Process Ready messages: persist, send, apply, advance
+func processReady(rd raft.Ready) {
+	raftMutex.Lock()
+	defer raftMutex.Unlock()
 
-	// Update commit index
-	commitIndex++
-	lastApplied = commitIndex
+	// 1. Persist HardState, Entries, Snapshot (in order)
+	if !raft.IsEmptyHardState(rd.HardState) {
+		if err := raftStorage.SetHardState(rd.HardState); err != nil {
+			log.Printf("pgraft: Failed to persist HardState: %v", err)
+			return
+		}
+		log.Printf("pgraft: Persisted HardState: term=%d, vote=%d, commit=%d",
+			rd.HardState.Term, rd.HardState.Vote, rd.HardState.Commit)
+	}
 
-	// Update last index
-	lastIndex = commitIndex
+	if len(rd.Entries) > 0 {
+		if err := raftStorage.Append(rd.Entries); err != nil {
+			log.Printf("pgraft: Failed to persist entries: %v", err)
+			return
+		}
+		log.Printf("pgraft: Persisted %d entries", len(rd.Entries))
+	}
+
+	if !raft.IsEmptySnap(rd.Snapshot) {
+		if err := raftStorage.ApplySnapshot(rd.Snapshot); err != nil {
+			log.Printf("pgraft: Failed to apply snapshot: %v", err)
+			return
+		}
+		log.Printf("pgraft: Applied snapshot: index=%d", rd.Snapshot.Metadata.Index)
+		// Update applied and committed indices to snapshot index
+		appliedIndex = rd.Snapshot.Metadata.Index
+		committedIndex = rd.Snapshot.Metadata.Index
+	}
+
+	// 2. Send messages
+	for _, msg := range rd.Messages {
+		sendMessage(msg)
+	}
+
+	// 3. Apply committed entries
+	if len(rd.CommittedEntries) > 0 {
+		for _, entry := range rd.CommittedEntries {
+			applyEntry(entry)
+		}
+		log.Printf("pgraft: Applied %d committed entries", len(rd.CommittedEntries))
+	}
+
+	// 4. Update cluster state from HardState (no manual increments)
+	clusterState.CurrentTerm = rd.HardState.Term
+	committedIndex = rd.HardState.Commit
+
+	// 5. Check for state changes
+	status := raftNode.Status()
+	if status.RaftState == raft.StateLeader {
+		if clusterState.LeaderID != raftConfig.ID {
+			clusterState.LeaderID = raftConfig.ID
+			clusterState.State = "leader"
+			log.Printf("pgraft: Node %d is now LEADER in term %d", raftConfig.ID, rd.HardState.Term)
+		}
+	} else if status.RaftState == raft.StateFollower {
+		if clusterState.State != "follower" {
+			clusterState.State = "follower"
+			log.Printf("pgraft: Node %d is now FOLLOWER in term %d", raftConfig.ID, rd.HardState.Term)
+		}
+	} else if status.RaftState == raft.StateCandidate {
+		if clusterState.State != "candidate" {
+			clusterState.State = "candidate"
+			log.Printf("pgraft: Node %d is now CANDIDATE in term %d", raftConfig.ID, rd.HardState.Term)
+		}
+	}
+
+	// 6. Advance the Raft node
+	raftNode.Advance()
 }
 
-// Ticker loop for heartbeats and elections
+// Ticker loop integrated into Ready processing loop
 func tickerLoop() {
-	log.Printf("pgraft: Ticker loop started")
+	log.Printf("pgraft: Ticker loop started (integrated with Ready loop)")
 
 	for {
 		select {
@@ -830,16 +885,15 @@ func tickerLoop() {
 			log.Printf("pgraft: Ticker loop stopping (stop signal)")
 			return
 		case <-raftTicker.C:
-			// Send heartbeat
-			atomic.AddInt64(&heartbeatsSent, 1)
-			log.Printf("pgraft: Heartbeat sent (total: %d)", atomic.LoadInt64(&heartbeatsSent))
+			// Tick the Raft node - this will generate Ready messages
+			raftNode.Tick()
 		}
 	}
 }
 
-// Message receiver for incoming messages
+// Message receiver routes all messages through main loop
 func messageReceiver() {
-	log.Printf("pgraft: Message receiver started")
+	log.Printf("pgraft: Message receiver started (routing to main loop)")
 
 	for {
 		select {
@@ -849,10 +903,10 @@ func messageReceiver() {
 		case <-stopChan:
 			log.Printf("pgraft: Message receiver stopping (stop signal)")
 			return
-		case <-time.After(5 * time.Second):
-			// Process any pending messages
+		case msg := <-messageChan:
+			// Route message directly to Raft node
+			raftNode.Step(raftCtx, msg)
 			atomic.AddInt64(&messagesProcessed, 1)
-			log.Printf("pgraft: Processed message (total: %d)", atomic.LoadInt64(&messagesProcessed))
 		}
 	}
 }
@@ -886,37 +940,66 @@ func handleIncomingMessage(nodeID uint64, conn net.Conn) {
 	atomic.AddInt64(&messagesProcessed, 1)
 }
 
-// Process ready channel following etcd-io/raft patterns
-func processReady(rd raft.Ready) {
-	log.Printf("pgraft: processing ready channel, HardState: %+v, Entries: %d, Messages: %d, CommittedEntries: %d",
-		rd.HardState, len(rd.Entries), len(rd.Messages), len(rd.CommittedEntries))
+// Apply committed entry to state machine
+func applyEntry(entry raftpb.Entry) {
+	log.Printf("pgraft: Applying committed entry: index=%d, term=%d, type=%d",
+		entry.Index, entry.Term, entry.Type)
 
-	// 1. Save to storage
-	if !raft.IsEmptyHardState(rd.HardState) {
-		raftStorage.SetHardState(rd.HardState)
-		log.Printf("pgraft: saved HardState: %+v", rd.HardState)
+	// Update applied index
+	appliedIndex = entry.Index
+
+	// Process different entry types
+	switch entry.Type {
+	case raftpb.EntryNormal:
+		// Apply normal log entry
+		log.Printf("pgraft: Applied normal entry: %s", string(entry.Data))
+	case raftpb.EntryConfChange:
+		// Apply configuration change
+		var cc raftpb.ConfChange
+		if err := cc.Unmarshal(entry.Data); err != nil {
+			log.Printf("pgraft: Failed to unmarshal ConfChange: %v", err)
+			return
+		}
+		applyConfChange(cc)
+	case raftpb.EntryConfChangeV2:
+		// Apply configuration change v2
+		var cc raftpb.ConfChangeV2
+		if err := cc.Unmarshal(entry.Data); err != nil {
+			log.Printf("pgraft: Failed to unmarshal ConfChangeV2: %v", err)
+			return
+		}
+		applyConfChangeV2(cc)
 	}
+}
 
-	if len(rd.Entries) > 0 {
-		raftStorage.Append(rd.Entries)
+// Apply configuration change
+func applyConfChange(cc raftpb.ConfChange) {
+	log.Printf("pgraft: Applying ConfChange: type=%d, node=%d", cc.Type, cc.NodeID)
+
+	switch cc.Type {
+	case raftpb.ConfChangeAddNode:
+		log.Printf("pgraft: Added node %d to cluster", cc.NodeID)
+	case raftpb.ConfChangeRemoveNode:
+		log.Printf("pgraft: Removed node %d from cluster", cc.NodeID)
+	case raftpb.ConfChangeUpdateNode:
+		log.Printf("pgraft: Updated node %d in cluster", cc.NodeID)
 	}
+}
 
-	if !raft.IsEmptySnap(rd.Snapshot) {
-		raftStorage.ApplySnapshot(rd.Snapshot)
+// Apply configuration change v2
+func applyConfChangeV2(cc raftpb.ConfChangeV2) {
+	log.Printf("pgraft: Applying ConfChangeV2: changes=%d", len(cc.Changes))
+
+	for _, change := range cc.Changes {
+		switch change.Type {
+		case raftpb.ConfChangeAddNode:
+			log.Printf("pgraft: Added node %d to cluster", change.NodeID)
+		case raftpb.ConfChangeRemoveNode:
+			log.Printf("pgraft: Removed node %d from cluster", change.NodeID)
+		case raftpb.ConfChangeUpdateNode:
+			log.Printf("pgraft: Updated node %d in cluster", change.NodeID)
+		}
 	}
-
-	// 2. Send messages through our comm module
-	for _, msg := range rd.Messages {
-		processMessage(msg)
-	}
-
-	// 3. Apply committed entries to state machine
-	for _, entry := range rd.CommittedEntries {
-		processCommittedEntry(entry)
-	}
-
-	// 4. Advance the node
-	raftNode.Advance()
 }
 
 // Process outgoing messages through comm module
@@ -1594,14 +1677,9 @@ func processRaftReady() {
 				clusterState.CurrentTerm = rd.HardState.Term
 				clusterState.CommitIndex = rd.HardState.Commit
 
-				// Update leader information from hard state
-				if rd.HardState.Vote != 0 {
-					clusterState.LeaderID = rd.HardState.Vote
-					log.Printf("pgraft: INFO - Leader elected: %d", rd.HardState.Vote)
-
-					// Update shared memory cluster state
-					updateSharedMemoryClusterState(int64(rd.HardState.Vote), int64(rd.HardState.Term), "leader")
-				}
+				// Update cluster state with current term
+				clusterState.CurrentTerm = rd.HardState.Term
+				log.Printf("pgraft: INFO - Updated term to %d", rd.HardState.Term)
 			}
 
 			// Save entries
@@ -1609,6 +1687,35 @@ func processRaftReady() {
 				log.Printf("pgraft: DEBUG - Saving %d entries", len(rd.Entries))
 				raftStorage.Append(rd.Entries)
 				clusterState.LastIndex = rd.Entries[len(rd.Entries)-1].Index
+			}
+
+			// Check if this node is now the leader
+			status := raftNode.Status()
+			if status.RaftState == raft.StateLeader {
+				if clusterState.LeaderID != raftConfig.ID {
+					clusterState.LeaderID = raftConfig.ID
+					clusterState.State = "leader"
+					log.Printf("pgraft: INFO - This node is now the LEADER (node %d)", raftConfig.ID)
+
+					// Update shared memory cluster state
+					updateSharedMemoryClusterState(int64(raftConfig.ID), int64(clusterState.CurrentTerm), "leader")
+				}
+			} else if status.RaftState == raft.StateFollower {
+				if clusterState.State != "follower" {
+					clusterState.State = "follower"
+					log.Printf("pgraft: INFO - This node is now a FOLLOWER")
+
+					// Update shared memory cluster state
+					updateSharedMemoryClusterState(int64(clusterState.LeaderID), int64(clusterState.CurrentTerm), "follower")
+				}
+			} else if status.RaftState == raft.StateCandidate {
+				if clusterState.State != "candidate" {
+					clusterState.State = "candidate"
+					log.Printf("pgraft: INFO - This node is now a CANDIDATE")
+
+					// Update shared memory cluster state
+					updateSharedMemoryClusterState(int64(clusterState.LeaderID), int64(clusterState.CurrentTerm), "candidate")
+				}
 			}
 
 			// Process committed entries
@@ -1788,18 +1895,19 @@ func processIncomingMessages() {
 	}
 }
 
-// updateSharedMemoryClusterState updates the shared memory cluster state from Go
+// updateSharedMemoryClusterState updates the internal cluster state
 func updateSharedMemoryClusterState(leaderID int64, currentTerm int64, state string) {
-	log.Printf("pgraft: INFO - Cluster state update: leader=%d, term=%d, state=%s", leaderID, currentTerm, state)
-
-	// Store the cluster state in a global variable that can be accessed by C functions
 	raftMutex.Lock()
+	defer raftMutex.Unlock()
+
+	log.Printf("pgraft: DEBUG - Updating internal cluster state: leader=%d, term=%d, state=%s", leaderID, currentTerm, state)
+
+	// Update the internal cluster state
 	clusterState.LeaderID = uint64(leaderID)
 	clusterState.CurrentTerm = uint64(currentTerm)
 	clusterState.State = state
-	raftMutex.Unlock()
 
-	log.Printf("pgraft: INFO - Updated internal cluster state: leader=%d, term=%d, state=%s", leaderID, currentTerm, state)
+	log.Printf("pgraft: DEBUG - Internal cluster state updated: %+v", clusterState)
 }
 
 //export pgraft_go_update_cluster_state

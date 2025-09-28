@@ -40,6 +40,9 @@ bool		pgraft_health_verbose = false;
 bool		pgraft_metrics_enabled = true;
 bool		pgraft_trace_enabled = false;
 
+/* Go library configuration */
+char	   *pgraft_go_library_path = NULL;
+
 /*
  * Register GUC variables
  */
@@ -324,6 +327,18 @@ void
 pgraft_guc_init(void)
 {
 	elog(DEBUG1, "pgraft: Initializing GUC variables");
+	/* Go library configuration */
+	DefineCustomStringVariable("pgraft.go_library_path",
+							   "Path to the Go Raft library",
+							   "Default path to the Go Raft shared library",
+							   &pgraft_go_library_path,
+							   NULL, /* Default will be set dynamically */
+							   PGC_POSTMASTER,
+							   0,
+							   NULL,
+							   NULL,
+							   NULL);
+
 	/* GUC variables are automatically registered by DefineCustom*Variable */
 }
 

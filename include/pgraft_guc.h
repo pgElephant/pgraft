@@ -21,6 +21,7 @@ extern char	   *pgraft_node_ip;
 extern bool		pgraft_is_primary;
 extern int		pgraft_health_period_ms;
 extern bool		pgraft_health_verbose;
+extern char	   *pgraft_go_library_path;
 
 /* GUC functions */
 void		pgraft_guc_init(void);

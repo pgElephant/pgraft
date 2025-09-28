@@ -32,12 +32,12 @@ PG_FUNCTION_INFO_V1(pgraft_init_guc);
 PG_FUNCTION_INFO_V1(pgraft_add_node);
 PG_FUNCTION_INFO_V1(pgraft_remove_node);
 PG_FUNCTION_INFO_V1(pgraft_get_cluster_status_table);
+PG_FUNCTION_INFO_V1(pgraft_get_nodes_table);
 PG_FUNCTION_INFO_V1(pgraft_get_leader);
 PG_FUNCTION_INFO_V1(pgraft_get_term);
 PG_FUNCTION_INFO_V1(pgraft_is_leader);
 PG_FUNCTION_INFO_V1(pgraft_get_worker_state);
 PG_FUNCTION_INFO_V1(pgraft_get_queue_status);
-PG_FUNCTION_INFO_V1(pgraft_get_nodes_table);
 PG_FUNCTION_INFO_V1(pgraft_get_version);
 PG_FUNCTION_INFO_V1(pgraft_test);
 PG_FUNCTION_INFO_V1(pgraft_set_debug);
@@ -194,33 +194,96 @@ pgraft_get_cluster_status_table(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Get nodes information as table
+ */
+Datum
+pgraft_get_nodes_table(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	TupleDesc	tupdesc;
+	Tuplestorestate *tupstore;
+	MemoryContext per_query_ctx;
+	MemoryContext oldcontext;
+	pgraft_cluster_t cluster_state;
+	pgraft_worker_state_t *worker_state;
+	
+	/* Check to see if caller supports us returning a tuplestore */
+	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("set-valued function called in context that cannot accept a set")));
+	if (!(rsinfo->allowedModes & SFRM_Materialize))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("materialize mode required, but it is not allowed in this context")));
+	
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+	
+	/* Build tuplestore to hold the result rows */
+	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
+	oldcontext = MemoryContextSwitchTo(per_query_ctx);
+	
+	tupstore = tuplestore_begin_heap(rsinfo->allowedModes & SFRM_Materialize_Random, false, 1024);
+	rsinfo->returnMode = SFRM_Materialize;
+	rsinfo->setResult = tupstore;
+	rsinfo->setDesc = tupdesc;
+	
+	MemoryContextSwitchTo(oldcontext);
+	
+	/* Get cluster state and worker state from shared memory */
+	if (pgraft_core_get_cluster_state(&cluster_state))
+	{
+		worker_state = pgraft_worker_get_state();
+		
+		if (worker_state)
+		{
+			/* For now, return the current node information */
+			/* TODO: This should be expanded to return all nodes in the cluster */
+			Datum		values[4];
+			bool		nulls[4];
+			HeapTuple	tuple;
+			
+			values[0] = Int32GetDatum(worker_state->node_id);
+			values[1] = CStringGetTextDatum(worker_state->address);
+			values[2] = Int32GetDatum(worker_state->port);
+			values[3] = BoolGetDatum(cluster_state.leader_id == (int64_t)worker_state->node_id);
+			
+			/* Set nulls */
+			memset(nulls, 0, sizeof(nulls));
+			
+			/* Build and return tuple */
+			tuple = heap_form_tuple(tupdesc, values, nulls);
+			tuplestore_puttuple(tupstore, tuple);
+			heap_freetuple(tuple);
+		}
+	}
+	
+	/* clean up and return the tuplestore */
+	PG_RETURN_NULL();
+}
+
+/*
  * Get current leader
  */
 Datum
 pgraft_get_leader(PG_FUNCTION_ARGS)
 {
-	pgraft_go_get_leader_func get_leader_func;
+	pgraft_cluster_t cluster_state;
 	int64_t leader_id = -1;
 	
 	elog(INFO, "pgraft: pgraft_get_leader() function called");
 	
-	/* Try to get leader from Go library if available */
-	if (pgraft_go_is_loaded())
+	/* Get cluster state from shared memory */
+	if (pgraft_core_get_cluster_state(&cluster_state))
 	{
-		get_leader_func = pgraft_go_get_get_leader_func();
-		if (get_leader_func)
-		{
-			leader_id = get_leader_func();
-			elog(INFO, "pgraft: Got leader ID from Go library: %lld", (long long)leader_id);
-		}
-		else
-		{
-			elog(WARNING, "pgraft: Failed to get Go leader function");
-		}
+		leader_id = cluster_state.leader_id;
+		elog(INFO, "pgraft: Got leader ID from shared memory: %lld", (long long)leader_id);
 	}
 	else
 	{
-		elog(WARNING, "pgraft: Go library not loaded");
+		elog(WARNING, "pgraft: Failed to get cluster state from shared memory");
 	}
 	
 	PG_RETURN_INT64(leader_id);
@@ -232,28 +295,20 @@ pgraft_get_leader(PG_FUNCTION_ARGS)
 Datum
 pgraft_get_term(PG_FUNCTION_ARGS)
 {
-	pgraft_go_get_term_func get_term_func;
+	pgraft_cluster_t cluster_state;
 	int32_t term = 0;
 	
 	elog(INFO, "pgraft: pgraft_get_term() function called");
 	
-	/* Try to get term from Go library if available */
-	if (pgraft_go_is_loaded())
+	/* Get cluster state from shared memory */
+	if (pgraft_core_get_cluster_state(&cluster_state))
 	{
-		get_term_func = pgraft_go_get_get_term_func();
-		if (get_term_func)
-		{
-			term = get_term_func();
-			elog(INFO, "pgraft: Got term from Go library: %d", term);
-		}
-		else
-		{
-			elog(WARNING, "pgraft: Failed to get Go term function");
-		}
+		term = (int32_t)cluster_state.current_term;
+		elog(INFO, "pgraft: Got term from shared memory: %d", term);
 	}
 	else
 	{
-		elog(WARNING, "pgraft: Go library not loaded");
+		elog(WARNING, "pgraft: Failed to get cluster state from shared memory");
 	}
 	
 	PG_RETURN_INT32(term);
@@ -265,28 +320,32 @@ pgraft_get_term(PG_FUNCTION_ARGS)
 Datum
 pgraft_is_leader(PG_FUNCTION_ARGS)
 {
-	pgraft_go_is_leader_func is_leader_func;
+	pgraft_cluster_t cluster_state;
+	pgraft_worker_state_t *worker_state;
 	bool is_leader = false;
 	
 	elog(INFO, "pgraft: pgraft_is_leader() function called");
 	
-	/* Try to get leader status from Go library if available */
-	if (pgraft_go_is_loaded())
+	/* Get cluster state from shared memory */
+	if (pgraft_core_get_cluster_state(&cluster_state))
 	{
-		is_leader_func = pgraft_go_get_is_leader_func();
-		if (is_leader_func)
+		worker_state = pgraft_worker_get_state();
+		
+		if (worker_state)
 		{
-			is_leader = (is_leader_func() != 0);
-			elog(INFO, "pgraft: Got leader status from Go library: %s", is_leader ? "true" : "false");
+			/* Check if current node is the leader */
+			is_leader = (cluster_state.leader_id == (int64_t)worker_state->node_id);
+			elog(INFO, "pgraft: Got leader status from shared memory: %s (leader_id=%lld, node_id=%d)", 
+				 is_leader ? "true" : "false", (long long)cluster_state.leader_id, worker_state->node_id);
 		}
 		else
 		{
-			elog(WARNING, "pgraft: Failed to get Go is_leader function");
+			elog(WARNING, "pgraft: Failed to get worker state from shared memory");
 		}
 	}
 	else
 	{
-		elog(WARNING, "pgraft: Go library not loaded");
+		elog(WARNING, "pgraft: Failed to get cluster state from shared memory");
 	}
 	
 	PG_RETURN_BOOL(is_leader);
@@ -323,62 +382,6 @@ pgraft_get_worker_state(PG_FUNCTION_ARGS)
 }
 
 
-/*
- * Get cluster nodes as table with individual columns
- */
-Datum
-pgraft_get_nodes_table(PG_FUNCTION_ARGS)
-{
-    pgraft_cluster_t cluster;
-    ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
-    TupleDesc	tupdesc;
-    Tuplestorestate *tupstore;
-    MemoryContext per_query_ctx;
-    MemoryContext oldcontext;
-    
-    if (pgraft_core_get_cluster_state(&cluster) != 0) {
-        elog(ERROR, "pgraft: Failed to get cluster state");
-        PG_RETURN_NULL();
-    }
-    
-    /* Check if we're called in table context */
-    if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
-        elog(ERROR, "pgraft: pgraft_get_nodes_table must be called in table context");
-    
-    /* Build tuple descriptor */
-    if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-        elog(ERROR, "pgraft: Return type must be a row type");
-    
-    /* Initialize tuplestore */
-    per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
-    oldcontext = MemoryContextSwitchTo(per_query_ctx);
-    
-    tupstore = tuplestore_begin_heap(true, false, 1024);
-    rsinfo->returnMode = SFRM_Materialize;
-    rsinfo->setResult = tupstore;
-    rsinfo->setDesc = tupdesc;
-    
-    MemoryContextSwitchTo(oldcontext);
-    
-    /* Return one row for each node */
-    for (int i = 0; i < cluster.num_nodes; i++) {
-        Datum		values[4];
-        bool		nulls[4];
-        HeapTuple	tuple;
-        
-        values[0] = Int32GetDatum(cluster.nodes[i].id);
-        values[1] = CStringGetTextDatum(cluster.nodes[i].address);
-        values[2] = Int32GetDatum(cluster.nodes[i].port);
-        values[3] = BoolGetDatum(cluster.nodes[i].is_leader);
-        
-        memset(nulls, 0, sizeof(nulls));
-        
-        tuple = heap_form_tuple(tupdesc, values, nulls);
-        tuplestore_puttuple(tupstore, tuple);
-    }
-    
-    PG_RETURN_NULL();
-}
 
 /*
  * Get pgraft version
