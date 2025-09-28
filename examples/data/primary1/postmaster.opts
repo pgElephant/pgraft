@@ -1,0 +1,1 @@
+/usr/local/pgsql.17/bin/postgres "-D" "data/primary1" "-p" "5432" "-c" "shared_preload_libraries=pgraft"

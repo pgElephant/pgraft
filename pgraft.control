@@ -1,0 +1,6 @@
+# pgraft extension control file
+comment = 'PostgreSQL extension with libraft integration for distributed consensus'
+default_version = '1.0'
+module_pathname = '$libdir/pgraft'
+relocatable = true
+superuser = false

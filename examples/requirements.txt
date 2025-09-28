@@ -1,0 +1,11 @@
+# PostgreSQL pgraft Cluster Management Dependencies
+# Install with: pip install -r requirements.txt
+
+# PostgreSQL adapter for Python
+psycopg2-binary>=2.9.0
+
+# Optional: For enhanced error handling and logging
+colorama>=0.4.0
+
+# Optional: For configuration file parsing
+pyyaml>=6.0

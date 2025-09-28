@@ -1,0 +1,18 @@
+2025-09-28 20:27:33.769 GMT [67829] INFO:  pgraft: Initializing extension version 1.0.0
+2025-09-28 20:27:33.769 GMT [67829] LOG:  pgraft: Shared memory request hook installed
+2025-09-28 20:27:33.769 GMT [67829] LOG:  pgraft: GUC variables registered
+2025-09-28 20:27:33.769 GMT [67829] LOG:  pgraft: background worker registered (preload)
+2025-09-28 20:27:33.769 GMT [67829] LOG:  pgraft: Background worker registration completed
+2025-09-28 20:27:33.769 GMT [67829] INFO:  pgraft: Extension initialized successfully
+2025-09-28 20:27:33.769 GMT [67829] LOG:  pgraft: Shared memory request hook completed
+2025-09-28 20:27:33.789 GMT [67829] LOG:  starting PostgreSQL 17.6 on aarch64-apple-darwin24.5.0, compiled by Apple clang version 17.0.0 (clang-1700.0.13.5), 64-bit
+2025-09-28 20:27:33.791 GMT [67829] LOG:  listening on IPv6 address "::", port 5432
+2025-09-28 20:27:33.791 GMT [67829] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2025-09-28 20:27:33.792 GMT [67829] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2025-09-28 20:27:33.795 GMT [67850] LOG:  database system was shut down at 2025-09-28 20:27:31 GMT
+2025-09-28 20:27:33.797 GMT [67829] LOG:  database system is ready to accept connections
+2025-09-28 20:27:33.798 GMT [67853] LOG:  pgraft: Background worker main function started
+2025-09-28 20:27:33.798 GMT [67853] LOG:  pgraft: Background worker signal handling set up
+2025-09-28 20:27:33.798 GMT [67853] LOG:  pgraft: Worker state obtained successfully
+2025-09-28 20:27:33.798 GMT [67853] LOG:  pgraft: Worker status set to RUNNING
+2025-09-28 20:27:33.798 GMT [67853] LOG:  pgraft: Background worker started and running

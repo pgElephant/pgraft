@@ -1,0 +1,111 @@
+# PostgreSQL Configuration for Primary Node with pgraft
+# This configuration sets up a PostgreSQL primary with pgraft consensus
+
+# Basic PostgreSQL settings
+listen_addresses = '*'
+port = 5432
+max_connections = 100
+shared_buffers = 128MB
+effective_cache_size = 1GB
+work_mem = 4MB
+maintenance_work_mem = 64MB
+
+# WAL settings for streaming replication
+wal_level = replica
+max_wal_senders = 10
+max_replication_slots = 10
+wal_keep_size = 512MB
+wal_sender_timeout = 60s
+
+# pgraft specific settings
+# Note: pgraft extension is loaded dynamically via SQL functions to avoid startup issues
+shared_preload_libraries = 'pgraft'
+
+# pgraft cluster configuration
+pgraft.node_id = 1
+pgraft.cluster_id = 'pgraft-cluster'
+pgraft.address = '127.0.0.1'
+pgraft.port = 7001
+pgraft.data_dir = '/tmp/pgraft/primary1'
+
+# pgraft cluster members
+pgraft.peers = '2:127.0.0.1:7002,3:127.0.0.1:7003'
+
+# pgraft consensus settings
+pgraft.election_timeout = 1000
+pgraft.heartbeat_interval = 100
+pgraft.snapshot_interval = 10000
+pgraft.max_log_entries = 1000
+
+# pgraft logging
+pgraft.log_level = 1
+pgraft.log_file = '/tmp/pgraft/logs/primary1/pgraft.log'
+
+# pgraft performance settings
+pgraft.batch_size = 100
+pgraft.max_batch_delay = 10
+pgraft.compaction_threshold = 1000
+
+# pgraft security
+pgraft.auth_enabled = false
+pgraft.tls_enabled = false
+
+# pgraft monitoring
+pgraft.metrics_enabled = true
+pgraft.metrics_port = 9091
+
+# PostgreSQL logging for debugging
+log_destination = 'stderr'
+logging_collector = off
+log_directory = '/tmp/pgraft/logs/primary1'
+log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+log_rotation_age = 1d
+log_rotation_size = 10MB
+log_min_messages = info
+log_min_error_statement = error
+log_min_duration_statement = 1000
+
+# Connection settings
+tcp_keepalives_idle = 600
+tcp_keepalives_interval = 30
+tcp_keepalives_count = 3
+
+# Checkpoint settings
+checkpoint_completion_target = 0.9
+checkpoint_timeout = 5min
+max_wal_size = 1GB
+min_wal_size = 80MB
+
+# Autovacuum settings
+autovacuum = on
+autovacuum_max_workers = 3
+autovacuum_naptime = 1min
+
+# Lock settings
+deadlock_timeout = 1s
+lock_timeout = 0
+
+# Memory settings
+temp_buffers = 8MB
+max_prepared_transactions = 0
+
+# Query settings
+default_statistics_target = 100
+random_page_cost = 1.1
+effective_io_concurrency = 0
+
+# Replication settings
+hot_standby = on
+hot_standby_feedback = on
+wal_receiver_status_interval = 10s
+hot_standby_feedback = on
+
+# Archive settings (optional)
+archive_mode = off
+archive_command = ''
+
+# pgraft specific replication settings
+pgraft.replication_enabled = true
+pgraft.replication_slots = true
+pgraft.synchronous_commit = on
+pgraft.synchronous_standby_names = 'replica1,replica2'
