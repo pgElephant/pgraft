@@ -352,24 +352,15 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 	nodesMutex.Unlock()
 	log.Printf("pgraft: INFO - Self node registered: %d -> %s", nodeID, nodes[uint64(nodeID)])
 
-	// For cluster formation: all nodes start with same configuration
-	// For restarts: nodes should join existing cluster as followers
+	// Start as single-node cluster initially
+	// Peers will be added dynamically via ConfChange operations by cluster management
 	var peers []raft.Peer
+	peers = []raft.Peer{{ID: uint64(nodeID)}}
+	log.Printf("pgraft: INFO - Node %d starting as single-node cluster, peers will be added via cluster management", nodeID)
 	
-	// Check if this appears to be a restart (existing cluster) scenario
-	// In a real implementation, this would check persistent storage
-	// For now, we'll use the same initialization but ensure proper rejoining
-	peers = []raft.Peer{
-		{ID: 1}, // Node 1
-		{ID: 2}, // Node 2  
-		{ID: 3}, // Node 3
-	}
-	log.Printf("pgraft: INFO - Node %d initializing with cluster configuration: %v", nodeID, peers)
-	
-	// Always use StartNode for consistent cluster formation
-	// The network layer will handle proper follower transition
+	// Start the Raft node - peers will be added by the cluster management layer
 	raftNode = raft.StartNode(raftConfig, peers)
-	log.Printf("pgraft: INFO - Node %d started, will discover current leader via network", nodeID)
+	log.Printf("pgraft: INFO - Node %d initialized, waiting for cluster management to add peers", nodeID)
 
 	// Initialize context before using it
 	raftCtx, raftCancel = context.WithCancel(context.Background())
