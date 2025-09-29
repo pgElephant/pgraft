@@ -25,8 +25,6 @@
 #include "../include/pgraft_guc.h"
 
 /* Function declarations */
-void pgraft_go_init_shared_memory(void);
-void pgraft_worker_init_shared_memory(void);
 /* Forward declarations */
 static int pgraft_init_system(int node_id, const char *address, int port);
 static int pgraft_add_node_system(int node_id, const char *address, int port);
@@ -202,8 +200,8 @@ pgraft_main(Datum main_arg)
 	}
 	elog(LOG, "pgraft: Worker state obtained successfully");
 
-	/* Initialize worker state */
-	state->status = WORKER_STATUS_RUNNING;
+	/* Initialize worker state and set to RUNNING */
+	state->status = WORKER_STATUS_RUNNING; // Set to RUNNING immediately to keep worker alive
 	elog(LOG, "pgraft: Worker status set to RUNNING");
 
 	/* Log startup */
@@ -217,9 +215,16 @@ pgraft_main(Datum main_arg)
 				 state->command_count, state->command_head, state->command_tail);
 		}
 		
-		/* Update shared memory with current Go library state every 10 iterations */
-		if (sleep_count % 10 == 0) {
+		/* Update shared memory with current Go library state every 5 iterations */
+		/* Only update if Go library is loaded */
+		if (sleep_count % 5 == 0 && pgraft_go_is_loaded()) {
 			pgraft_update_shared_memory_from_go();
+		}
+		
+		/* Trigger heartbeat every 10 iterations to ensure heartbeats are sent */
+		/* Only trigger if Go library is loaded */
+		if (sleep_count % 10 == 0 && pgraft_go_is_loaded()) {
+			pgraft_go_trigger_heartbeat();
 		}
 		
 		/* Process commands from queue */
@@ -260,6 +265,8 @@ pgraft_main(Datum main_arg)
 								"Failed to add node %d to pgraft system", cmd.node_id);
 					} else {
 						cmd.status = COMMAND_STATUS_COMPLETED;
+						/* Add delay between node additions to prevent configuration conflicts */
+						pg_usleep(2000000); /* 2 second delay */
 					}
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
 					break;
@@ -420,6 +427,13 @@ pgraft_init_system(int node_id, const char *address, int port)
 	}
 	elog(LOG, "pgraft: Go Raft goroutines started successfully");
 
+	/* Start network server */
+	if (pgraft_go_start_network_server(port) != 0) {
+		elog(WARNING, "pgraft: Failed to start network server");
+		return -1;
+	}
+	elog(LOG, "pgraft: Network server started successfully");
+
 	return 0;
 }
 
@@ -433,7 +447,9 @@ pgraft_update_shared_memory_from_go(void)
 	pgraft_cluster_t *shm_cluster;
 	pgraft_go_get_leader_func get_leader_func;
 	pgraft_go_get_term_func get_term_func;
-	
+	int64_t current_leader;
+	int32_t current_term;
+
 	/* Only update if Go library is loaded */
 	if (!pgraft_go_is_loaded()) {
 		return;
@@ -454,9 +470,6 @@ pgraft_update_shared_memory_from_go(void)
 	}
 	
 	/* Get current state from Go library */
-	int64_t current_leader;
-	int32_t current_term;
-	
 	current_leader = get_leader_func();
 	current_term = get_term_func();
 	
@@ -507,11 +520,22 @@ pgraft_add_node_system(int node_id, const char *address, int port)
 	if (pgraft_go_is_loaded()) {
 		add_peer_func = pgraft_go_get_add_peer_func();
 		if (add_peer_func) {
-			if (add_peer_func(node_id, (char *)address, port) != 0) {
-				elog(WARNING, "pgraft: Failed to add node %d to Go Raft library", node_id);
-				return -1;
+			/* Retry adding to Go Raft library up to 3 times */
+			int retry_count;
+			for (retry_count = 0; retry_count < 3; retry_count++) {
+				if (add_peer_func(node_id, (char *)address, port) == 0) {
+					elog(LOG, "pgraft: Node %d added to Go Raft library", node_id);
+					break;
+				}
+				if (retry_count < 2) {
+					elog(WARNING, "pgraft: Failed to add node %d to Go Raft library (attempt %d), retrying...", 
+						 node_id, retry_count + 1);
+					pg_usleep(1000000); /* 1 second delay between retries */
+				} else {
+					elog(WARNING, "pgraft: Failed to add node %d to Go Raft library after 3 attempts", node_id);
+					return -1;
+				}
 			}
-			elog(LOG, "pgraft: Node %d added to Go Raft library", node_id);
 		}
 	}
 

@@ -40,6 +40,7 @@ class NodeConfig:
     data_dir: str
     config_file: str
     metrics_port: int
+    go_library_path: str # New field for Go library path
 
 
 class PgraftClusterManager:
@@ -58,7 +59,8 @@ class PgraftClusterManager:
                 pgraft_port=7001,
                 data_dir=str(self.base_dir / 'primary1'),
                 config_file='primary1.conf',
-                metrics_port=9091
+                metrics_port=9091,
+                go_library_path='/usr/local/pgsql.17/lib/pgraft_go.dylib'
             ),
             'replica1': NodeConfig(
                 name='replica1',
@@ -66,7 +68,8 @@ class PgraftClusterManager:
                 pgraft_port=7002,
                 data_dir=str(self.base_dir / 'replica1'),
                 config_file='replica1.conf',
-                metrics_port=9092
+                metrics_port=9092,
+                go_library_path='/usr/local/pgsql.17/lib/pgraft_go.dylib'
             ),
             'replica2': NodeConfig(
                 name='replica2',
@@ -74,7 +77,8 @@ class PgraftClusterManager:
                 pgraft_port=7003,
                 data_dir=str(self.base_dir / 'replica2'),
                 config_file='replica2.conf',
-                metrics_port=9093
+                metrics_port=9093,
+                go_library_path='/usr/local/pgsql.17/lib/pgraft_go.dylib'
             )
         }
         self.processes: Dict[str, subprocess.Popen] = {}
@@ -284,6 +288,9 @@ class PgraftClusterManager:
                 str(node_log_dir / 'pgraft.log')
             )
             
+            # Set pgraft.go_library_path GUC
+            config_content += f"\npgraft.go_library_path = '{node.go_library_path}'\n"
+
             # Write the updated config
             with open(config_dst, 'w') as f:
                 f.write(config_content)

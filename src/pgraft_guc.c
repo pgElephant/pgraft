@@ -277,6 +277,19 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL,
 							NULL);
+
+	/* Go library configuration */
+	DefineCustomStringVariable("pgraft.go_library_path",
+							   "Path to the Go Raft library",
+							   "Default path to the Go Raft shared library",
+							   &pgraft_go_library_path,
+							   NULL, /* Default will be set dynamically */
+							   PGC_POSTMASTER,
+							   0,
+							   NULL,
+							   NULL,
+							   NULL);
+	
 }
 
 /*
@@ -327,18 +340,6 @@ void
 pgraft_guc_init(void)
 {
 	elog(DEBUG1, "pgraft: Initializing GUC variables");
-	/* Go library configuration */
-	DefineCustomStringVariable("pgraft.go_library_path",
-							   "Path to the Go Raft library",
-							   "Default path to the Go Raft shared library",
-							   &pgraft_go_library_path,
-							   NULL, /* Default will be set dynamically */
-							   PGC_POSTMASTER,
-							   0,
-							   NULL,
-							   NULL,
-							   NULL);
-
 	/* GUC variables are automatically registered by DefineCustom*Variable */
 }
 

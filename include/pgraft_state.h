@@ -46,6 +46,7 @@ typedef struct pgraft_go_state
 /* State management functions */
 void		pgraft_state_init_shared_memory(void);
 pgraft_go_state_t *pgraft_state_get_shared_memory(void);
+void		pgraft_worker_init_shared_memory(void);
 
 /* Go state persistence functions */
 void		pgraft_state_save_go_library_state(void);

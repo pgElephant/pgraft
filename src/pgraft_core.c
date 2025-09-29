@@ -177,8 +177,6 @@ int
 pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 {
 	pgraft_cluster_t *shm_cluster;
-	pgraft_go_get_leader_func get_leader_func;
-	pgraft_go_get_term_func get_term_func;
 	
 	elog(LOG, "pgraft: pgraft_core_get_cluster_state called");
 	
@@ -198,8 +196,8 @@ pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 	if (!shm_cluster->initialized)
 	{
 		SpinLockRelease(&shm_cluster->mutex);
-		elog(LOG, "pgraft: Core system not initialized in shared memory, trying Go library");
-		/* Don't return -1, continue to try Go library */
+		elog(LOG, "pgraft: Core system not initialized in shared memory.");
+		/* Zero out the cluster struct to represent an uninitialized state */
 		memset(cluster, 0, sizeof(pgraft_cluster_t));
 	}
 	else

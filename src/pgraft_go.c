@@ -19,6 +19,8 @@
 #include "../include/pgraft_state.h"
 #include "../include/pgraft_guc.h"
 
+#define DEFAULT_GO_LIB_PATH "/usr/local/pgsql.17/lib/pgraft_go.dylib"
+
 /* Function declarations */
 static int pgraft_go_load_symbols(void);
 static int pgraft_go_check_version(void);
@@ -40,6 +42,7 @@ static pgraft_go_version_func pgraft_go_version_ptr = NULL;
 static pgraft_go_test_func pgraft_go_test_ptr = NULL;
 static pgraft_go_set_debug_func pgraft_go_set_debug_ptr = NULL;
 static pgraft_go_start_network_server_func pgraft_go_start_network_server_ptr = NULL;
+static pgraft_go_trigger_heartbeat_func pgraft_go_trigger_heartbeat_ptr = NULL;
 static pgraft_go_free_string_func pgraft_go_free_string_ptr = NULL;
 static pgraft_go_update_cluster_state_func pgraft_go_update_cluster_state_ptr = NULL;
 
@@ -49,68 +52,44 @@ static pgraft_go_update_cluster_state_func pgraft_go_update_cluster_state_ptr = 
 int
 pgraft_go_load_library(void)
 {
-	char		lib_path[MAXPGPATH];
-	const char *custom_path;
-	const char *pg_libdir;
-	
+	char	   *lib_path_to_load;
+	char	   *error;
+
 	/* Check if already loaded in this process */
 	if (go_lib_handle != NULL)
 	{
 		elog(DEBUG1, "pgraft: Go library already loaded in this process");
 		return 0; /* Already loaded */
 	}
-	
-	/* Use custom path if provided via GUC */
-	custom_path = pgraft_go_library_path;
-	if (custom_path != NULL && strlen(custom_path) > 0)
+
+	/* Determine library path */
+	lib_path_to_load = pgraft_go_library_path;
+	if (lib_path_to_load == NULL || strlen(lib_path_to_load) == 0)
 	{
-		/* Verify custom path exists */
-		if (access(custom_path, R_OK) != 0)
-		{
-			elog(ERROR, "pgraft: Go library path does not exist or is not readable: %s", custom_path);
-			return -1;
-		}
-		strlcpy(lib_path, custom_path, sizeof(lib_path));
-		elog(LOG, "pgraft: Using custom Go library path: %s", lib_path);
+		/* Fallback to default path if GUC is not set */
+		lib_path_to_load = DEFAULT_GO_LIB_PATH;
+		elog(LOG, "pgraft: pgraft.go_library_path GUC is empty, using default path: %s", lib_path_to_load);
 	}
-	else
-	{
-		/* Get PostgreSQL library directory */
-		pg_libdir = pkglib_path;
-		if (pg_libdir == NULL)
-		{
-			elog(ERROR, "pgraft: PostgreSQL library directory not found");
-			return -1;
-		}
-		
-		/* Build OS-specific library name */
-#ifdef __APPLE__
-		snprintf(lib_path, sizeof(lib_path), "%s/pgraft_go.dylib", pg_libdir);
-#else
-		snprintf(lib_path, sizeof(lib_path), "%s/pgraft_go.so", pg_libdir);
-#endif
-		elog(LOG, "pgraft: Using default Go library path: %s", lib_path);
-	}
-	
+
 	/* Verify library exists before loading */
-	if (access(lib_path, R_OK) != 0)
+	if (access(lib_path_to_load, R_OK) != 0)
 	{
-		elog(ERROR, "pgraft: Go library does not exist or is not readable: %s", lib_path);
+		elog(ERROR, "pgraft: Go library does not exist or is not readable: %s", lib_path_to_load);
 		return -1;
 	}
-	
-	elog(LOG, "pgraft: Loading Go library from %s", lib_path);
-	
+
+	elog(LOG, "pgraft: Attempting to load Go library from %s", lib_path_to_load);
+
 	/* Load the library */
-	go_lib_handle = dlopen(lib_path, RTLD_LAZY | RTLD_GLOBAL);
+	go_lib_handle = dlopen(lib_path_to_load, RTLD_LAZY | RTLD_GLOBAL);
 	if (go_lib_handle == NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load Go library from %s: %s", lib_path, dlerror());
+		elog(ERROR, "pgraft: Failed to load Go library from %s: %s", lib_path_to_load, dlerror());
 		return -1;
 	}
-	
+
 	elog(LOG, "pgraft: Go library loaded successfully");
-	
+
 	/* Load function symbols with proper error handling */
 	if (pgraft_go_load_symbols() != 0)
 	{
@@ -118,7 +97,7 @@ pgraft_go_load_library(void)
 		go_lib_handle = NULL;
 		return -1;
 	}
-	
+
 	/* Verify version compatibility */
 	if (pgraft_go_check_version() != 0)
 	{
@@ -126,12 +105,12 @@ pgraft_go_load_library(void)
 		go_lib_handle = NULL;
 		return -1;
 	}
-	
+
 	/* Update shared memory state */
 	pgraft_state_set_go_lib_loaded(true);
-	
+
 	elog(INFO, "pgraft: Go library loaded successfully");
-	
+
 	return 0;
 }
 
@@ -418,10 +397,11 @@ pgraft_go_load_symbols(void)
 	pgraft_go_test_ptr = (pgraft_go_test_func) dlsym(go_lib_handle, "pgraft_go_test");
 	pgraft_go_set_debug_ptr = (pgraft_go_set_debug_func) dlsym(go_lib_handle, "pgraft_go_set_debug");
 	pgraft_go_start_network_server_ptr = (pgraft_go_start_network_server_func) dlsym(go_lib_handle, "pgraft_go_start_network_server");
+	pgraft_go_trigger_heartbeat_ptr = (pgraft_go_trigger_heartbeat_func) dlsym(go_lib_handle, "pgraft_go_trigger_heartbeat");
 	pgraft_go_free_string_ptr = (pgraft_go_free_string_func) dlsym(go_lib_handle, "pgraft_go_free_string");
 	pgraft_go_update_cluster_state_ptr = (pgraft_go_update_cluster_state_func) dlsym(go_lib_handle, "pgraft_go_update_cluster_state");
 	
-	elog(LOG, "pgraft: All Go library symbols loaded successfully");
+   	elog(LOG, "pgraft: All Go library symbols loaded successfully");
 	return 0;
 }
 
@@ -458,4 +438,25 @@ pgraft_go_check_version(void)
 	}
 	
 	return 0;
+}
+
+/*
+ * Trigger heartbeat manually
+ */
+int
+pgraft_go_trigger_heartbeat(void)
+{
+	if (!pgraft_go_is_loaded())
+	{
+		elog(ERROR, "pgraft: Go library not loaded");
+		return -1;
+	}
+	
+	if (pgraft_go_trigger_heartbeat_ptr == NULL)
+	{
+		elog(ERROR, "pgraft: Heartbeat trigger function not available");
+		return -1;
+	}
+	
+	return pgraft_go_trigger_heartbeat_ptr();
 }
