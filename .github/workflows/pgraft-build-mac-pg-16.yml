@@ -61,6 +61,13 @@ jobs:
 
       - name: Build pgraft
         run: |
+          # Ensure correct PostgreSQL is in PATH
+          export PATH="${PG_PREFIX}/bin:$PATH"
+          
+          # Verify we're using the right pg_config
+          which pg_config
+          pg_config --version
+          
           # Use macOS-specific Makefile
           make -f Makefile.macos PG_CONFIG=${PG_CONFIG} clean || true
           make -f Makefile.macos PG_CONFIG=${PG_CONFIG} all 2>&1 | tee build.log

@@ -20,21 +20,23 @@ jobs:
           # Get Homebrew prefix (handles both Intel and Apple Silicon)
           BREW_PREFIX=$(brew --prefix)
           PG_PREFIX=$(brew --prefix postgresql@17)
+          PG_BIN="${PG_PREFIX}/bin"
           
           echo "BREW_PREFIX=${BREW_PREFIX}" >> $GITHUB_ENV
           echo "PG_PREFIX=${PG_PREFIX}" >> $GITHUB_ENV
           echo "PG_CONFIG=${PG_PREFIX}/bin/pg_config" >> $GITHUB_ENV
           
-          echo "Homebrew prefix: ${BREW_PREFIX}"
-          echo "PostgreSQL prefix: ${PG_PREFIX}"
+          # Set PATH to use correct PostgreSQL first
+          echo "${PG_BIN}" >> $GITHUB_PATH
+          
+          echo "PostgreSQL 17 prefix: ${PG_PREFIX}"
+          echo "PostgreSQL 17 bin: ${PG_BIN}"
 
       - name: Verify PostgreSQL installation
         run: |
-          export PATH="${PG_PREFIX}/bin:$PATH"
           which pg_config
           pg_config --version
-          pg_config --includedir
-          pg_config --libdir
+          pg_config --includedir-server
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -65,6 +67,13 @@ jobs:
 
       - name: Build pgraft
         run: |
+          # Ensure correct PostgreSQL is in PATH
+          export PATH="${PG_PREFIX}/bin:$PATH"
+          
+          # Verify we're using the right pg_config
+          which pg_config
+          pg_config --version
+          
           # Use macOS-specific Makefile
           make -f Makefile.macos PG_CONFIG=${PG_CONFIG} clean || true
           make -f Makefile.macos PG_CONFIG=${PG_CONFIG} all 2>&1 | tee build.log
