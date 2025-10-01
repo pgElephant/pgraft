@@ -4,6 +4,7 @@
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://pgelephant.github.io/pgraft/)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/PROJECT_ID_HERE)](https://app.codacy.com/gh/pgElephant/pgraft/dashboard)
 
 ## Build Status
 

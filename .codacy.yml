@@ -1,0 +1,46 @@
+---
+# Codacy configuration for pgraft
+# PostgreSQL extension with C and Go code
+
+engines:
+  # Enable code complexity analysis
+  duplication:
+    enabled: true
+    exclude_paths:
+      - 'docs/**'
+      - 'examples/**'
+      - 'site/**'
+      - '**/*.sql'
+  
+  metrics:
+    enabled: true
+  
+  # C/C++ static analysis
+  cppcheck:
+    enabled: true
+  
+  # Go static analysis
+  golint:
+    enabled: true
+  
+  govet:
+    enabled: true
+  
+  # Shell script analysis
+  shellcheck:
+    enabled: true
+
+exclude_paths:
+  - 'docs/**'
+  - 'site/**'
+  - 'examples/**'
+  - '**/venv/**'
+  - '**/__pycache__/**'
+  - 'src/go.mod'
+  - 'src/go.sum'
+  - '**/*.md'
+  - 'BUILD_GUIDE.md'
+  - 'DEPLOY_GUIDE.md'
+  - 'SAVE_WORK.md'
+  - 'WORKFLOWS_SUMMARY.md'
+
