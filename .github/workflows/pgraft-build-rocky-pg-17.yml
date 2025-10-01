@@ -17,6 +17,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Update DNF cache
+        run: |
+          dnf clean all
+          dnf makecache --refresh || dnf makecache
+
       - name: Install build dependencies
         run: |
           dnf install -y \
@@ -24,8 +29,7 @@ jobs:
             make \
             wget \
             gnupg2 \
-            perl \
-            perl-IPC-Run
+            perl
 
       - name: Install PostgreSQL 17
         run: |
