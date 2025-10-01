@@ -1,166 +1,31 @@
 # Build artifacts
-build/
-bin/
-lib/
-*.a
 *.o
-*.d
-*.so
-*.so.*
-*.dylib
-*.la
-*.lo
-*.log
-log*
-# C/C++ build artifacts
-*.bc
-*.gcno
-*.gcda
-*.gcov
-*.prof
-*.gprof
-
-# Go build artifacts
-*.exe
-*.exe~
-*.test
-*.out
-vendor/
-go.sum
-
-# Go module files (keep go.mod for dependencies)
-# go.mod - commented out to keep dependency tracking
-go.work
-go.work.sum
-
-# Go specific
-*.go~
-*.go.bak
-
-# pgraft Go library build artifacts
-src/pgraft_go.dylib
-src/pgraft_go.so
-src/pgraft_go.h
-src/*.dylib
-src/*.so
-
-# Executables
-raled/raled
-raled/raled_config
-ralectrl/ralectrl
-ramd/ramd
-ramctrl/ramctrl
-
-# Autotools generated files
-config.log
-config.status
-config.cache
-configure
-aclocal.m4
-autom4te.cache/
-Makefile
-!pgraft/Makefile
-Makefile.in
-.deps/
-.libs/
-compile
-depcomp
-install-sh
-ltmain.sh
-missing
-stamp-h1
-libtool
-
-# Pkg-config files
-librale/librale.pc
-pgraft/pgraft.pc
-
-# PostgreSQL extension files
-pgraft/*.so
-pgraft/*.dylib
-pgraft/src/*.o
-pgraft/src/*.bc
-pgraft/Makefile.in
-
-# pgraft specific build artifacts
+*.a
 *.dylib
 *.so
-src/*.o
-src/*.bc
-libpgraft.a
-libpgraft.pc
+*.pch
+build.log
 
-# Backup files
-*.backup
-*.bak
-*~
+# Documentation build
+site/
 
-# CMake generated files (if used)
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-CTestTestfile.cmake
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
 
-# IDE files
+# macOS
+.DS_Store
+
+# Editor
 .vscode/
 .idea/
 *.swp
 *.swo
-*.vim
-.project
-.cproject
-.settings/
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Logs and runtime files
-*.log
-log/
-logs/
-*.pid
-*.lock
-
-# Database and data files
-db*/
-data/
-*.db
-*.sqlite
-
-# Core dumps and debug files
-core
-core.*
-*.dSYM/
-*.su
-*.idb
-*.pdb
+*~
 
 # Test artifacts
-regression/db*/
-regression/log*/
-regression/*.out
-regression/tmp/
-
-# Documentation build
-docs/build/
-docs/_build/
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-
-# CircleCI artifacts
-.circleci/artifacts/
-.circleci/test-results/
-
-# CodeQL artifacts
-.codeql/
-codeql-databases/
-*.sarif
+examples/data/
+examples/logs/
+examples/*.log

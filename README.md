@@ -3,8 +3,18 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17+-blue.svg)](https://postgresql.org/)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)]()
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://pgelephant.github.io/pgraft/)
 
-**pgraft** is a PostgreSQL extension that implements the Raft consensus algorithm for distributed PostgreSQL clusters. It provides automatic leader election, log replication, and 100% split-brain protection.
+**pgraft** is a production-ready PostgreSQL extension that implements the Raft consensus algorithm for distributed PostgreSQL clusters. It provides automatic leader election, log replication, and 100% split-brain protection using the battle-tested etcd-io/raft library.
+
+## Quick Links
+
+- **[Documentation](https://pgelephant.github.io/pgraft/)** - Complete documentation site
+- **[Quick Start Guide](https://pgelephant.github.io/pgraft/getting-started/quick-start/)** - Get running in minutes
+- **[Architecture](https://pgelephant.github.io/pgraft/concepts/architecture/)** - How pgraft works
+- **[SQL Functions](https://pgelephant.github.io/pgraft/user-guide/sql-functions/)** - Complete API reference
+- **[Contributing](CONTRIBUTING.md)** - How to contribute
 
 ## Key Features
 
@@ -492,12 +502,41 @@ cd examples
 
 MIT License - see LICENSE file for details.
 
-## Support
+## Documentation
 
-For issues, questions, or contributions, please visit the project repository.
+**Complete documentation is available at: https://pgelephant.github.io/pgraft/**
+
+### Documentation Sections
+
+- **[Getting Started](https://pgelephant.github.io/pgraft/getting-started/)** - Installation and quick start
+- **[User Guide](https://pgelephant.github.io/pgraft/user-guide/)** - Complete tutorial and configuration
+- **[Core Concepts](https://pgelephant.github.io/pgraft/concepts/)** - Architecture and algorithms
+- **[Operations](https://pgelephant.github.io/pgraft/operations/)** - Monitoring and best practices
+- **[Development](https://pgelephant.github.io/pgraft/development/)** - Building and contributing
+
+## Community and Support
+
+- **Documentation**: [https://pgelephant.github.io/pgraft/](https://pgelephant.github.io/pgraft/)
+- **Issues**: [GitHub Issues](https://github.com/pgelephant/pgraft/issues)
+- **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
+- **License**: [MIT License](LICENSE)
+
+## Project Status
+
+**Status**: Production Ready  
+**Version**: 1.0.0  
+**Standards**: 100% PostgreSQL C Compliant  
+**Quality**: 0 compilation errors/warnings
+
+## Related Projects
+
+- **[etcd-io/raft](https://github.com/etcd-io/raft)** - Raft consensus implementation used by pgraft
+- **[PostgreSQL](https://www.postgresql.org/)** - The world's most advanced open source database
+
+## Keywords
+
+PostgreSQL extension, Raft consensus, distributed database, high availability, leader election, log replication, split-brain protection, distributed systems, database clustering, fault tolerance, PostgreSQL HA, PostgreSQL cluster, database replication, consensus algorithm
 
 ---
 
-**Version**: 1.0.0  
-**Build**: Production Ready  
-**Standards**: 100% PostgreSQL C Compliant
+Made with care for the PostgreSQL community
