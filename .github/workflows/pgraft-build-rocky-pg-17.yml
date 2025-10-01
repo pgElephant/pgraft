@@ -35,6 +35,10 @@ jobs:
             gnupg2 \
             perl
 
+      - name: Install perl-IPC-Run from EPEL
+        run: |
+          dnf install -y perl-IPC-Run
+
       - name: Install PostgreSQL 17
         run: |
           dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm

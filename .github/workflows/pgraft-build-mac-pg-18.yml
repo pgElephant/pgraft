@@ -22,8 +22,7 @@ jobs:
             zlib \
             ossp-uuid \
             perl \
-            python@3.13 \
-            tcl-tk
+            python@3.13
           
           # Verify critical dependencies
           echo "OpenSSL: $(brew --prefix openssl@3)"
@@ -43,7 +42,8 @@ jobs:
           git clone --branch REL_18_STABLE --depth 1 https://github.com/postgres/postgres.git /tmp/postgresql-18
           cd /tmp/postgresql-18
           
-          # Configure with all dependencies (matching manual build)
+          # Configure with essential dependencies for pgraft testing
+          # Note: Removed --with-tcl to avoid libtommath dependency issues
           ./configure \
             --prefix=/usr/local/pgsql.18 \
             --enable-debug \
@@ -55,7 +55,6 @@ jobs:
             --with-libxslt \
             --with-perl \
             --with-python \
-            --with-tcl \
             --with-zlib \
             --without-icu
           
