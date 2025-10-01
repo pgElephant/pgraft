@@ -1,6 +1,6 @@
 # pgraft - PostgreSQL Raft Consensus Extension
 
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16--18-blue.svg)](https://postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-blue.svg)](https://postgresql.org/)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://pgelephant.github.io/pgraft/)
@@ -14,6 +14,8 @@
 | **Rocky** | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-16.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-16.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-17.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-17.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-18.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-18.yml) |
 
 **pgraft** is a production-ready PostgreSQL extension that implements the Raft consensus algorithm for distributed PostgreSQL clusters. It provides automatic leader election, log replication, and 100% split-brain protection using the battle-tested etcd-io/raft library.
+
+**Supported PostgreSQL versions**: 16, 17, 18 (requires PostgreSQL 15+ features)
 
 ## Quick Links
 
