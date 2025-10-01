@@ -26,6 +26,7 @@ extern const char *_GoStringPtr(_GoString_ s);
 
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef struct pgraft_go_config {

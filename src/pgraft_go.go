@@ -15,6 +15,7 @@ package main
 #cgo CFLAGS: -I/usr/local/pgsql.17/include/server
 #cgo LDFLAGS: -L/usr/local/pgsql.17/lib
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef struct pgraft_go_config {

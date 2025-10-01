@@ -35,6 +35,8 @@ static int pgraft_log_commit_system(int log_index);
 static int pgraft_log_apply_system(int log_index);
 static void pgraft_update_shared_memory_from_go(void);
 
+/* Extension cleanup function */
+void _PG_fini(void);
 
 PG_MODULE_MAGIC;
 
