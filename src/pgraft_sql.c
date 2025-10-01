@@ -92,63 +92,53 @@ pgraft_init(PG_FUNCTION_ARGS)
 	
 	/* Handle data_dir (prefer new parameter, generate default if not set) */
 	data_dir = pgraft_data_dir;
-	if (!data_dir || strlen(data_dir) == 0) {
-		/* Use PostgreSQL-style path in temp directory */
+	if (!data_dir || strlen(data_dir) == 0)
+	{
 		data_dir = psprintf("/tmp/pgraft/node_%d", config.node_id);
-		elog(INFO, "pgraft: pgraft.data_dir not set, using default: %s", data_dir);
 	}
 	config.data_dir = data_dir;
 	
-	/* Validate required configuration */
-	if (!config.address || strlen(config.address) == 0) {
-		elog(ERROR, "pgraft: pgraft.address must be set (similar to etcd listen-peer-urls)");
+	if (!config.address || strlen(config.address) == 0)
+	{
+		elog(ERROR, "pgraft: pgraft.address must be set");
 		PG_RETURN_BOOL(false);
 	}
 	
-	if (config.port < 1024 || config.port > 65535) {
+	if (config.port < 1024 || config.port > 65535)
+	{
 		elog(ERROR, "pgraft: pgraft.port must be between 1024 and 65535");
 		PG_RETURN_BOOL(false);
 	}
 	
-	/* Validate configuration (calls etcd-style validation) */
 	pgraft_validate_configuration();
 	
-	elog(INFO, "pgraft: Initializing node %d (cluster: %s) at %s:%d", 
-		 config.node_id, config.cluster_id, config.address, config.port);
-	elog(INFO, "pgraft: etcd-style config: election_timeout=%dms, heartbeat_interval=%dms, data_dir=%s",
-		 config.election_timeout, config.heartbeat_interval, config.data_dir);
-	
-	/* Load Go library if not already loaded */
-	if (!pgraft_go_is_loaded()) {
-		elog(INFO, "pgraft: Loading Go library...");
-		if (pgraft_go_load_library() != 0) {
+	if (!pgraft_go_is_loaded())
+	{
+		if (pgraft_go_load_library() != 0)
+		{
 			elog(ERROR, "pgraft: Failed to load Go library");
 			PG_RETURN_BOOL(false);
 		}
 	}
 	
-	/* Initialize with configuration */
 	result = pgraft_go_init_with_config(&config);
-	if (result != 0) {
+	if (result != 0)
+	{
 		elog(ERROR, "pgraft: Failed to initialize raft node");
 		PG_RETURN_BOOL(false);
 	}
 	
-	elog(INFO, "pgraft: Node initialized successfully");
-	
-	/* Start the raft node */
 	result = pgraft_go_start();
-	if (result != 0) {
+	if (result != 0)
+	{
 		elog(ERROR, "pgraft: Failed to start raft node");
 		PG_RETURN_BOOL(false);
 	}
 	
-	elog(INFO, "pgraft: Raft consensus started successfully");
-	
-	/* Start network server */
 	result = pgraft_go_start_network_server(config.port);
-	if (result != 0) {
-		elog(WARNING, "pgraft: Failed to start network server (may already be running)");
+	if (result != 0)
+	{
+		elog(WARNING, "pgraft: Failed to start network server");
 	}
 	
     PG_RETURN_BOOL(true);
@@ -210,42 +200,31 @@ pgraft_add_node(PG_FUNCTION_ARGS)
 		PG_RETURN_BOOL(false);
 	}
 	
-	/* Check if this node is the leader */
 	leader_status = pgraft_go_is_leader();
-	if (leader_status < 0) {
-		elog(ERROR, "pgraft: Cannot add node - raft consensus not ready. "
-			"Please wait a moment after initialization and try again.");
+	if (leader_status < 0)
+	{
+		elog(ERROR, "pgraft: Cannot add node - raft consensus not ready");
 		PG_RETURN_BOOL(false);
 	}
-	if (leader_status == 0) {
-		elog(ERROR, "pgraft: Cannot add node - this node is not the leader. "
-			"Node addition must be performed on the leader. "
-			"Current leader can be found with pgraft_get_leader()");
+	if (leader_status == 0)
+	{
+		elog(ERROR, "pgraft: Cannot add node - this node is not the leader");
 		PG_RETURN_BOOL(false);
 	}
 	
-	elog(INFO, "pgraft: Adding node %d at %s:%d (leader-only operation)", 
-		 node_id, address, port);
-	elog(INFO, "pgraft: Configuration change will automatically propagate to all cluster members");
-	
-	/* Get add_peer function from Go library */
 	add_peer_func = pgraft_go_get_add_peer_func();
-	if (add_peer_func == NULL) {
-		elog(ERROR, "pgraft: Failed to get add_peer function from Go library");
+	if (add_peer_func == NULL)
+	{
+		elog(ERROR, "pgraft: Failed to get add_peer function");
 		PG_RETURN_BOOL(false);
 	}
 	
-	/* Call Go library to add peer (will propose ConfChange to raft) */
 	result = add_peer_func(node_id, address, port);
-	if (result != 0) {
-		elog(ERROR, "pgraft: Failed to add node %d - Go library returned error %d", 
-			 node_id, result);
+	if (result != 0)
+	{
+		elog(ERROR, "pgraft: Failed to add node %d", node_id);
 		PG_RETURN_BOOL(false);
 	}
-	
-	elog(INFO, "pgraft: Node %d added successfully. Configuration change committed to raft log.", 
-		 node_id);
-	elog(INFO, "pgraft: All cluster members will automatically receive and apply this change");
     PG_RETURN_BOOL(true);
 }
 
@@ -255,27 +234,28 @@ pgraft_add_node(PG_FUNCTION_ARGS)
 Datum
 pgraft_remove_node(PG_FUNCTION_ARGS)
 {
-    int32_t node_id = PG_GETARG_INT32(0);
-    
-    elog(INFO, "pgraft: Removing node %d", node_id);
-    
-    /* Remove from core system */
-    if (pgraft_core_remove_node(node_id) != 0) {
-        elog(ERROR, "pgraft: Failed to remove node from core system");
-        PG_RETURN_BOOL(false);
-    }
-    
-    /* Remove from Go library if loaded */
-    if (pgraft_go_is_loaded()) {
-        pgraft_go_remove_peer_func remove_peer_func = pgraft_go_get_remove_peer_func();
-        if (remove_peer_func && remove_peer_func(node_id) != 0) {
-            elog(ERROR, "pgraft: Failed to remove node from Go library");
-            PG_RETURN_BOOL(false);
-        }
-    }
-    
-    elog(INFO, "pgraft: Node removed successfully");
-    PG_RETURN_BOOL(true);
+	int32_t node_id;
+	pgraft_go_remove_peer_func remove_peer_func;
+	
+	node_id = PG_GETARG_INT32(0);
+	
+	if (pgraft_core_remove_node(node_id) != 0)
+	{
+		elog(ERROR, "pgraft: Failed to remove node from core system");
+		PG_RETURN_BOOL(false);
+	}
+	
+	if (pgraft_go_is_loaded())
+	{
+		remove_peer_func = pgraft_go_get_remove_peer_func();
+		if (remove_peer_func && remove_peer_func(node_id) != 0)
+		{
+			elog(ERROR, "pgraft: Failed to remove node from Go library");
+			PG_RETURN_BOOL(false);
+		}
+	}
+	
+	PG_RETURN_BOOL(true);
 }
 
 
@@ -357,31 +337,36 @@ pgraft_get_nodes_table(PG_FUNCTION_ARGS)
 	
 	MemoryContextSwitchTo(oldcontext);
 	
-	/* Get cluster state and worker state from shared memory */
 	if (pgraft_core_get_cluster_state(&cluster_state))
 	{
 		worker_state = pgraft_worker_get_state();
 		
-		if (worker_state)
+		if (worker_state && pgraft_go_is_loaded())
 		{
-			/* For now, return the current node information */
-			/* TODO: This should be expanded to return all nodes in the cluster */
-			Datum		values[4];
-			bool		nulls[4];
-			HeapTuple	tuple;
-			
-			values[0] = Int32GetDatum(worker_state->node_id);
-			values[1] = CStringGetTextDatum(worker_state->address);
-			values[2] = Int32GetDatum(worker_state->port);
-			values[3] = BoolGetDatum(cluster_state.leader_id == (int64_t)worker_state->node_id);
-			
-			/* Set nulls */
-			memset(nulls, 0, sizeof(nulls));
-			
-			/* Build and return tuple */
-			tuple = heap_form_tuple(tupdesc, values, nulls);
-			tuplestore_puttuple(tupstore, tuple);
-			heap_freetuple(tuple);
+			pgraft_go_get_nodes_func get_nodes_func = pgraft_go_get_get_nodes_func();
+			if (get_nodes_func)
+			{
+				char *nodes_json = get_nodes_func();
+				if (nodes_json && strcmp(nodes_json, "[]") != 0)
+				{
+					Datum		values[4];
+					bool		nulls[4];
+					HeapTuple	tuple;
+					
+					values[0] = Int32GetDatum(worker_state->node_id);
+					values[1] = CStringGetTextDatum(worker_state->address);
+					values[2] = Int32GetDatum(worker_state->port);
+					values[3] = BoolGetDatum(cluster_state.leader_id == (int64_t)worker_state->node_id);
+					
+					memset(nulls, 0, sizeof(nulls));
+					
+					tuple = heap_form_tuple(tupdesc, values, nulls);
+					tuplestore_puttuple(tupstore, tuple);
+					heap_freetuple(tuple);
+					
+					pgraft_go_free_string(nodes_json);
+				}
+			}
 		}
 	}
 	
@@ -396,19 +381,13 @@ Datum
 pgraft_get_leader(PG_FUNCTION_ARGS)
 {
 	pgraft_cluster_t cluster_state;
-	int64_t leader_id = -1;
+	int64_t leader_id;
 	
-	elog(INFO, "pgraft: pgraft_get_leader() function called");
+	leader_id = -1;
 	
-	/* Get cluster state from shared memory */
 	if (pgraft_core_get_cluster_state(&cluster_state) == 0)
 	{
 		leader_id = cluster_state.leader_id;
-		elog(INFO, "pgraft: Got leader ID from shared memory: %lld", (long long)leader_id);
-	}
-	else
-	{
-		elog(WARNING, "pgraft: Failed to get cluster state from shared memory");
 	}
 	
 	PG_RETURN_INT64(leader_id);
@@ -421,19 +400,13 @@ Datum
 pgraft_get_term(PG_FUNCTION_ARGS)
 {
 	pgraft_cluster_t cluster_state;
-	int32_t term = 0;
+	int32_t term;
 	
-	elog(INFO, "pgraft: pgraft_get_term() function called");
+	term = 0;
 	
-	/* Get cluster state from shared memory */
 	if (pgraft_core_get_cluster_state(&cluster_state) == 0)
 	{
 		term = (int32_t)cluster_state.current_term;
-		elog(INFO, "pgraft: Got term from shared memory: %d", term);
-	}
-	else
-	{
-		elog(WARNING, "pgraft: Failed to get cluster state from shared memory");
 	}
 	
 	PG_RETURN_INT32(term);
@@ -447,30 +420,17 @@ pgraft_is_leader(PG_FUNCTION_ARGS)
 {
 	pgraft_cluster_t cluster_state;
 	pgraft_worker_state_t *worker_state;
-	bool is_leader = false;
+	bool is_leader;
 	
-	elog(INFO, "pgraft: pgraft_is_leader() function called");
+	is_leader = false;
 	
-	/* Get cluster state from shared memory */
 	if (pgraft_core_get_cluster_state(&cluster_state) == 0)
 	{
 		worker_state = pgraft_worker_get_state();
-		
 		if (worker_state)
 		{
-			/* Check if current node is the leader */
 			is_leader = (cluster_state.leader_id == (int64_t)worker_state->node_id);
-			elog(INFO, "pgraft: Got leader status from shared memory: %s (leader_id=%lld, node_id=%d)", 
-				 is_leader ? "true" : "false", (long long)cluster_state.leader_id, worker_state->node_id);
 		}
-		else
-		{
-			elog(WARNING, "pgraft: Failed to get worker state from shared memory");
-		}
-	}
-	else
-	{
-		elog(WARNING, "pgraft: Failed to get cluster state from shared memory");
 	}
 	
 	PG_RETURN_BOOL(is_leader);
@@ -483,8 +443,6 @@ Datum
 pgraft_get_worker_state(PG_FUNCTION_ARGS)
 {
 	pgraft_worker_state_t *state;
-	
-	elog(INFO, "pgraft: pgraft_get_worker_state() function called");
 	
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
@@ -563,7 +521,6 @@ pgraft_set_debug(PG_FUNCTION_ARGS)
         }
     }
     
-    elog(INFO, "pgraft: Debug mode %s", debug_enabled ? "enabled" : "disabled");
     PG_RETURN_BOOL(true);
 }
 
@@ -581,7 +538,6 @@ pgraft_log_append(PG_FUNCTION_ARGS)
     text *data_text = PG_GETARG_TEXT_PP(1);
     char *data = text_to_cstring(data_text);
     
-    elog(INFO, "pgraft: Queuing LOG_APPEND command for term %lld", (long long)term);
     
     /* Queue LOG_APPEND command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_APPEND, data, (int)term)) {
@@ -589,7 +545,6 @@ pgraft_log_append(PG_FUNCTION_ARGS)
         PG_RETURN_BOOL(false);
     }
     
-    elog(INFO, "pgraft: LOG_APPEND command queued successfully - background worker will process it");
     PG_RETURN_BOOL(true);
 }
 
@@ -601,7 +556,6 @@ pgraft_log_commit(PG_FUNCTION_ARGS)
 {
     int64_t index = PG_GETARG_INT64(0);
     
-    elog(INFO, "pgraft: Queuing LOG_COMMIT command for index %lld", (long long)index);
     
     /* Queue LOG_COMMIT command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_COMMIT, NULL, (int)index)) {
@@ -609,7 +563,6 @@ pgraft_log_commit(PG_FUNCTION_ARGS)
         PG_RETURN_BOOL(false);
     }
     
-    elog(INFO, "pgraft: LOG_COMMIT command queued successfully - background worker will process it");
     PG_RETURN_BOOL(true);
 }
 
@@ -621,7 +574,6 @@ pgraft_log_apply(PG_FUNCTION_ARGS)
 {
     int64_t index = PG_GETARG_INT64(0);
     
-    elog(INFO, "pgraft: Queuing LOG_APPLY command for index %lld", (long long)index);
     
     /* Queue LOG_APPLY command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_APPLY, NULL, (int)index)) {
@@ -629,7 +581,6 @@ pgraft_log_apply(PG_FUNCTION_ARGS)
         PG_RETURN_BOOL(false);
     }
     
-    elog(INFO, "pgraft: LOG_APPLY command queued successfully - background worker will process it");
     PG_RETURN_BOOL(true);
 }
 
@@ -817,7 +768,6 @@ pgraft_log_sync_with_leader_sql(PG_FUNCTION_ARGS)
         PG_RETURN_BOOL(false);
     }
     
-    elog(INFO, "pgraft: Synced with leader successfully");
     PG_RETURN_BOOL(true);
 }
 
@@ -827,32 +777,44 @@ pgraft_log_sync_with_leader_sql(PG_FUNCTION_ARGS)
 Datum
 pgraft_replicate_entry_func(PG_FUNCTION_ARGS)
 {
-    text *data_text = PG_GETARG_TEXT_PP(0);
-    char *data = text_to_cstring(data_text);
-    int data_len = strlen(data);
-    
-    elog(INFO, "pgraft: Replicating entry via Raft: %s", data);
-    
-    if (pgraft_go_is_loaded()) {
-        // Use the Go function to replicate the log entry
-        pgraft_go_replicate_log_entry_func replicate_func = pgraft_go_get_replicate_log_entry_func();
-        if (replicate_func) {
-            int result = replicate_func(data, data_len);
-            if (result == 1) {
-                elog(INFO, "pgraft: Log entry replicated successfully");
-                PG_RETURN_BOOL(true);
-            } else {
-                elog(WARNING, "pgraft: Failed to replicate log entry");
-                PG_RETURN_BOOL(false);
-            }
-        } else {
-            elog(ERROR, "pgraft: Replicate function not available");
-            PG_RETURN_BOOL(false);
-        }
-    } else {
-        elog(ERROR, "pgraft: Go library not loaded");
-        PG_RETURN_BOOL(false);
-    }
+	text *data_text;
+	char *data;
+	int data_len;
+	pgraft_go_replicate_log_entry_func replicate_func;
+	int result;
+	
+	data_text = PG_GETARG_TEXT_PP(0);
+	data = text_to_cstring(data_text);
+	data_len = strlen(data);
+	
+	
+	if (pgraft_go_is_loaded())
+	{
+		replicate_func = pgraft_go_get_replicate_log_entry_func();
+		if (replicate_func)
+		{
+			result = replicate_func(data, data_len);
+			if (result == 1)
+			{
+				PG_RETURN_BOOL(true);
+			}
+			else
+			{
+				elog(WARNING, "pgraft: Failed to replicate log entry");
+				PG_RETURN_BOOL(false);
+			}
+		}
+		else
+		{
+			elog(ERROR, "pgraft: Replicate function not available");
+			PG_RETURN_BOOL(false);
+		}
+	}
+	else
+	{
+		elog(ERROR, "pgraft: Go library not loaded");
+		PG_RETURN_BOOL(false);
+	}
 }
 
 /* Network worker functions removed - handled automatically by background worker */

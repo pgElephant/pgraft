@@ -184,151 +184,153 @@ pgraft_register_worker(void)
 PGDLLEXPORT void
 pgraft_main(Datum main_arg)
 {
-	/* Variable declarations at the top - PostgreSQL C standard */
 	pgraft_worker_state_t *state;
 	pgraft_command_t cmd;
-	int sleep_count = 0;
+	int sleep_count;
+	int tick_result;
 	
-	/* Debug logging */
+	sleep_count = 0;
+	
 	elog(LOG, "pgraft: Background worker main function started");
 	
-	/* Set up signal handling */
 	BackgroundWorkerUnblockSignals();
-	
 	elog(LOG, "pgraft: Background worker signal handling set up");
 	
-	/* Get worker state */
 	state = pgraft_worker_get_state();
-	if (state == NULL) {
+	if (state == NULL)
+	{
 		elog(ERROR, "pgraft: Failed to get worker state in background worker");
 		return;
 	}
 	elog(LOG, "pgraft: Worker state obtained successfully");
 
-	/* Initialize worker state and set to RUNNING */
-	state->status = WORKER_STATUS_RUNNING; // Set to RUNNING immediately to keep worker alive
+	state->status = WORKER_STATUS_RUNNING;
 	elog(LOG, "pgraft: Worker status set to RUNNING");
-
-	/* Log startup */
 	elog(LOG, "pgraft: Background worker started and running");
 
-	/* Main worker loop - process command queue */
-	while (state->status != WORKER_STATUS_STOPPED) {
-		/* Debug: Log command count every loop iteration */
-		if (sleep_count % 5 == 0) {
+	while (state->status != WORKER_STATUS_STOPPED)
+	{
+		if (sleep_count % 5 == 0)
+		{
 			elog(LOG, "pgraft: Worker loop - command_count=%d, head=%d, tail=%d", 
 				 state->command_count, state->command_head, state->command_tail);
 		}
 		
-		/* CRITICAL: Call Raft tick on every iteration (100ms) */
-		/* This is the worker-driven model where C actively drives Raft progress */
-		if (pgraft_go_is_loaded()) {
-			int tick_result = pgraft_go_tick();
-			if (sleep_count % 20 == 0) {
+		if (pgraft_go_is_loaded())
+		{
+			tick_result = pgraft_go_tick();
+			if (sleep_count % 20 == 0)
+			{
 				elog(LOG, "pgraft: Calling tick... result=%d", tick_result);
 			}
 		}
 		
 		/* Update shared memory with current Go library state every 5 iterations */
 		/* Only update if Go library is loaded */
-		if (sleep_count % 5 == 0 && pgraft_go_is_loaded()) {
+		if (sleep_count % 5 == 0 && pgraft_go_is_loaded())
+		{
 			pgraft_update_shared_memory_from_go();
 		}
 		
-		/* Trigger heartbeat every 10 iterations to ensure heartbeats are sent */
-		/* Only trigger if Go library is loaded */
-		if (sleep_count % 10 == 0 && pgraft_go_is_loaded()) {
-			/* Trigger heartbeat - ignore errors as function may not be available yet */
+		if (sleep_count % 10 == 0 && pgraft_go_is_loaded())
+		{
 			(void) pgraft_go_trigger_heartbeat();
 		}
 		
-		/* Process commands from queue */
-		if (pgraft_dequeue_command(&cmd)) {
+		if (pgraft_dequeue_command(&cmd))
+		{
 			elog(LOG, "pgraft: Worker processing command %d for node %d", cmd.type, cmd.node_id);
 			
-			/* Add to status tracking */
 			pgraft_add_command_to_status(&cmd);
-			
-			/* Mark as processing */
 			cmd.status = COMMAND_STATUS_PROCESSING;
 			
-			switch (cmd.type) {
+			switch (cmd.type)
+			{
 				case COMMAND_INIT:
-					/* Call init function */
-					if (pgraft_init_system(cmd.node_id, cmd.address, cmd.port) != 0) {
+					if (pgraft_init_system(cmd.node_id, cmd.address, cmd.port) != 0)
+					{
 						cmd.status = COMMAND_STATUS_FAILED;
 						strncpy(cmd.error_message, "Failed to initialize pgraft system", 
 								sizeof(cmd.error_message) - 1);
-					} else {
-						/* Update worker state */
+					}
+					else
+					{
 						state->node_id = cmd.node_id;
 						strncpy(state->address, cmd.address, sizeof(state->address) - 1);
 						state->address[sizeof(state->address) - 1] = '\0';
 						state->port = cmd.port;
 						state->status = WORKER_STATUS_RUNNING;
-						
 						cmd.status = COMMAND_STATUS_COMPLETED;
 					}
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
 					break;
 					
 				case COMMAND_ADD_NODE:
-					/* Call add node function */
-					if (pgraft_add_node_system(cmd.node_id, cmd.address, cmd.port) != 0) {
+					if (pgraft_add_node_system(cmd.node_id, cmd.address, cmd.port) != 0)
+					{
 						cmd.status = COMMAND_STATUS_FAILED;
 						snprintf(cmd.error_message, sizeof(cmd.error_message), 
 								"Failed to add node %d to pgraft system", cmd.node_id);
-					} else {
+					}
+					else
+					{
 						cmd.status = COMMAND_STATUS_COMPLETED;
-						/* Add delay between node additions to prevent configuration conflicts */
-						pg_usleep(2000000); /* 2 second delay */
+						pg_usleep(2000000);
 					}
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
 					break;
 					
 				case COMMAND_REMOVE_NODE:
-					/* Call remove node function */
-					if (pgraft_remove_node_system(cmd.node_id) != 0) {
+					if (pgraft_remove_node_system(cmd.node_id) != 0)
+					{
 						cmd.status = COMMAND_STATUS_FAILED;
 						snprintf(cmd.error_message, sizeof(cmd.error_message), 
 								"Failed to remove node %d from pgraft system", cmd.node_id);
-					} else {
+					}
+					else
+					{
 						cmd.status = COMMAND_STATUS_COMPLETED;
 					}
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
 					break;
 					
 				case COMMAND_LOG_APPEND:
-					/* Call log append function */
-					if (pgraft_log_append_system(cmd.log_data, cmd.log_index) != 0) {
+					if (pgraft_log_append_system(cmd.log_data, cmd.log_index) != 0)
+					{
 						cmd.status = COMMAND_STATUS_FAILED;
 						snprintf(cmd.error_message, sizeof(cmd.error_message), 
 								"Failed to append log entry at index %d", cmd.log_index);
-					} else {
+					}
+					else
+					{
 						cmd.status = COMMAND_STATUS_COMPLETED;
 					}
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
 					break;
 					
 				case COMMAND_LOG_COMMIT:
-					/* Call log commit function */
-					if (pgraft_log_commit_system(cmd.log_index) != 0) {
+					if (pgraft_log_commit_system(cmd.log_index) != 0)
+					{
 						cmd.status = COMMAND_STATUS_FAILED;
 						snprintf(cmd.error_message, sizeof(cmd.error_message), 
 								"Failed to commit log entry at index %d", cmd.log_index);
-					} else {
+					}
+					else
+					{
 						cmd.status = COMMAND_STATUS_COMPLETED;
 					}
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
 					break;
 					
 				case COMMAND_LOG_APPLY:
-					/* Call log apply function */
-					if (pgraft_log_apply_system(cmd.log_index) != 0) {
+					if (pgraft_log_apply_system(cmd.log_index) != 0)
+					{
 						cmd.status = COMMAND_STATUS_FAILED;
 						snprintf(cmd.error_message, sizeof(cmd.error_message), 
 								"Failed to apply log entry at index %d", cmd.log_index);
-					} else {
+					}
+					else
+					{
 						cmd.status = COMMAND_STATUS_COMPLETED;
 					}
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
@@ -351,18 +353,16 @@ pgraft_main(Datum main_arg)
 			}
 		}
 
-		/* Sleep for a short time to avoid busy waiting */
-		pg_usleep(1000000); /* 1 second */
-		
-		/* Log every 10 seconds to show we're alive */
+		pg_usleep(100000);
 		sleep_count++;
-		if (sleep_count >= 10) {
+		
+		if (sleep_count >= 10)
+		{
 			elog(LOG, "pgraft: Background worker running... (alive check)");
 			sleep_count = 0;
 		}
 	}
 
-	/* Cleanup */
 	state->status = WORKER_STATUS_STOPPED;
 	elog(LOG, "pgraft: Background worker stopped");
 }
@@ -405,45 +405,45 @@ pgraft_worker_get_state(void)
 static int
 pgraft_init_system(int node_id, const char *address, int port)
 {
-	/* Variable declarations at the top - PostgreSQL C standard */
 	pgraft_go_init_func init_func;
 
-	/* Initialize core system */
-	if (pgraft_core_init(node_id, (char *)address, port) != 0) {
+	if (pgraft_core_init(node_id, (char *)address, port) != 0)
+	{
 		elog(WARNING, "pgraft: Failed to initialize core system");
 		return -1;
 	}
 	elog(LOG, "pgraft: Core system initialized");
 
-	/* Load Go library */
-	if (pgraft_go_load_library() != 0) {
+	if (pgraft_go_load_library() != 0)
+	{
 		elog(WARNING, "pgraft: Failed to load Go library");
 		return -1;
 	}
 	elog(LOG, "pgraft: Go library loaded");
 
-	/* Initialize Go Raft library */
 	init_func = pgraft_go_get_init_func();
-	if (!init_func) {
+	if (!init_func)
+	{
 		elog(WARNING, "pgraft: Failed to get Go init function");
 		return -1;
 	}
 
-	if (init_func(node_id, (char *)address, port) != 0) {
+	if (init_func(node_id, (char *)address, port) != 0)
+	{
 		elog(WARNING, "pgraft: Failed to initialize Go Raft library");
 		return -1;
 	}
 	elog(LOG, "pgraft: Go Raft library initialized");
 
-	/* Start Go Raft goroutines */
-	if (pgraft_go_start() != 0) {
+	if (pgraft_go_start() != 0)
+	{
 		elog(WARNING, "pgraft: Failed to start Go Raft goroutines");
 		return -1;
 	}
 	elog(LOG, "pgraft: Go Raft goroutines started successfully");
 
-	/* Start network server */
-	if (pgraft_go_start_network_server(port) != 0) {
+	if (pgraft_go_start_network_server(port) != 0)
+	{
 		elog(WARNING, "pgraft: Failed to start network server");
 		return -1;
 	}
@@ -454,7 +454,6 @@ pgraft_init_system(int node_id, const char *address, int port)
 
 /*
  * Update shared memory with current state from Go library
- * This function is called by the background worker to keep shared memory in sync
  */
 static void
 pgraft_update_shared_memory_from_go(void)
@@ -465,18 +464,14 @@ pgraft_update_shared_memory_from_go(void)
 	int64_t current_leader;
 	int32_t current_term;
 
-	/* Only update if Go library is loaded */
-	if (!pgraft_go_is_loaded()) {
+	if (!pgraft_go_is_loaded())
 		return;
-	}
 	
-	/* Get function pointers */
 	get_leader_func = pgraft_go_get_get_leader_func();
 	get_term_func = pgraft_go_get_get_term_func();
 	
-	if (!get_leader_func || !get_term_func) {
+	if (!get_leader_func || !get_term_func)
 		return;
-	}
 	
 	/* Get shared memory */
 	shm_cluster = pgraft_core_get_shared_memory();
@@ -521,32 +516,36 @@ pgraft_update_shared_memory_from_go(void)
 static int
 pgraft_add_node_system(int node_id, const char *address, int port)
 {
-	/* Variable declarations at the top - PostgreSQL C standard */
 	pgraft_go_add_peer_func add_peer_func;
+	int retry_count;
 
-	/* Add to core system */
-	if (pgraft_core_add_node(node_id, (char *)address, port) != 0) {
+	if (pgraft_core_add_node(node_id, (char *)address, port) != 0)
+	{
 		elog(WARNING, "pgraft: Failed to add node %d to core system", node_id);
 		return -1;
 	}
 	elog(LOG, "pgraft: Node %d added to core system", node_id);
 
-	/* Add to Go Raft library if loaded */
-	if (pgraft_go_is_loaded()) {
+	if (pgraft_go_is_loaded())
+	{
 		add_peer_func = pgraft_go_get_add_peer_func();
-		if (add_peer_func) {
-			/* Retry adding to Go Raft library up to 3 times */
-			int retry_count;
-			for (retry_count = 0; retry_count < 3; retry_count++) {
-				if (add_peer_func(node_id, (char *)address, port) == 0) {
+		if (add_peer_func)
+		{
+			for (retry_count = 0; retry_count < 3; retry_count++)
+			{
+				if (add_peer_func(node_id, (char *)address, port) == 0)
+				{
 					elog(LOG, "pgraft: Node %d added to Go Raft library", node_id);
 					break;
 				}
-				if (retry_count < 2) {
+				if (retry_count < 2)
+				{
 					elog(WARNING, "pgraft: Failed to add node %d to Go Raft library (attempt %d), retrying...", 
 						 node_id, retry_count + 1);
-					pg_usleep(1000000); /* 1 second delay between retries */
-				} else {
+					pg_usleep(1000000);
+				}
+				else
+				{
 					elog(WARNING, "pgraft: Failed to add node %d to Go Raft library after 3 attempts", node_id);
 					return -1;
 				}

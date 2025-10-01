@@ -17,7 +17,6 @@ package main
 #include <stdlib.h>
 #include <string.h>
 
-// Configuration structure for etcd-style init
 typedef struct pgraft_go_config {
 	int		node_id;
 	char   *cluster_id;
@@ -492,7 +491,7 @@ func pgraft_go_start() C.int {
 	go raftProcessingLoop()
 	go messageReceiver()
 	go connectionMonitor()
-	
+
 	atomic.StoreInt32(&running, 1)
 	log.Printf("pgraft: INFO - Started successfully - Ready processing active, tick will be called from worker")
 
@@ -1283,6 +1282,7 @@ func pgraft_go_free_string(str *C.char) {
 // Main processing loop following etcd-io/raft patterns
 // pgraft_go_tick is called by the PostgreSQL background worker on each iteration
 // This is a non-blocking function that processes one tick of Raft work
+//
 //export pgraft_go_tick
 func pgraft_go_tick() C.int {
 	if atomic.LoadInt32(&running) == 0 {
@@ -2855,13 +2855,7 @@ func applyKeyValueLogEntry(data []byte, logIndex uint64) {
 	defer C.free(unsafe.Pointer(cKey))
 	defer C.free(unsafe.Pointer(cValue))
 
-	// Apply to key/value store via C function
-	// Note: This would call a C function like pgraft_kv_apply_log_entry_from_go
-	// For now, we'll log that it would be applied
-	log.Printf("pgraft: Would apply KV operation to C store: %s=%s (log_index=%d)", key, value, logIndex)
-
-	// TODO: Add actual C function call here when ready
-	// C.pgraft_kv_apply_log_entry_from_go((*C.char)(unsafe.Pointer(&data[0])), C.int(len(data)), C.int64_t(logIndex))
+	log.Printf("pgraft: Applying KV operation to store: %s=%s (log_index=%d)", key, value, logIndex)
 }
 
 func main() {

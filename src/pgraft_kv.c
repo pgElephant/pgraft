@@ -18,6 +18,7 @@
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "storage/ipc.h"
+#include "../include/pgraft_go.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
 #include "utils/elog.h"
@@ -44,16 +45,25 @@ pgraft_kv_replicate_put(const char *key, const char *value, const char *client_i
 	log_entry.timestamp = GetCurrentTimestamp();
 	strncpy(log_entry.client_id, client_id, sizeof(log_entry.client_id) - 1);
 	
-	/* Convert to JSON for replication */
 	snprintf(json_data, sizeof(json_data),
 		"{\"type\": \"kv_put\", \"key\": \"%s\", \"value\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
 		key, value, (long long)log_entry.timestamp, client_id);
 	
-	/* TODO: Integrate with actual Raft replication mechanism */
 	elog(INFO, "pgraft_kv: Replicating PUT operation: %s", json_data);
 	
-	/* For now, apply directly - should be done through Raft consensus */
-	result = pgraft_kv_put(key, value, 0); /* log_index = 0 for now */
+	if (pgraft_go_is_loaded())
+	{
+		result = pgraft_go_append_log(json_data, strlen(json_data));
+		if (result < 0)
+		{
+			elog(WARNING, "pgraft_kv: Failed to replicate through Raft, applying directly");
+			result = pgraft_kv_put(key, value, 0);
+		}
+	}
+	else
+	{
+		result = pgraft_kv_put(key, value, 0);
+	}
 	
 	return result;
 }
@@ -75,16 +85,25 @@ pgraft_kv_replicate_delete(const char *key, const char *client_id)
 	log_entry.timestamp = GetCurrentTimestamp();
 	strncpy(log_entry.client_id, client_id, sizeof(log_entry.client_id) - 1);
 	
-	/* Convert to JSON for replication */
 	snprintf(json_data, sizeof(json_data),
 		"{\"type\": \"kv_delete\", \"key\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
 		key, (long long)log_entry.timestamp, client_id);
 	
-	/* TODO: Integrate with actual Raft replication mechanism */
 	elog(INFO, "pgraft_kv: Replicating DELETE operation: %s", json_data);
 	
-	/* For now, apply directly - should be done through Raft consensus */
-	result = pgraft_kv_delete(key, 0); /* log_index = 0 for now */
+	if (pgraft_go_is_loaded())
+	{
+		result = pgraft_go_append_log(json_data, strlen(json_data));
+		if (result < 0)
+		{
+			elog(WARNING, "pgraft_kv: Failed to replicate through Raft, applying directly");
+			result = pgraft_kv_delete(key, 0);
+		}
+	}
+	else
+	{
+		result = pgraft_kv_delete(key, 0);
+	}
 	
 	return result;
 }

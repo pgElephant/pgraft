@@ -38,6 +38,7 @@ static pgraft_go_remove_peer_func pgraft_go_remove_peer_ptr = NULL;
 static pgraft_go_get_leader_func pgraft_go_get_leader_ptr = NULL;
 static pgraft_go_get_term_func pgraft_go_get_term_ptr = NULL;
 static pgraft_go_is_leader_func pgraft_go_is_leader_ptr = NULL;
+static pgraft_go_append_log_func pgraft_go_append_log_ptr = NULL;
 static pgraft_go_get_nodes_func pgraft_go_get_nodes_ptr = NULL;
 static pgraft_go_version_func pgraft_go_version_ptr = NULL;
 static pgraft_go_test_func pgraft_go_test_ptr = NULL;
@@ -478,12 +479,18 @@ pgraft_go_load_symbols(void)
 	dlerror(); /* Clear any existing error */
 	pgraft_go_remove_peer_ptr = (pgraft_go_remove_peer_func) dlsym(go_lib_handle, "pgraft_go_remove_peer");
 	
-	dlerror(); /* Clear error */
+	dlerror();
 	pgraft_go_is_leader_ptr = (pgraft_go_is_leader_func) dlsym(go_lib_handle, "pgraft_go_is_leader");
 	if (pgraft_go_is_leader_ptr != NULL) {
 		elog(DEBUG1, "pgraft: is_leader function loaded successfully");
 	} else {
 		elog(WARNING, "pgraft: is_leader function not found in library");
+	}
+	
+	dlerror();
+	pgraft_go_append_log_ptr = (pgraft_go_append_log_func) dlsym(go_lib_handle, "pgraft_go_append_log");
+	if (pgraft_go_append_log_ptr == NULL) {
+		elog(DEBUG1, "pgraft: append_log function not found (optional)");
 	}
 	
 	dlerror(); /* Clear error */
@@ -575,22 +582,64 @@ pgraft_go_tick(void)
 {
 	typedef int (*pgraft_go_tick_func)(void);
 	static pgraft_go_tick_func tick_func = NULL;
+	static bool load_attempted = false;
+	char *error;
 	
 	if (!pgraft_go_is_loaded())
 	{
 		return -1;
 	}
 	
-	/* Load the function pointer on first call */
-	if (tick_func == NULL)
+	if (tick_func == NULL && !load_attempted)
 	{
+		load_attempted = true;
+		dlerror();
 		tick_func = (pgraft_go_tick_func) dlsym(go_lib_handle, "pgraft_go_tick");
 		if (tick_func == NULL)
 		{
-			/* Function not available - this is OK during early startup */
+			error = dlerror();
+			elog(WARNING, "pgraft: Failed to load pgraft_go_tick: %s", error ? error : "unknown error");
 			return -1;
 		}
+		elog(LOG, "pgraft: pgraft_go_tick function loaded successfully");
+	}
+	
+	if (tick_func == NULL)
+	{
+		return -1;
 	}
 	
 	return tick_func();
+}
+
+int
+pgraft_go_append_log(char *data, int length)
+{
+	if (!pgraft_go_is_loaded())
+	{
+		elog(ERROR, "pgraft: Go library not loaded");
+		return -1;
+	}
+	
+	if (pgraft_go_append_log_ptr == NULL)
+	{
+		elog(ERROR, "pgraft: append_log function not available");
+		return -1;
+	}
+	
+	return pgraft_go_append_log_ptr(data, length);
+}
+
+void
+pgraft_go_free_string(char *str)
+{
+	if (!pgraft_go_is_loaded())
+	{
+		return;
+	}
+	
+	if (pgraft_go_free_string_ptr != NULL)
+	{
+		pgraft_go_free_string_ptr(str);
+	}
 }

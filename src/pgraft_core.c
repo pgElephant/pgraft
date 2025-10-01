@@ -18,8 +18,6 @@
 #include "../include/pgraft_core.h"
 #include "../include/pgraft_go.h"
 
-/* No global variables - all state is in shared memory */
-
 /*
  * Initialize core consensus system
  */
@@ -28,7 +26,6 @@ pgraft_core_init(int32_t node_id, const char *address, int32_t port)
 {
 	pgraft_cluster_t *cluster;
 	
-	/* Get shared memory */
 	cluster = pgraft_core_get_shared_memory();
 	if (!cluster)
 	{
@@ -36,27 +33,24 @@ pgraft_core_init(int32_t node_id, const char *address, int32_t port)
 		return -1;
 	}
 	
-	/* Check if already initialized */
 	SpinLockAcquire(&cluster->mutex);
 	if (cluster->initialized)
 	{
 		SpinLockRelease(&cluster->mutex);
 		elog(INFO, "pgraft: Core system already initialized");
-		return 0;		/* Already initialized */
+		return 0;
 	}
 	
-	/* Initialize cluster state */
 	cluster->node_id = node_id;
 	cluster->current_term = 0;
 	cluster->leader_id = -1;
 	strncpy(cluster->state, "follower", sizeof(cluster->state) - 1);
 	cluster->state[sizeof(cluster->state) - 1] = '\0';
-	cluster->num_nodes = 1;		/* Start with 1 (current node) */
+	cluster->num_nodes = 1;
 	cluster->messages_processed = 0;
 	cluster->heartbeats_sent = 0;
 	cluster->elections_triggered = 0;
 	
-	/* Add current node to the nodes array */
 	cluster->nodes[0].id = node_id;
 	strncpy(cluster->nodes[0].address, address, sizeof(cluster->nodes[0].address) - 1);
 	cluster->nodes[0].address[sizeof(cluster->nodes[0].address) - 1] = '\0';
@@ -82,7 +76,6 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 	pgraft_cluster_t *cluster;
 	pgraft_node_t *node;
 	
-	/* Get shared memory */
 	cluster = pgraft_core_get_shared_memory();
 	if (!cluster)
 	{
@@ -90,7 +83,6 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 		return -1;
 	}
 	
-	/* Check if core system is initialized and acquire lock */
 	SpinLockAcquire(&cluster->mutex);
 	if (!cluster->initialized)
 	{
@@ -106,7 +98,6 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 		return -1;
 	}
 	
-	/* Add node to cluster */
 	node = &cluster->nodes[cluster->num_nodes];
 	node->id = node_id;
 	strncpy(node->address, address, sizeof(node->address) - 1);
@@ -133,7 +124,6 @@ pgraft_core_remove_node(int32_t node_id)
 	int			i;
 	int			j;
 	
-	/* Get shared memory */
 	cluster = pgraft_core_get_shared_memory();
 	if (!cluster)
 	{
@@ -141,7 +131,6 @@ pgraft_core_remove_node(int32_t node_id)
 		return -1;
 	}
 	
-	/* Check if core system is initialized */
 	SpinLockAcquire(&cluster->mutex);
 	if (!cluster->initialized)
 	{
@@ -150,12 +139,10 @@ pgraft_core_remove_node(int32_t node_id)
 		return -1;
 	}
 	
-	/* Find and remove node */
 	for (i = 0; i < cluster->num_nodes; i++)
 	{
 		if (cluster->nodes[i].id == node_id)
 		{
-			/* Shift remaining nodes */
 			for (j = i; j < cluster->num_nodes - 1; j++)
 				cluster->nodes[j] = cluster->nodes[j + 1];
 			cluster->num_nodes--;
@@ -186,18 +173,15 @@ pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 		return -1;
 	}
 	
-	/* Get shared memory */
 	shm_cluster = pgraft_core_get_shared_memory();
 	if (!shm_cluster)
 		return -1;
 	
-	/* Check if core system is initialized */
 	SpinLockAcquire(&shm_cluster->mutex);
 	if (!shm_cluster->initialized)
 	{
 		SpinLockRelease(&shm_cluster->mutex);
 		elog(LOG, "pgraft: Core system not initialized in shared memory.");
-		/* Zero out the cluster struct to represent an uninitialized state */
 		memset(cluster, 0, sizeof(pgraft_cluster_t));
 	}
 	else
@@ -207,10 +191,6 @@ pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 		elog(LOG, "pgraft: Got cluster state from shared memory: leader=%lld, term=%d", 
 			 (long long)cluster->leader_id, cluster->current_term);
 	}
-	
-	/* SQL functions should NEVER call Go library functions directly */
-	/* Only the background worker should call Go functions and update shared memory */
-	/* SQL functions should only read from shared memory */
 	
 	return 0;
 }
