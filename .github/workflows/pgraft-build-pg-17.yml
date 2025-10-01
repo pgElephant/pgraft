@@ -1,0 +1,89 @@
+name: pgraft-build-pg-17
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            gcc \
+            make \
+            wget \
+            gnupg \
+            ca-certificates
+
+      - name: Install PostgreSQL 17
+        run: |
+          echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install -y postgresql-17 postgresql-server-dev-17
+
+      - name: Verify PostgreSQL installation
+        run: |
+          which pg_config
+          pg_config --version
+          pg_config --includedir
+          pg_config --libdir
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Verify Go installation
+        run: |
+          go version
+          which go
+
+      - name: Download Go dependencies
+        run: |
+          cd src
+          go mod download
+          go mod verify
+
+      - name: Build pgraft
+        run: |
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
+          export PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config
+          make clean
+          make
+
+      - name: Verify build output
+        run: |
+          ls -lh *.so *.dylib *.a 2>/dev/null || true
+          if [ -f pgraft.so ]; then
+            echo "✓ Build successful: pgraft.so created"
+            file pgraft.so
+          elif [ -f pgraft.dylib ]; then
+            echo "✓ Build successful: pgraft.dylib created"
+            file pgraft.dylib
+          else
+            echo "✗ Build failed: No output files found"
+            exit 1
+          fi
+
+      - name: Check for build warnings
+        run: |
+          echo "Rebuild with warnings check..."
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
+          export PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config
+          make 2>&1 | tee build.log
+          if grep -i "warning:" build.log; then
+            echo "⚠ Warnings found in build"
+          else
+            echo "✓ No warnings in build"
+          fi
+
