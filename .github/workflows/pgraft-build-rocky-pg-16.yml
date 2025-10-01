@@ -17,6 +17,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Update DNF cache
+        run: |
+          dnf clean all
+          dnf makecache --refresh || dnf makecache
+
       - name: Install build dependencies
         run: |
           dnf install -y \
