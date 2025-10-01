@@ -61,7 +61,7 @@ jobs:
           PG_INCLUDEDIR=$(${PG_CONFIG} --includedir)
           PG_INCLUDEDIR_SERVER=$(${PG_CONFIG} --includedir-server)
           
-          echo "CGO_CFLAGS=-I${PG_INCLUDEDIR} -I${PG_INCLUDEDIR_SERVER}" >> $GITHUB_ENV
+          echo "CGO_CFLAGS=-I${PG_INCLUDEDIR} -I${PG_INCLUDEDIR_SERVER} -I/usr/include" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L${PG_LIBDIR}" >> $GITHUB_ENV
           echo "CGO_ENABLED=1" >> $GITHUB_ENV
           echo "PATH=${PG_BINDIR}:/usr/local/go/bin:$PATH" >> $GITHUB_ENV
