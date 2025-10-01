@@ -35,7 +35,7 @@ PG_INCLUDEDIR_SERVER := $(shell $(PG_CONFIG) --includedir-server)
 # Build Go Raft library with CGO flags
 $(GO_RAFT_LIB): src/pgraft_go.go src/go.mod
 	cd src && go mod tidy
-	cd src && CGO_CFLAGS="-I$(PG_INCLUDEDIR) -I$(PG_INCLUDEDIR_SERVER)" go build -buildmode=c-shared -o pgraft_go.dylib pgraft_go.go
+	cd src && CGO_ENABLED=1 CGO_CFLAGS="-I$(PG_INCLUDEDIR) -I$(PG_INCLUDEDIR_SERVER)" CGO_LDFLAGS="-L$(PG_LIBDIR)" go build -buildmode=c-shared -o pgraft_go.dylib pgraft_go.go
 
 # Dependencies
 $(OBJS): $(GO_RAFT_LIB)
