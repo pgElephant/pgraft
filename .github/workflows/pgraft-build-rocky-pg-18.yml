@@ -22,9 +22,10 @@ jobs:
           dnf clean all
           dnf makecache --refresh || dnf makecache
 
-      - name: Install EPEL repository
+      - name: Install EPEL repository and enable CRB
         run: |
           dnf install -y epel-release
+          dnf config-manager --set-enabled crb || /usr/bin/crb enable
 
       - name: Install build dependencies
         run: |
@@ -34,6 +35,10 @@ jobs:
             wget \
             gnupg2 \
             perl
+
+      - name: Install perl-IPC-Run from EPEL
+        run: |
+          dnf install -y perl-IPC-Run
 
       - name: Install PostgreSQL 18
         run: |
