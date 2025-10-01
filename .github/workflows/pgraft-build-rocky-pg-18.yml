@@ -22,6 +22,10 @@ jobs:
           dnf clean all
           dnf makecache --refresh || dnf makecache
 
+      - name: Install EPEL repository
+        run: |
+          dnf install -y epel-release
+
       - name: Install build dependencies
         run: |
           dnf install -y \
