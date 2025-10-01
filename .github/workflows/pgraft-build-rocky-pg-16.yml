@@ -70,19 +70,17 @@ jobs:
           /usr/local/go/bin/go mod download
           /usr/local/go/bin/go mod verify
 
-      - name: Patch Makefile for Rocky Linux
+      - name: Show Makefile being used
         run: |
-          cp Makefile Makefile.original
-          
-          sed -i "s|PG_CONFIG = /usr/local/pgsql.17/bin/pg_config|PG_CONFIG = ${PG_CONFIG}|g" Makefile
-          sed -i "s|/usr/local/pgsql.17/lib|${PG_LIBDIR}|g" Makefile
-          sed -i 's|pgraft_go.dylib|pgraft_go.so|g' Makefile
+          echo "Using Makefile.rocky with PG_CONFIG=${PG_CONFIG}"
+          head -20 Makefile.rocky
 
       - name: Build pgraft
         run: |
+          # Use Rocky-specific Makefile
           export PATH=${PG_BINDIR}:/usr/local/go/bin:$PATH
-          make clean || true
-          make all 2>&1 | tee build.log
+          make -f Makefile.rocky PG_CONFIG=${PG_CONFIG} clean || true
+          make -f Makefile.rocky PG_CONFIG=${PG_CONFIG} all 2>&1 | tee build.log
 
       - name: Verify build output
         run: |

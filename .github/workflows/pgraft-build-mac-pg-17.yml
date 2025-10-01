@@ -58,28 +58,16 @@ jobs:
           go mod download
           go mod verify
 
-      - name: Patch Makefile for macOS
+      - name: Show Makefile being used
         run: |
-          cp Makefile Makefile.original
-          
-          # Replace hardcoded paths with detected Homebrew paths
-          PG_BIN="${PG_PREFIX}/bin/pg_config"
-          PG_LIB="${PG_PREFIX}/lib"
-          
-          sed -i '' "s|PG_CONFIG = /usr/local/pgsql.17/bin/pg_config|PG_CONFIG = ${PG_BIN}|g" Makefile
-          sed -i '' "s|-L/usr/local/pgsql.17/lib|-L${PG_LIB}|g" Makefile
-          
-          echo "Detected paths:"
-          echo "  PG_CONFIG = ${PG_BIN}"
-          echo "  PG_LIB = ${PG_LIB}"
-          echo ""
-          echo "Makefile changes:"
-          diff -u Makefile.original Makefile || true
+          echo "Using Makefile.macos with PG_CONFIG=${PG_CONFIG}"
+          head -20 Makefile.macos
 
       - name: Build pgraft
         run: |
-          make clean || true
-          make all 2>&1 | tee build.log
+          # Use macOS-specific Makefile
+          make -f Makefile.macos PG_CONFIG=${PG_CONFIG} clean || true
+          make -f Makefile.macos PG_CONFIG=${PG_CONFIG} all 2>&1 | tee build.log
 
       - name: Verify build output
         run: |
