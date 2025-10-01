@@ -29,12 +29,6 @@ extra:
           data: 0
           note: Thanks for your feedback!
 
-# Additional metadata for SEO
-site_keywords: >-
-  PostgreSQL, Raft, consensus, distributed database, high availability,
-  split-brain protection, leader election, log replication, PostgreSQL extension,
-  distributed systems, database clustering, fault tolerance, etcd-raft
-
 theme:
   name: material
   language: en
