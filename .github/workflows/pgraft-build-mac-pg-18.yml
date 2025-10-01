@@ -11,20 +11,68 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install PostgreSQL 18
+      - name: Install ALL build dependencies for PostgreSQL
         run: |
-          brew install postgresql@18 || brew install postgresql
+          # Install all dependencies needed for PostgreSQL from source
+          brew install \
+            openssl@3 \
+            readline \
+            libxml2 \
+            libxslt \
+            zlib \
+            ossp-uuid \
+            perl \
+            python@3.13 \
+            tcl-tk
+          
+          # Verify critical dependencies
+          echo "OpenSSL: $(brew --prefix openssl@3)"
+          echo "Readline: $(brew --prefix readline)"
+          ls -la $(brew --prefix openssl@3)/lib/libssl.dylib
 
-      - name: Detect PostgreSQL paths
+      - name: Create installation directory with proper permissions
         run: |
-          BREW_PREFIX=$(brew --prefix)
-          PG_PREFIX=$(brew --prefix postgresql@18 || brew --prefix postgresql)
+          # Create /usr/local/pgsql.18 with proper ownership
+          sudo mkdir -p /usr/local/pgsql.18
+          sudo chown -R $(whoami):admin /usr/local/pgsql.18
+          echo "Created /usr/local/pgsql.18 with ownership: $(ls -ld /usr/local/pgsql.18)"
+
+      - name: Build PostgreSQL 18 from source
+        run: |
+          # Clone PostgreSQL 18
+          git clone --branch REL_18_STABLE --depth 1 https://github.com/postgres/postgres.git /tmp/postgresql-18
+          cd /tmp/postgresql-18
           
-          echo "BREW_PREFIX=${BREW_PREFIX}" >> $GITHUB_ENV
-          echo "PG_PREFIX=${PG_PREFIX}" >> $GITHUB_ENV
-          echo "PG_CONFIG=${PG_PREFIX}/bin/pg_config" >> $GITHUB_ENV
+          # Configure with all dependencies (matching manual build)
+          ./configure \
+            --prefix=/usr/local/pgsql.18 \
+            --enable-debug \
+            --with-includes=/opt/homebrew/opt/openssl@3/include \
+            --with-libraries=/opt/homebrew/opt/openssl@3/lib \
+            --with-openssl \
+            --with-uuid=e2fs \
+            --with-libxml \
+            --with-libxslt \
+            --with-perl \
+            --with-python \
+            --with-tcl \
+            --with-zlib \
+            --without-icu
           
-          echo "PostgreSQL 18 prefix: ${PG_PREFIX}"
+          # Build with all CPU cores
+          make -j$(sysctl -n hw.ncpu)
+          
+          # Install (no sudo needed - we own the directory)
+          make install
+          
+          # Verify installation
+          /usr/local/pgsql.18/bin/pg_config --version
+          
+          # Set up environment
+          echo "PG_PREFIX=/usr/local/pgsql.18" >> $GITHUB_ENV
+          echo "PG_CONFIG=/usr/local/pgsql.18/bin/pg_config" >> $GITHUB_ENV
+          
+          echo "PostgreSQL 18 built and installed to /usr/local/pgsql.18"
 
       - name: Verify PostgreSQL installation
         run: |
