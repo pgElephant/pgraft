@@ -3,7 +3,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-blue.svg)](https://postgresql.org/)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/PASTE_YOUR_PROJECT_ID_HERE)](https://www.codacy.com/gh/pgElephant/pgraft/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=pgElephant/pgraft&amp;utm_campaign=Badge_Grade)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/f9bfcf1114f946059578c2efc0b6a2fb)](https://app.codacy.com/gh/pgElephant/pgraft/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://pgelephant.github.io/pgraft/)
 
 ## Build Status

@@ -66,8 +66,8 @@ jobs:
 
       - name: Install Go
         run: |
-          wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-          tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+          wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+          tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
           echo "/usr/local/go/bin" >> $GITHUB_PATH
 
       - name: Set up build environment
