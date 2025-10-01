@@ -532,6 +532,10 @@ class PgraftClusterManager:
                 self.log(f"[{node_name}] - Failed to setup pgraft extension: {e}", "ERROR")
                 sys.exit(1)
         
+        # Wait for leader election before configuring peers
+        self.log("Waiting for leader election (10 seconds)...")
+        time.sleep(10)
+        
         # Configure cluster peers after all nodes are set up
         self.configure_cluster_peers()
     
@@ -585,7 +589,7 @@ class PgraftClusterManager:
                 
             except psycopg2.Error as e:
                 self.log(f"[{node_name}] - Failed to configure peers: {e}", "ERROR")
-                sys.exit(1)
+                # Don't exit on error - this is expected behavior if Raft isn't ready
 
     def verify_cluster(self) -> bool:
         """Verify cluster health and connectivity"""

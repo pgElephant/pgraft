@@ -16,18 +16,37 @@ package main
 #cgo LDFLAGS: -L/usr/local/pgsql.17/lib
 #include <stdlib.h>
 #include <string.h>
+
+// Configuration structure for etcd-style init
+typedef struct pgraft_go_config {
+	int		node_id;
+	char   *cluster_id;
+	char   *address;
+	int		port;
+	char   *data_dir;
+	int		election_timeout;
+	int		heartbeat_interval;
+	int		snapshot_interval;
+	int		max_log_entries;
+	int		batch_size;
+	int		max_batch_delay;
+} pgraft_go_config;
 */
 import "C"
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,10 +76,25 @@ type ClusterState struct {
 	CommitIndex uint64            `json:"commit_index"`
 }
 
+// PersistentStorage wraps MemoryStorage with disk persistence
+type PersistentStorage struct {
+	*raft.MemoryStorage
+	dataDir string
+	nodeID  uint64
+	mu      sync.RWMutex
+}
+
+// StorageState represents the persistent state
+type StorageState struct {
+	HardState raftpb.HardState `json:"hard_state"`
+	Entries   []raftpb.Entry   `json:"entries"`
+	Snapshot  *raftpb.Snapshot `json:"snapshot,omitempty"`
+}
+
 // Global state following etcd-io/raft patterns
 var (
 	raftNode    raft.Node
-	raftStorage *raft.MemoryStorage
+	raftStorage *PersistentStorage
 	raftConfig  *raft.Config
 	raftCtx     context.Context
 	raftCancel  context.CancelFunc
@@ -84,6 +118,249 @@ var (
 
 // Debug logging control
 var debugEnabled bool = false
+
+// NewPersistentStorage creates a new persistent storage
+func NewPersistentStorage(nodeID uint64, dataDir string) (*PersistentStorage, error) {
+	ps := &PersistentStorage{
+		MemoryStorage: raft.NewMemoryStorage(),
+		dataDir:       dataDir,
+		nodeID:        nodeID,
+	}
+
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %v", err)
+	}
+
+	// Load existing state from disk
+	if err := ps.loadFromDisk(); err != nil {
+		log.Printf("pgraft: WARNING - Failed to load state from disk: %v", err)
+		// Continue with empty state
+	}
+
+	return ps, nil
+}
+
+// getStatePath returns the path to the state file
+func (ps *PersistentStorage) getStatePath() string {
+	return filepath.Join(ps.dataDir, fmt.Sprintf("node_%d_state.json", ps.nodeID))
+}
+
+// loadFromDisk loads the persistent state from disk
+func (ps *PersistentStorage) loadFromDisk() error {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	statePath := ps.getStatePath()
+	if _, err := os.Stat(statePath); os.IsNotExist(err) {
+		log.Printf("pgraft: INFO - No existing state file found for node %d", ps.nodeID)
+		return nil // No state file exists, start fresh
+	}
+
+	data, err := ioutil.ReadFile(statePath)
+	if err != nil {
+		return fmt.Errorf("failed to read state file: %v", err)
+	}
+
+	var state StorageState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return fmt.Errorf("failed to unmarshal state: %v", err)
+	}
+
+	// Restore HardState
+	if !raft.IsEmptyHardState(state.HardState) {
+		if err := ps.MemoryStorage.SetHardState(state.HardState); err != nil {
+			return fmt.Errorf("failed to set hard state: %v", err)
+		}
+		log.Printf("pgraft: INFO - Restored HardState for node %d: Term=%d, Vote=%d, Commit=%d",
+			ps.nodeID, state.HardState.Term, state.HardState.Vote, state.HardState.Commit)
+	}
+
+	// Restore Snapshot if present
+	if state.Snapshot != nil && !raft.IsEmptySnap(*state.Snapshot) {
+		if err := ps.MemoryStorage.ApplySnapshot(*state.Snapshot); err != nil {
+			return fmt.Errorf("failed to apply snapshot: %v", err)
+		}
+		log.Printf("pgraft: INFO - Restored snapshot for node %d: Index=%d, Term=%d",
+			ps.nodeID, state.Snapshot.Metadata.Index, state.Snapshot.Metadata.Term)
+	}
+
+	// Restore log entries
+	if len(state.Entries) > 0 {
+		if err := ps.MemoryStorage.Append(state.Entries); err != nil {
+			return fmt.Errorf("failed to append entries: %v", err)
+		}
+		log.Printf("pgraft: INFO - Restored %d log entries for node %d", len(state.Entries), ps.nodeID)
+	}
+
+	return nil
+}
+
+// Global persistence failure tracking (FIX #3: Monitoring)
+var (
+	persistenceFailureCount int64
+	lastPersistenceError    string
+	lastPersistenceTime     time.Time
+)
+
+// saveToDisk saves the current state to disk
+func (ps *PersistentStorage) saveToDisk() error {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
+	// Get current state from memory storage
+	hardState, _, err := ps.MemoryStorage.InitialState()
+	if err != nil {
+		atomic.AddInt64(&persistenceFailureCount, 1)
+		lastPersistenceError = err.Error()
+		return fmt.Errorf("failed to get initial state: %v", err)
+	}
+
+	firstIndex, err := ps.MemoryStorage.FirstIndex()
+	if err != nil {
+		atomic.AddInt64(&persistenceFailureCount, 1)
+		lastPersistenceError = err.Error()
+		return fmt.Errorf("failed to get first index: %v", err)
+	}
+
+	lastIndex, err := ps.MemoryStorage.LastIndex()
+	if err != nil {
+		atomic.AddInt64(&persistenceFailureCount, 1)
+		lastPersistenceError = err.Error()
+		return fmt.Errorf("failed to get last index: %v", err)
+	}
+
+	var entries []raftpb.Entry
+	if lastIndex >= firstIndex {
+		entries, err = ps.MemoryStorage.Entries(firstIndex, lastIndex+1, 0)
+		if err != nil {
+			atomic.AddInt64(&persistenceFailureCount, 1)
+			lastPersistenceError = err.Error()
+			return fmt.Errorf("failed to get entries: %v", err)
+		}
+	}
+
+	// Get snapshot if available
+	snapshot, err := ps.MemoryStorage.Snapshot()
+	var snapshotPtr *raftpb.Snapshot
+	if err == nil && !raft.IsEmptySnap(snapshot) {
+		snapshotPtr = &snapshot
+	}
+
+	state := StorageState{
+		HardState: hardState,
+		Entries:   entries,
+		Snapshot:  snapshotPtr,
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		atomic.AddInt64(&persistenceFailureCount, 1)
+		lastPersistenceError = err.Error()
+		return fmt.Errorf("failed to marshal state: %v", err)
+	}
+
+	statePath := ps.getStatePath()
+	tmpPath := statePath + ".tmp"
+
+	// Write to temporary file first, then rename for atomic update
+	if err := ioutil.WriteFile(tmpPath, data, 0644); err != nil {
+		atomic.AddInt64(&persistenceFailureCount, 1)
+		lastPersistenceError = err.Error()
+		log.Printf("pgraft: CRITICAL - Persistence failure #%d: %v",
+			atomic.LoadInt64(&persistenceFailureCount), err)
+		return fmt.Errorf("failed to write temporary state file: %v", err)
+	}
+
+	if err := os.Rename(tmpPath, statePath); err != nil {
+		atomic.AddInt64(&persistenceFailureCount, 1)
+		lastPersistenceError = err.Error()
+		log.Printf("pgraft: CRITICAL - Persistence failure #%d: %v",
+			atomic.LoadInt64(&persistenceFailureCount), err)
+		return fmt.Errorf("failed to rename state file: %v", err)
+	}
+
+	// FIX #3: Track successful persistence
+	lastPersistenceTime = time.Now()
+	if atomic.LoadInt64(&persistenceFailureCount) > 0 {
+		log.Printf("pgraft: INFO - Persistence recovered after %d failures",
+			atomic.LoadInt64(&persistenceFailureCount))
+		atomic.StoreInt64(&persistenceFailureCount, 0)
+	}
+
+	return nil
+}
+
+// SetHardState sets the hard state and persists it
+func (ps *PersistentStorage) SetHardState(hs raftpb.HardState) error {
+	if err := ps.MemoryStorage.SetHardState(hs); err != nil {
+		return err
+	}
+
+	// FIX #3: Persist to disk with monitoring
+	if err := ps.saveToDisk(); err != nil {
+		log.Printf("pgraft: ERROR - Failed to persist hard state: %v", err)
+		log.Printf("pgraft: WARNING - Continuing with in-memory state only (persistence failure count: %d)",
+			atomic.LoadInt64(&persistenceFailureCount))
+		// Don't return error here as the memory operation succeeded
+		// But failures are now tracked and logged
+	}
+
+	return nil
+}
+
+// Append appends entries and persists them
+func (ps *PersistentStorage) Append(entries []raftpb.Entry) error {
+	if err := ps.MemoryStorage.Append(entries); err != nil {
+		return err
+	}
+
+	// FIX #3: Persist to disk with monitoring
+	if err := ps.saveToDisk(); err != nil {
+		log.Printf("pgraft: ERROR - Failed to persist entries: %v", err)
+		log.Printf("pgraft: WARNING - Continuing with in-memory entries only (persistence failure count: %d)",
+			atomic.LoadInt64(&persistenceFailureCount))
+		// Don't return error here as the memory operation succeeded
+		// But failures are now tracked and logged
+	}
+
+	return nil
+}
+
+// ApplySnapshot applies a snapshot and persists it
+func (ps *PersistentStorage) ApplySnapshot(snapshot raftpb.Snapshot) error {
+	if err := ps.MemoryStorage.ApplySnapshot(snapshot); err != nil {
+		return err
+	}
+
+	// Persist to disk
+	if err := ps.saveToDisk(); err != nil {
+		log.Printf("pgraft: ERROR - Failed to persist snapshot: %v", err)
+		// Don't return error here as the memory operation succeeded
+	}
+
+	return nil
+}
+
+// Compact compacts the log up to compactIndex and persists
+func (ps *PersistentStorage) Compact(compactIndex uint64) error {
+	if err := ps.MemoryStorage.Compact(compactIndex); err != nil {
+		return err
+	}
+
+	// Persist to disk
+	if err := ps.saveToDisk(); err != nil {
+		log.Printf("pgraft: ERROR - Failed to persist after compaction: %v", err)
+		// Don't return error here as the memory operation succeeded
+	}
+
+	return nil
+}
+
+// Close ensures all data is persisted and resources are cleaned up
+func (ps *PersistentStorage) Close() error {
+	return ps.saveToDisk()
+}
 
 // Additional required global variables
 var (
@@ -199,16 +476,25 @@ func pgraft_go_start() C.int {
 		return -1
 	}
 
-	log.Printf("pgraft: INFO - Starting background processing")
+	log.Printf("pgraft: INFO - Starting background processing (worker-driven model)")
 
-	// Start background processing
-	raftTicker = time.NewTicker(100 * time.Millisecond) // Consistent 100ms ticker
+	// Configure Go runtime
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	log.Printf("pgraft: INFO - Go runtime configured: GOMAXPROCS=%d, NumCPU=%d", runtime.GOMAXPROCS(0), runtime.NumCPU())
+
+	// Initialize raftDone channel if not already
+	if raftDone == nil {
+		raftDone = make(chan struct{})
+	}
+
+	// Start only the goroutines that need to run continuously
+	// Ticker is now called from C worker thread via pgraft_go_tick()
 	go raftProcessingLoop()
 	go messageReceiver()
-	go connectionMonitor() // Start the new connection monitor
-
+	go connectionMonitor()
+	
 	atomic.StoreInt32(&running, 1)
-	log.Printf("pgraft: INFO - Started successfully")
+	log.Printf("pgraft: INFO - Started successfully - Ready processing active, tick will be called from worker")
 
 	return 0
 }
@@ -279,6 +565,23 @@ func pgraft_go_get_nodes() *C.char {
 	return C.CString(string(jsonData))
 }
 
+//export cleanup_pgraft
+func cleanup_pgraft() {
+	log.Printf("pgraft: INFO - Cleaning up pgraft resources")
+
+	if raftStorage != nil {
+		if err := raftStorage.Close(); err != nil {
+			log.Printf("pgraft: ERROR - Failed to close persistent storage: %v", err)
+		}
+	}
+
+	if raftNode != nil {
+		raftNode.Stop()
+	}
+
+	log.Printf("pgraft: INFO - Cleanup completed")
+}
+
 //export pgraft_go_version
 func pgraft_go_version() *C.char {
 	return C.CString("1.0.0")
@@ -300,15 +603,28 @@ var (
 	}
 )
 
-//export pgraft_go_init
-func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
+//export pgraft_go_init_config
+func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("pgraft: PANIC in pgraft_go_init: %v", r)
+			log.Printf("pgraft: PANIC in pgraft_go_init_config: %v", r)
 		}
 	}()
 
-	log.Printf("pgraft: INFO - Initializing node %d at %s:%d", nodeID, C.GoString(address), int(port))
+	// Extract configuration from C struct
+	nodeID := int(config.node_id)
+	address := C.GoString(config.address)
+	port := int(config.port)
+	clusterID := C.GoString(config.cluster_id)
+	dataDir := C.GoString(config.data_dir)
+	electionTimeout := int(config.election_timeout)
+	heartbeatInterval := int(config.heartbeat_interval)
+	snapshotInterval := int(config.snapshot_interval)
+
+	log.Printf("pgraft: INFO - Initializing node %d (cluster: %s) at %s:%d",
+		nodeID, clusterID, address, port)
+	log.Printf("pgraft: INFO - Using etcd-style configuration: election_timeout=%dms, heartbeat_interval=%dms, snapshot_interval=%d, data_dir=%s",
+		electionTimeout, heartbeatInterval, snapshotInterval, dataDir)
 
 	raftMutex.Lock()
 	defer raftMutex.Unlock()
@@ -318,12 +634,144 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 		return 0 // Already initialized
 	}
 
-	raftStorage = raft.NewMemoryStorage()
-	if raftStorage == nil {
-		log.Printf("pgraft: ERROR - Failed to create Raft memory storage for node %d", nodeID)
+	// Use configured data directory (etcd-style)
+	if dataDir == "" || dataDir == "(null)" {
+		// Fallback to default if not specified
+		dataDir = fmt.Sprintf("/tmp/pgraft_node_%d", nodeID)
+		log.Printf("pgraft: WARNING - pgraft.data_dir not set, using default: %s", dataDir)
+	}
+
+	persistentStorage, err := NewPersistentStorage(uint64(nodeID), dataDir)
+	if err != nil {
+		log.Printf("pgraft: ERROR - Failed to create persistent storage for node %d: %v", nodeID, err)
 		return -1
 	}
-	log.Printf("pgraft: DEBUG - Memory storage initialized")
+	raftStorage = persistentStorage
+	log.Printf("pgraft: INFO - Persistent storage initialized at %s (etcd-style data-dir)", dataDir)
+
+	// Calculate ticks from millisecond values (etcd-style)
+	// Tick interval is 100ms, so we convert timeouts to ticks
+	tickIntervalMs := 100
+	electionTick := electionTimeout / tickIntervalMs
+	heartbeatTick := heartbeatInterval / tickIntervalMs
+
+	// Ensure minimum values
+	if electionTick < 1 {
+		electionTick = 10
+		log.Printf("pgraft: WARNING - election_timeout too small, using minimum 10 ticks (1000ms)")
+	}
+	if heartbeatTick < 1 {
+		heartbeatTick = 1
+		log.Printf("pgraft: WARNING - heartbeat_interval too small, using minimum 1 tick (100ms)")
+	}
+
+	log.Printf("pgraft: INFO - Raft timing: ElectionTick=%d, HeartbeatTick=%d (tick interval=%dms)",
+		electionTick, heartbeatTick, tickIntervalMs)
+
+	raftConfig = &raft.Config{
+		ID:              uint64(nodeID),
+		ElectionTick:    electionTick,
+		HeartbeatTick:   heartbeatTick,
+		Storage:         raftStorage,
+		MaxInflightMsgs: 256,
+		MaxSizePerMsg:   1024 * 1024, // 1MB
+		PreVote:         true,        // Enable PreVote for better elections (etcd best practice)
+	}
+	log.Printf("pgraft: DEBUG - Raft configuration created (etcd-style)")
+	log.Printf("pgraft: INFO - Go library version: %s", pgraft_go_version())
+
+	messageChan = make(chan raftpb.Message, 4096)
+	stopChan = make(chan struct{})
+	reconnectChan = make(chan uint64, 256) // Buffered channel for reconnect requests
+	connections = make(map[uint64]*ManagedConnection)
+	log.Printf("pgraft: DEBUG - Communication channels initialized")
+
+	nodesMutex.Lock()
+	if nodes == nil {
+		nodes = make(map[uint64]string)
+	}
+	nodes[uint64(nodeID)] = fmt.Sprintf("%s:%d", address, port)
+	nodesMutex.Unlock()
+	log.Printf("pgraft: INFO - Self node registered: %d -> %s:%d", nodeID, address, port)
+
+	// Check if this is a restart by looking at persistent state
+	hardState, confState, err := raftStorage.InitialState()
+	isRestart := err == nil && (!raft.IsEmptyHardState(hardState) || len(confState.Voters) > 0)
+
+	var peers []raft.Peer
+	if isRestart {
+		// This is a restart - use RestartNode with existing state
+		log.Printf("pgraft: INFO - Node %d restarting from persistent state (Term=%d, Commit=%d)",
+			nodeID, hardState.Term, hardState.Commit)
+		raftNode = raft.RestartNode(raftConfig)
+		log.Printf("pgraft: INFO - Node %d restarted as follower, will rejoin cluster", nodeID)
+	} else {
+		// This is a new node - start as single-node cluster
+		peers = []raft.Peer{{ID: uint64(nodeID)}}
+		log.Printf("pgraft: INFO - Node %d starting as new single-node cluster, peers will be added via cluster management", nodeID)
+		raftNode = raft.StartNode(raftConfig, peers)
+		log.Printf("pgraft: INFO - Node %d initialized as new node, waiting for cluster management to add peers", nodeID)
+	}
+
+	// Verify raftNode was created successfully
+	if raftNode == nil {
+		log.Printf("pgraft: ERROR - Failed to create Raft node for node %d", nodeID)
+		return -1
+	}
+
+	// Initialize context before using it
+	raftCtx, raftCancel = context.WithCancel(context.Background())
+	log.Printf("pgraft: DEBUG - Context initialized")
+
+	log.Printf("pgraft: INFO - Bootstrap node %d created with %d initial peers", nodeID, len(peers))
+
+	// Initialize applied and committed indices
+	appliedIndex = 0
+	committedIndex = 0
+
+	log.Printf("pgraft: INFO - Raft node initialized, goroutines will be started separately via pgraft_go_start()")
+
+	// FIX #2: For single-node clusters, trigger immediate campaign after initialization
+	if len(peers) == 1 && !isRestart {
+		log.Printf("pgraft: INFO - Single-node cluster detected, will campaign immediately on start")
+		// Campaign will be triggered in first tick of raftProcessingLoop
+	}
+
+	atomic.StoreInt32(&initialized, 1)
+	log.Printf("pgraft: Node %d initialized successfully with etcd-style configuration (cluster: %s)", nodeID, clusterID)
+
+	return 0
+}
+
+//export pgraft_go_init
+func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("pgraft: PANIC in pgraft_go_init: %v", r)
+		}
+	}()
+
+	log.Printf("pgraft: INFO - Legacy pgraft_go_init called for node %d at %s:%d", nodeID, C.GoString(address), int(port))
+	log.Printf("pgraft: WARNING - Using legacy init function. Consider migrating to pgraft_go_init_config for etcd-style configuration")
+
+	raftMutex.Lock()
+	defer raftMutex.Unlock()
+
+	if atomic.LoadInt32(&initialized) == 1 {
+		log.Printf("pgraft: WARNING - Node already initialized, skipping")
+		return 0 // Already initialized
+	}
+
+	// Create data directory for persistent storage
+	dataDir := fmt.Sprintf("/tmp/pgraft_node_%d", nodeID)
+
+	persistentStorage, err := NewPersistentStorage(uint64(nodeID), dataDir)
+	if err != nil {
+		log.Printf("pgraft: ERROR - Failed to create persistent storage for node %d: %v", nodeID, err)
+		return -1
+	}
+	raftStorage = persistentStorage
+	log.Printf("pgraft: INFO - Persistent storage initialized at %s", dataDir)
 
 	raftConfig = &raft.Config{
 		ID:              uint64(nodeID),
@@ -352,15 +800,30 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 	nodesMutex.Unlock()
 	log.Printf("pgraft: INFO - Self node registered: %d -> %s", nodeID, nodes[uint64(nodeID)])
 
-	// Start as single-node cluster initially
-	// Peers will be added dynamically via ConfChange operations by cluster management
+	// Check if this is a restart by looking at persistent state
+	hardState, confState, err := raftStorage.InitialState()
+	isRestart := err == nil && (!raft.IsEmptyHardState(hardState) || len(confState.Voters) > 0)
+
 	var peers []raft.Peer
-	peers = []raft.Peer{{ID: uint64(nodeID)}}
-	log.Printf("pgraft: INFO - Node %d starting as single-node cluster, peers will be added via cluster management", nodeID)
-	
-	// Start the Raft node - peers will be added by the cluster management layer
-	raftNode = raft.StartNode(raftConfig, peers)
-	log.Printf("pgraft: INFO - Node %d initialized, waiting for cluster management to add peers", nodeID)
+	if isRestart {
+		// This is a restart - use RestartNode with existing state
+		log.Printf("pgraft: INFO - Node %d restarting from persistent state (Term=%d, Commit=%d)",
+			nodeID, hardState.Term, hardState.Commit)
+		raftNode = raft.RestartNode(raftConfig)
+		log.Printf("pgraft: INFO - Node %d restarted as follower, will rejoin cluster", nodeID)
+	} else {
+		// This is a new node - start as single-node cluster
+		peers = []raft.Peer{{ID: uint64(nodeID)}}
+		log.Printf("pgraft: INFO - Node %d starting as new single-node cluster, peers will be added via cluster management", nodeID)
+		raftNode = raft.StartNode(raftConfig, peers)
+		log.Printf("pgraft: INFO - Node %d initialized as new node, waiting for cluster management to add peers", nodeID)
+	}
+
+	// Verify raftNode was created successfully
+	if raftNode == nil {
+		log.Printf("pgraft: ERROR - Failed to create Raft node for node %d", nodeID)
+		return -1
+	}
 
 	// Initialize context before using it
 	raftCtx, raftCancel = context.WithCancel(context.Background())
@@ -642,12 +1105,12 @@ func pgraft_go_is_leader() C.int {
 
 	if atomic.LoadInt32(&running) == 0 {
 		log.Printf("pgraft: is_leader - not running")
-		return 0
+		return -1 /* Not ready */
 	}
 
 	if raftNode == nil {
 		log.Printf("pgraft: is_leader - raftNode is nil")
-		return 0
+		return -1 /* Not ready */
 	}
 
 	status := raftNode.Status()
@@ -818,10 +1281,70 @@ func pgraft_go_free_string(str *C.char) {
 }
 
 // Main processing loop following etcd-io/raft patterns
-func raftProcessingLoop() {
-	defer close(raftDone)
+// pgraft_go_tick is called by the PostgreSQL background worker on each iteration
+// This is a non-blocking function that processes one tick of Raft work
+//export pgraft_go_tick
+func pgraft_go_tick() C.int {
+	if atomic.LoadInt32(&running) == 0 {
+		// Log periodically (not every call to avoid spam)
+		if tickCount%100 == 0 {
+			log.Printf("pgraft: tick() called but not running (tickCount=%d)", tickCount)
+		}
+		tickCount++
+		return -1 // Not running
+	}
 
-	log.Printf("pgraft: Single Ready processing loop started")
+	if raftNode == nil {
+		if tickCount%100 == 0 {
+			log.Printf("pgraft: tick() called but raftNode is nil (tickCount=%d)", tickCount)
+		}
+		tickCount++
+		return -1 // Not initialized
+	}
+
+	// Perform one Raft tick
+	raftNode.Tick()
+
+	// Periodically log status for debugging (every 10 ticks = ~1 second)
+	tickCount++
+	if tickCount%10 == 0 {
+		status := raftNode.Status()
+		log.Printf("pgraft: Raft status (tick #%d): state=%s, term=%d, lead=%d",
+			tickCount, status.RaftState.String(), status.Term, status.Lead)
+	}
+
+	// FIX #2: Immediate campaign for single-node clusters (after first tick)
+	if tickCount == 1 {
+		log.Printf("pgraft: First tick received! Checking if single-node...")
+		status := raftNode.Status()
+		isSingleNode := len(status.Config.Voters[0]) == 1
+		log.Printf("pgraft: Is single-node? %v (voters: %d)", isSingleNode, len(status.Config.Voters[0]))
+		if isSingleNode && status.RaftState != raft.StateLeader {
+			log.Printf("pgraft: Single-node cluster detected - calling Campaign() immediately")
+			raftNode.Campaign(raftCtx)
+		}
+	}
+
+	return 0
+}
+
+// Separate Ready processing loop (etcd/raft recommended pattern)
+func raftProcessingLoop() {
+	defer func() {
+		if raftDone != nil {
+			close(raftDone)
+		}
+	}()
+
+	log.Printf("pgraft: Ready processing loop started")
+
+	// Safety check
+	if raftNode == nil {
+		log.Printf("pgraft: CRITICAL ERROR - raftNode is nil in processing loop")
+		return
+	}
+
+	log.Printf("pgraft: Ready processing loop initialized (raftNode confirmed)")
 
 	for {
 		select {
@@ -831,31 +1354,23 @@ func raftProcessingLoop() {
 		case <-stopChan:
 			log.Printf("pgraft: Ready processing loop stopping (stop signal)")
 			return
-		case <-raftTicker.C: // Prioritize tick processing
-			// Tick the Raft node - this will generate Ready messages and trigger elections
-			raftNode.Tick()
-			
-			// Periodically log status for debugging (every 10 ticks = ~1 second)
-			tickCount++
-			if tickCount%10 == 0 {
-				status := raftNode.Status()
-				log.Printf("pgraft: Raft status: state=%s, term=%d, lead=%d",
-					status.RaftState.String(), status.Term, status.Lead)
-			}
 		case rd := <-raftNode.Ready():
 			log.Printf("pgraft: DEBUG - Received Ready message from Raft node")
 			processReady(rd)
-		case <-time.After(1 * time.Millisecond):
-			// Non-blocking timeout to prevent busy waiting
-			continue
 		}
 	}
 }
 
 // Process Ready messages: persist, send, apply, advance
 func processReady(rd raft.Ready) {
-	raftMutex.Lock()
-	defer raftMutex.Unlock()
+	// Safety: recover from any panics to prevent crashing the processing loop
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("pgraft: PANIC in processReady: %v", r)
+		}
+	}()
+
+	// No mutex needed - only called from raftProcessingLoop goroutine
 
 	status := raftNode.Status()
 	log.Printf("pgraft: DEBUG - Processing Ready: messages=%d, entries=%d, committed=%d, hardstate=%v, snapshot=%v. Current Raft Status: state=%s, term=%d, lead=%d",
@@ -872,6 +1387,7 @@ func processReady(rd raft.Ready) {
 	}
 
 	if len(rd.Entries) > 0 {
+		log.Printf("pgraft: DEBUG - About to persist %d entries...", len(rd.Entries))
 		if raftStorage == nil {
 			log.Printf("pgraft: ERROR - raftStorage is nil, cannot append entries")
 			return
@@ -880,6 +1396,7 @@ func processReady(rd raft.Ready) {
 		log.Printf("pgraft: Persisted %d entries", len(rd.Entries))
 	}
 
+	log.Printf("pgraft: DEBUG - About to send %d messages...", len(rd.Messages))
 	for _, msg := range rd.Messages {
 		sendMessage(msg)
 	}
@@ -906,6 +1423,7 @@ func processReady(rd raft.Ready) {
 	}
 
 	// After all local processing, advance the Raft node.
+	log.Printf("pgraft: DEBUG - About to call raftNode.Advance()...")
 	raftNode.Advance()
 	log.Printf("pgraft: INFO - Raft node advanced. New Raft Status: state=%s, term=%d, lead=%d",
 		raftNode.Status().RaftState.String(), raftNode.Status().Term, raftNode.Status().Lead)
@@ -1036,8 +1554,17 @@ func applyEntry(entry raftpb.Entry) {
 	// Process different entry types
 	switch entry.Type {
 	case raftpb.EntryNormal:
-		// Apply normal log entry
-		log.Printf("pgraft: Applied normal entry: %s", string(entry.Data))
+		// Check if this is a key/value operation
+		if len(entry.Data) >= 8 { // Minimum size for a key/value log entry
+			if isKeyValueLogEntry(entry.Data) {
+				log.Printf("pgraft: Applying key/value operation (index=%d)", entry.Index)
+				applyKeyValueLogEntry(entry.Data, entry.Index)
+			} else {
+				log.Printf("pgraft: Applied normal entry: %s", string(entry.Data))
+			}
+		} else {
+			log.Printf("pgraft: Applied normal entry: %s", string(entry.Data))
+		}
 	case raftpb.EntryConfChange:
 		// Apply configuration change
 		var cc raftpb.ConfChange
@@ -2276,6 +2803,65 @@ func connectionMonitor() {
 			}
 		}
 	}
+}
+
+// Key/Value log entry structure (must match C struct)
+type kvLogEntry struct {
+	OpType    int32
+	Key       [256]byte
+	Value     [1024]byte
+	Timestamp int64
+	ClientID  [64]byte
+}
+
+// Check if the data represents a key/value log entry
+func isKeyValueLogEntry(data []byte) bool {
+	// A key/value log entry has a specific minimum size
+	expectedSize := 4 + 256 + 1024 + 8 + 64 // OpType + Key + Value + Timestamp + ClientID
+	return len(data) == expectedSize
+}
+
+// Apply a key/value log entry using C function
+func applyKeyValueLogEntry(data []byte, logIndex uint64) {
+	log.Printf("pgraft: Applying key/value log entry (size=%d, index=%d)", len(data), logIndex)
+
+	// Parse the key/value log entry
+	if len(data) < 4 {
+		log.Printf("pgraft: ERROR - Invalid key/value log entry size")
+		return
+	}
+
+	var kvEntry kvLogEntry
+	if len(data) != int(unsafe.Sizeof(kvEntry)) {
+		log.Printf("pgraft: ERROR - Key/value log entry size mismatch: expected %d, got %d",
+			unsafe.Sizeof(kvEntry), len(data))
+		return
+	}
+
+	// Copy data to struct
+	copy((*[unsafe.Sizeof(kvEntry)]byte)(unsafe.Pointer(&kvEntry))[:], data)
+
+	// Extract null-terminated strings
+	key := string(bytes.Trim(kvEntry.Key[:], "\x00"))
+	value := string(bytes.Trim(kvEntry.Value[:], "\x00"))
+	clientID := string(bytes.Trim(kvEntry.ClientID[:], "\x00"))
+
+	log.Printf("pgraft: KV Operation - Type: %d, Key: '%s', Value: '%s', Client: '%s'",
+		kvEntry.OpType, key, value, clientID)
+
+	// Call C function to apply the operation
+	cKey := C.CString(key)
+	cValue := C.CString(value)
+	defer C.free(unsafe.Pointer(cKey))
+	defer C.free(unsafe.Pointer(cValue))
+
+	// Apply to key/value store via C function
+	// Note: This would call a C function like pgraft_kv_apply_log_entry_from_go
+	// For now, we'll log that it would be applied
+	log.Printf("pgraft: Would apply KV operation to C store: %s=%s (log_index=%d)", key, value, logIndex)
+
+	// TODO: Add actual C function call here when ready
+	// C.pgraft_kv_apply_log_entry_from_go((*C.char)(unsafe.Pointer(&data[0])), C.int(len(data)), C.int64_t(logIndex))
 }
 
 func main() {

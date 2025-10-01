@@ -22,6 +22,7 @@
 #include "../include/pgraft_go.h"
 #include "../include/pgraft_state.h"
 #include "../include/pgraft_log.h"
+#include "../include/pgraft_kv.h"
 #include "../include/pgraft_guc.h"
 
 /* Function declarations */
@@ -63,6 +64,9 @@ pgraft_shmem_request_hook(void)
 	/* Request shared memory for log replication */
 	RequestAddinShmemSpace(sizeof(pgraft_log_state_t));
 	
+	/* Request shared memory for key/value store */
+	RequestAddinShmemSpace(sizeof(pgraft_kv_store_t));
+	
 	/* Request shared memory for background worker state */
 	RequestAddinShmemSpace(sizeof(pgraft_worker_state_t));
 	
@@ -82,6 +86,7 @@ pgraft_shmem_startup_hook(void)
 	pgraft_core_init_shared_memory();
 	pgraft_go_init_shared_memory();
 	pgraft_log_init_shared_memory();
+	pgraft_kv_init_shared_memory();
 	pgraft_worker_init_shared_memory();
 	
 	elog(LOG, "pgraft: All shared memory structures initialized");
@@ -215,6 +220,15 @@ pgraft_main(Datum main_arg)
 				 state->command_count, state->command_head, state->command_tail);
 		}
 		
+		/* CRITICAL: Call Raft tick on every iteration (100ms) */
+		/* This is the worker-driven model where C actively drives Raft progress */
+		if (pgraft_go_is_loaded()) {
+			int tick_result = pgraft_go_tick();
+			if (sleep_count % 20 == 0) {
+				elog(LOG, "pgraft: Calling tick... result=%d", tick_result);
+			}
+		}
+		
 		/* Update shared memory with current Go library state every 5 iterations */
 		/* Only update if Go library is loaded */
 		if (sleep_count % 5 == 0 && pgraft_go_is_loaded()) {
@@ -224,7 +238,8 @@ pgraft_main(Datum main_arg)
 		/* Trigger heartbeat every 10 iterations to ensure heartbeats are sent */
 		/* Only trigger if Go library is loaded */
 		if (sleep_count % 10 == 0 && pgraft_go_is_loaded()) {
-			pgraft_go_trigger_heartbeat();
+			/* Trigger heartbeat - ignore errors as function may not be available yet */
+			(void) pgraft_go_trigger_heartbeat();
 		}
 		
 		/* Process commands from queue */

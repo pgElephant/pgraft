@@ -10,7 +10,8 @@ lib/
 *.dylib
 *.la
 *.lo
-
+*.log
+log*
 # C/C++ build artifacts
 *.bc
 *.gcno

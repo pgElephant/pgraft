@@ -52,36 +52,105 @@ PG_FUNCTION_INFO_V1(pgraft_log_get_replication_status_table);
 
 /* Background worker functions - removed as they are now handled automatically */
 PG_FUNCTION_INFO_V1(pgraft_log_sync_with_leader_sql);
+PG_FUNCTION_INFO_V1(pgraft_replicate_entry_func);
 
 
 
 /*
- * Initialize pgraft node with GUC variables
+ * Initialize pgraft node with GUC variables (etcd-style configuration)
  */
 Datum
 pgraft_init(PG_FUNCTION_ARGS)
 {
-	int32_t		node_id;
-	int32_t		port;
-	char	   *address;
+	pgraft_go_config_t config;
 	char	   *cluster_id;
+	char	   *data_dir;
+	int			result;
 	
-	/* Get configuration from GUC variables */
-	node_id = pgraft_node_id;
-	port = pgraft_port;
-	address = pgraft_address;
-	cluster_id = pgraft_cluster_name;
+	/* Get configuration from etcd-style GUC variables */
+	config.node_id = pgraft_node_id;
+	config.port = pgraft_port;
+	config.address = pgraft_address;
+	config.election_timeout = pgraft_election_timeout;
+	config.heartbeat_interval = pgraft_heartbeat_interval;
+	config.snapshot_interval = pgraft_snapshot_interval;
+	config.max_log_entries = pgraft_max_log_entries;
+	config.batch_size = pgraft_batch_size;
+	config.max_batch_delay = pgraft_max_batch_delay;
 	
-	elog(INFO, "pgraft: Queuing INIT command for node %d at %s:%d (cluster: %s)", 
-		 node_id, address, port, cluster_id);
+	/* Handle cluster_id (prefer new parameter, fall back to legacy) */
+	cluster_id = pgraft_cluster_id;
+	if (!cluster_id || strlen(cluster_id) == 0) {
+		cluster_id = pgraft_cluster_name;
+		if (!cluster_id || strlen(cluster_id) == 0) {
+			elog(ERROR, "pgraft: pgraft.cluster_id must be set (similar to etcd initial-cluster-token)");
+			PG_RETURN_BOOL(false);
+		}
+		elog(WARNING, "pgraft: Using deprecated pgraft.cluster_name, please use pgraft.cluster_id");
+	}
+	config.cluster_id = cluster_id;
 	
-	/* Queue INIT command for worker to process */
-	if (!pgraft_queue_command(COMMAND_INIT, node_id, address, port, cluster_id)) {
-		elog(ERROR, "pgraft: Failed to queue INIT command");
+	/* Handle data_dir (prefer new parameter, generate default if not set) */
+	data_dir = pgraft_data_dir;
+	if (!data_dir || strlen(data_dir) == 0) {
+		/* Use PostgreSQL-style path in temp directory */
+		data_dir = psprintf("/tmp/pgraft/node_%d", config.node_id);
+		elog(INFO, "pgraft: pgraft.data_dir not set, using default: %s", data_dir);
+	}
+	config.data_dir = data_dir;
+	
+	/* Validate required configuration */
+	if (!config.address || strlen(config.address) == 0) {
+		elog(ERROR, "pgraft: pgraft.address must be set (similar to etcd listen-peer-urls)");
 		PG_RETURN_BOOL(false);
 	}
 	
-	elog(INFO, "pgraft: INIT command queued successfully - background worker will process it");
+	if (config.port < 1024 || config.port > 65535) {
+		elog(ERROR, "pgraft: pgraft.port must be between 1024 and 65535");
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Validate configuration (calls etcd-style validation) */
+	pgraft_validate_configuration();
+	
+	elog(INFO, "pgraft: Initializing node %d (cluster: %s) at %s:%d", 
+		 config.node_id, config.cluster_id, config.address, config.port);
+	elog(INFO, "pgraft: etcd-style config: election_timeout=%dms, heartbeat_interval=%dms, data_dir=%s",
+		 config.election_timeout, config.heartbeat_interval, config.data_dir);
+	
+	/* Load Go library if not already loaded */
+	if (!pgraft_go_is_loaded()) {
+		elog(INFO, "pgraft: Loading Go library...");
+		if (pgraft_go_load_library() != 0) {
+			elog(ERROR, "pgraft: Failed to load Go library");
+			PG_RETURN_BOOL(false);
+		}
+	}
+	
+	/* Initialize with configuration */
+	result = pgraft_go_init_with_config(&config);
+	if (result != 0) {
+		elog(ERROR, "pgraft: Failed to initialize raft node");
+		PG_RETURN_BOOL(false);
+	}
+	
+	elog(INFO, "pgraft: Node initialized successfully");
+	
+	/* Start the raft node */
+	result = pgraft_go_start();
+	if (result != 0) {
+		elog(ERROR, "pgraft: Failed to start raft node");
+		PG_RETURN_BOOL(false);
+	}
+	
+	elog(INFO, "pgraft: Raft consensus started successfully");
+	
+	/* Start network server */
+	result = pgraft_go_start_network_server(config.port);
+	if (result != 0) {
+		elog(WARNING, "pgraft: Failed to start network server (may already be running)");
+	}
+	
     PG_RETURN_BOOL(true);
 }
 
@@ -96,7 +165,11 @@ pgraft_init_guc(PG_FUNCTION_ARGS)
 }
 
 /*
- * Add node to cluster
+ * Add node to cluster (leader-only operation)
+ * 
+ * This operation MUST be performed on the leader node.
+ * The configuration change will automatically propagate to all nodes
+ * through the raft consensus log.
  */
 Datum
 pgraft_add_node(PG_FUNCTION_ARGS)
@@ -105,6 +178,9 @@ pgraft_add_node(PG_FUNCTION_ARGS)
 	text	   *address_text;
 	int32_t		port;
 	char	   *address;
+	pgraft_go_add_peer_func add_peer_func;
+	int			result;
+	int			leader_status;
 	
 	node_id = PG_GETARG_INT32(0);
 	address_text = PG_GETARG_TEXT_PP(1);
@@ -112,15 +188,64 @@ pgraft_add_node(PG_FUNCTION_ARGS)
 	
 	address = text_to_cstring(address_text);
 	
-	elog(INFO, "pgraft: Queuing ADD_NODE command for node %d at %s:%d", node_id, address, port);
-	
-	/* Queue ADD_NODE command for worker to process */
-	if (!pgraft_queue_command(COMMAND_ADD_NODE, node_id, address, port, NULL)) {
-		elog(ERROR, "pgraft: Failed to queue ADD_NODE command");
+	/* Validate parameters */
+	if (node_id < 1 || node_id > 1000) {
+		elog(ERROR, "pgraft: Invalid node_id %d, must be between 1 and 1000", node_id);
 		PG_RETURN_BOOL(false);
 	}
 	
-	elog(INFO, "pgraft: ADD_NODE command queued successfully - background worker will process it");
+	if (!address || strlen(address) == 0) {
+		elog(ERROR, "pgraft: Address cannot be empty");
+		PG_RETURN_BOOL(false);
+	}
+	
+	if (port < 1024 || port > 65535) {
+		elog(ERROR, "pgraft: Invalid port %d, must be between 1024 and 65535", port);
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Check if Go library is loaded */
+	if (!pgraft_go_is_loaded()) {
+		elog(ERROR, "pgraft: Go library not loaded. Initialize cluster first with pgraft_init()");
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Check if this node is the leader */
+	leader_status = pgraft_go_is_leader();
+	if (leader_status < 0) {
+		elog(ERROR, "pgraft: Cannot add node - raft consensus not ready. "
+			"Please wait a moment after initialization and try again.");
+		PG_RETURN_BOOL(false);
+	}
+	if (leader_status == 0) {
+		elog(ERROR, "pgraft: Cannot add node - this node is not the leader. "
+			"Node addition must be performed on the leader. "
+			"Current leader can be found with pgraft_get_leader()");
+		PG_RETURN_BOOL(false);
+	}
+	
+	elog(INFO, "pgraft: Adding node %d at %s:%d (leader-only operation)", 
+		 node_id, address, port);
+	elog(INFO, "pgraft: Configuration change will automatically propagate to all cluster members");
+	
+	/* Get add_peer function from Go library */
+	add_peer_func = pgraft_go_get_add_peer_func();
+	if (add_peer_func == NULL) {
+		elog(ERROR, "pgraft: Failed to get add_peer function from Go library");
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Call Go library to add peer (will propose ConfChange to raft) */
+	result = add_peer_func(node_id, address, port);
+	if (result != 0) {
+		elog(ERROR, "pgraft: Failed to add node %d - Go library returned error %d", 
+			 node_id, result);
+		PG_RETURN_BOOL(false);
+	}
+	
+	elog(INFO, "pgraft: Node %d added successfully. Configuration change committed to raft log.", 
+		 node_id);
+	elog(INFO, "pgraft: All cluster members will automatically receive and apply this change");
     PG_RETURN_BOOL(true);
 }
 
@@ -696,5 +821,38 @@ pgraft_log_sync_with_leader_sql(PG_FUNCTION_ARGS)
     PG_RETURN_BOOL(true);
 }
 
+/*
+ * Replicate entry via Raft leader
+ */
+Datum
+pgraft_replicate_entry_func(PG_FUNCTION_ARGS)
+{
+    text *data_text = PG_GETARG_TEXT_PP(0);
+    char *data = text_to_cstring(data_text);
+    int data_len = strlen(data);
+    
+    elog(INFO, "pgraft: Replicating entry via Raft: %s", data);
+    
+    if (pgraft_go_is_loaded()) {
+        // Use the Go function to replicate the log entry
+        pgraft_go_replicate_log_entry_func replicate_func = pgraft_go_get_replicate_log_entry_func();
+        if (replicate_func) {
+            int result = replicate_func(data, data_len);
+            if (result == 1) {
+                elog(INFO, "pgraft: Log entry replicated successfully");
+                PG_RETURN_BOOL(true);
+            } else {
+                elog(WARNING, "pgraft: Failed to replicate log entry");
+                PG_RETURN_BOOL(false);
+            }
+        } else {
+            elog(ERROR, "pgraft: Replicate function not available");
+            PG_RETURN_BOOL(false);
+        }
+    } else {
+        elog(ERROR, "pgraft: Go library not loaded");
+        PG_RETURN_BOOL(false);
+    }
+}
 
 /* Network worker functions removed - handled automatically by background worker */

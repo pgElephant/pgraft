@@ -3,8 +3,24 @@
 
 #include "postgres.h"
 
+/* Configuration structure for Go init (etcd-style) */
+typedef struct pgraft_go_config {
+	int		node_id;
+	char   *cluster_id;
+	char   *address;
+	int		port;
+	char   *data_dir;
+	int		election_timeout;
+	int		heartbeat_interval;
+	int		snapshot_interval;
+	int		max_log_entries;
+	int		batch_size;
+	int		max_batch_delay;
+} pgraft_go_config_t;
+
 /* Function pointers for Go functions */
 typedef int (*pgraft_go_init_func) (int nodeID, char *address, int port);
+typedef int (*pgraft_go_init_config_func) (pgraft_go_config_t *config);
 typedef int (*pgraft_go_start_func) (void);
 typedef int (*pgraft_go_stop_func) (void);
 typedef int (*pgraft_go_add_peer_func) (int nodeID, char *address, int port);
@@ -27,10 +43,13 @@ typedef int (*pgraft_go_trigger_heartbeat_func) (void);
 typedef char *(*pgraft_go_get_nodes_func) (void);
 typedef char *(*pgraft_go_version_func) (void);
 typedef int (*pgraft_go_test_func) (void);
+typedef void (*pgraft_go_cleanup_func) (void);
+typedef int (*pgraft_go_replicate_log_entry_func) (char *data, int data_len);
 
 
 /* C wrappers for Go functions */
-extern int pgraft_go_init(int nodeID, char *address, int port);
+extern int pgraft_go_init(int nodeID, char *address, int port);  /* Legacy */
+extern int pgraft_go_init_with_config(pgraft_go_config_t *config);  /* New etcd-style */
 extern int pgraft_go_start(void);
 extern int pgraft_go_stop(void);
 extern int pgraft_go_add_peer(int nodeID, char *address, int port);
@@ -50,6 +69,8 @@ extern int pgraft_go_set_debug(int enabled);
 extern int pgraft_go_update_cluster_state(int64_t leaderID, int64_t currentTerm, const char *state);
 extern int pgraft_go_start_network_server(int port);
 extern int pgraft_go_trigger_heartbeat(void);
+extern int pgraft_go_tick(void);  /* Worker-driven tick function */
+extern void cleanup_pgraft(void);
 
 /* C-side Go library management functions */
 extern bool pgraft_go_is_loaded(void);
@@ -74,5 +95,6 @@ extern pgraft_go_start_network_server_func pgraft_go_get_start_network_server_fu
 extern pgraft_go_trigger_heartbeat_func pgraft_go_get_trigger_heartbeat_func(void);
 extern pgraft_go_free_string_func pgraft_go_get_free_string_func(void);
 extern pgraft_go_update_cluster_state_func pgraft_go_get_update_cluster_state_func(void);
+extern pgraft_go_replicate_log_entry_func pgraft_go_get_replicate_log_entry_func(void);
 
 #endif

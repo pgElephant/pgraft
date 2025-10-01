@@ -268,5 +268,134 @@ SELECT
 
 
 
+-- ============================================================================
+-- Key/Value Store Functions (etcd-like interface)
+-- ============================================================================
+
+-- PUT operation - store a key/value pair
+CREATE OR REPLACE FUNCTION pgraft_kv_put(key text, value text)
+RETURNS boolean
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_put_sql';
+
+-- GET operation - retrieve value for a key
+CREATE OR REPLACE FUNCTION pgraft_kv_get(key text)
+RETURNS text
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_get_sql';
+
+-- DELETE operation - delete a key
+CREATE OR REPLACE FUNCTION pgraft_kv_delete(key text)
+RETURNS boolean
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_delete_sql';
+
+-- EXISTS operation - check if key exists
+CREATE OR REPLACE FUNCTION pgraft_kv_exists(key text)
+RETURNS boolean
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_exists_sql';
+
+-- LIST_KEYS operation - list all keys as JSON array
+CREATE OR REPLACE FUNCTION pgraft_kv_list_keys()
+RETURNS text
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_list_keys_sql';
+
+-- Get key/value store statistics
+CREATE OR REPLACE FUNCTION pgraft_kv_get_stats()
+RETURNS TABLE(
+    num_entries integer,
+    total_operations bigint,
+    last_applied_index bigint,
+    puts bigint,
+    deletes bigint,
+    gets bigint,
+    active_entries integer,
+    deleted_entries integer
+)
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_get_stats_table';
+
+-- COMPACT operation - remove deleted entries and optimize storage
+CREATE OR REPLACE FUNCTION pgraft_kv_compact()
+RETURNS boolean
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_compact_sql';
+
+-- RESET operation - clear all data (use with caution!)
+CREATE OR REPLACE FUNCTION pgraft_kv_reset()
+RETURNS boolean
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_reset_sql';
+
+-- ============================================================================
+-- Key/Value Store Views
+-- ============================================================================
+
+-- Key/Value store status view
+CREATE VIEW pgraft_kv_status AS
+SELECT 
+    s.num_entries,
+    s.active_entries,
+    s.deleted_entries,
+    s.total_operations,
+    s.puts,
+    s.gets,
+    s.deletes,
+    s.last_applied_index,
+    CASE 
+        WHEN s.num_entries = 0 THEN 'EMPTY'
+        WHEN s.deleted_entries > s.active_entries THEN 'NEEDS_COMPACTION'
+        ELSE 'HEALTHY'
+    END as status
+FROM pgraft_kv_get_stats() s;
+
+-- ============================================================================
+-- JSON Wrapper Functions for Testing
+-- ============================================================================
+
+-- Get cluster status as JSON
+CREATE OR REPLACE FUNCTION pgraft_get_cluster_status_json()
+RETURNS text
+LANGUAGE SQL
+AS $$
+    SELECT json_build_object(
+        'node_id', node_id,
+        'term', current_term,
+        'leader_id', leader_id,
+        'state', state,
+        'num_nodes', num_nodes,
+        'messages_processed', messages_processed,
+        'heartbeats_sent', heartbeats_sent,
+        'elections_triggered', elections_triggered
+    )::text
+    FROM pgraft_get_cluster_status();
+$$;
+
+-- Get log status as JSON  
+CREATE OR REPLACE FUNCTION pgraft_get_log_status_json()
+RETURNS text
+LANGUAGE SQL
+AS $$
+    SELECT json_build_object(
+        'log_size', log_size,
+        'last_index', last_index,
+        'commit_index', commit_index,
+        'last_applied', last_applied,
+        'entries_replicated', replicated,
+        'entries_committed', committed,
+        'entries_applied', applied,
+        'replication_errors', errors
+    )::text
+    FROM pgraft_log_get_replication_status();
+$$;
+
+-- Replicate a log entry via the Raft leader
+CREATE OR REPLACE FUNCTION pgraft_replicate_entry(entry_data text)
+RETURNS boolean
+LANGUAGE C
+AS 'pgraft', 'pgraft_replicate_entry_func';
+
 -- Reset search path
 SET search_path = public;

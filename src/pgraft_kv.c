@@ -1,0 +1,622 @@
+/*-------------------------------------------------------------------------
+ *
+ * pgraft_kv.c
+ *      Key/Value storage engine for pgraft with etcd-like interface
+ *
+ * Copyright (c) 2024-2025, pgElephant, Inc.
+ *
+ *-------------------------------------------------------------------------
+ */
+
+#include "postgres.h"
+
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+
+#include "fmgr.h"
+#include "miscadmin.h"
+#include "storage/ipc.h"
+#include "storage/shmem.h"
+#include "storage/spin.h"
+#include "utils/elog.h"
+#include "utils/timestamp.h"
+#include "port/pg_crc32c.h"
+
+#include "../include/pgraft_kv.h"
+
+/*
+ * Replicate PUT operation through Raft
+ */
+int
+pgraft_kv_replicate_put(const char *key, const char *value, const char *client_id)
+{
+	pgraft_kv_log_entry_t log_entry;
+	char json_data[2048];
+	int result;
+	
+	/* Initialize log entry */
+	memset(&log_entry, 0, sizeof(log_entry));
+	log_entry.op_type = PGRAFT_KV_PUT;
+	strncpy(log_entry.key, key, sizeof(log_entry.key) - 1);
+	strncpy(log_entry.value, value, sizeof(log_entry.value) - 1);
+	log_entry.timestamp = GetCurrentTimestamp();
+	strncpy(log_entry.client_id, client_id, sizeof(log_entry.client_id) - 1);
+	
+	/* Convert to JSON for replication */
+	snprintf(json_data, sizeof(json_data),
+		"{\"type\": \"kv_put\", \"key\": \"%s\", \"value\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
+		key, value, (long long)log_entry.timestamp, client_id);
+	
+	/* TODO: Integrate with actual Raft replication mechanism */
+	elog(INFO, "pgraft_kv: Replicating PUT operation: %s", json_data);
+	
+	/* For now, apply directly - should be done through Raft consensus */
+	result = pgraft_kv_put(key, value, 0); /* log_index = 0 for now */
+	
+	return result;
+}
+
+/*
+ * Replicate DELETE operation through Raft
+ */
+int
+pgraft_kv_replicate_delete(const char *key, const char *client_id)
+{
+	pgraft_kv_log_entry_t log_entry;
+	char json_data[2048];
+	int result;
+	
+	/* Initialize log entry */
+	memset(&log_entry, 0, sizeof(log_entry));
+	log_entry.op_type = PGRAFT_KV_DELETE;
+	strncpy(log_entry.key, key, sizeof(log_entry.key) - 1);
+	log_entry.timestamp = GetCurrentTimestamp();
+	strncpy(log_entry.client_id, client_id, sizeof(log_entry.client_id) - 1);
+	
+	/* Convert to JSON for replication */
+	snprintf(json_data, sizeof(json_data),
+		"{\"type\": \"kv_delete\", \"key\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
+		key, (long long)log_entry.timestamp, client_id);
+	
+	/* TODO: Integrate with actual Raft replication mechanism */
+	elog(INFO, "pgraft_kv: Replicating DELETE operation: %s", json_data);
+	
+	/* For now, apply directly - should be done through Raft consensus */
+	result = pgraft_kv_delete(key, 0); /* log_index = 0 for now */
+	
+	return result;
+}
+
+/*
+ * Apply log entry to key/value store
+ */
+int
+pgraft_kv_apply_log_entry(const pgraft_kv_log_entry_t *log_entry, int64_t log_index)
+{
+	int result = 0;
+	
+	if (!log_entry) {
+		elog(WARNING, "pgraft_kv: NULL log entry provided");
+		return -1;
+	}
+	
+	switch (log_entry->op_type) {
+		case PGRAFT_KV_PUT:
+			result = pgraft_kv_put(log_entry->key, log_entry->value, log_index);
+			break;
+		case PGRAFT_KV_DELETE:
+			result = pgraft_kv_delete(log_entry->key, log_index);
+			break;
+		default:
+			elog(WARNING, "pgraft_kv: Unknown operation type: %d", log_entry->op_type);
+			result = -1;
+			break;
+	}
+	
+	return result;
+}
+
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+
+#include "../include/pgraft_kv.h"
+
+/* Global shared memory pointer */
+static pgraft_kv_store_t *g_kv_store = NULL;
+
+/* Persistence file path */
+#define PGRAFT_KV_PERSIST_FILE "/tmp/pgraft_kv_store.dat"
+
+/*
+ * Initialize shared memory for key/value store
+ */
+void
+pgraft_kv_init_shared_memory(void)
+{
+	bool		found;
+	
+	elog(INFO, "pgraft: Initializing key/value store shared memory");
+	
+	/* Allocate shared memory */
+	g_kv_store = (pgraft_kv_store_t *) ShmemInitStruct("pgraft_kv_store",
+														sizeof(pgraft_kv_store_t),
+														&found);
+	
+	if (!found)
+	{
+		elog(INFO, "pgraft: Creating new key/value store shared memory");
+		
+		/* Initialize shared memory */
+		memset(g_kv_store, 0, sizeof(pgraft_kv_store_t));
+		
+		/* Initialize mutex */
+		SpinLockInit(&g_kv_store->mutex);
+		
+		/* Initialize default values */
+		g_kv_store->num_entries = 0;
+		g_kv_store->total_operations = 0;
+		g_kv_store->last_applied_index = 0;
+		g_kv_store->puts = 0;
+		g_kv_store->deletes = 0;
+		g_kv_store->gets = 0;
+		
+		elog(INFO, "pgraft: Key/value store initialized");
+		
+		/* Try to load existing data from disk */
+		if (pgraft_kv_load_from_disk(PGRAFT_KV_PERSIST_FILE) == 0)
+		{
+			elog(INFO, "pgraft: Loaded existing key/value data from disk");
+		}
+	}
+	else
+	{
+		elog(INFO, "pgraft: Using existing key/value store shared memory");
+	}
+}
+
+/*
+ * Get key/value store shared memory
+ */
+pgraft_kv_store_t *
+pgraft_kv_get_store(void)
+{
+	return g_kv_store;
+}
+
+/*
+ * Find entry index by key
+ */
+static int
+pgraft_kv_find_entry_index(const char *key)
+{
+	int i;
+	
+	if (!g_kv_store || !key)
+		return -1;
+	
+	for (i = 0; i < g_kv_store->num_entries; i++)
+	{
+		if (!g_kv_store->entries[i].deleted && 
+			strcmp(g_kv_store->entries[i].key, key) == 0)
+		{
+			return i;
+		}
+	}
+	
+	return -1;
+}
+
+/*
+ * PUT operation - store or update a key/value pair
+ */
+int
+pgraft_kv_put(const char *key, const char *value, int64_t log_index)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	pgraft_kv_entry_t *entry;
+	int entry_index;
+	int64_t timestamp = GetCurrentTimestamp();
+	
+	if (!store || !key || !value)
+	{
+		elog(ERROR, "pgraft_kv: Invalid parameters for PUT operation");
+		return -1;
+	}
+	
+	if (strlen(key) >= 256)
+	{
+		elog(ERROR, "pgraft_kv: Key too long (max 255 characters)");
+		return -1;
+	}
+	
+	if (strlen(value) >= 1024)
+	{
+		elog(ERROR, "pgraft_kv: Value too long (max 1023 characters)");
+		return -1;
+	}
+	
+	SpinLockAcquire(&store->mutex);
+	
+	/* Check if key already exists */
+	entry_index = pgraft_kv_find_entry_index(key);
+	
+	if (entry_index >= 0)
+	{
+		/* Update existing entry */
+		entry = &store->entries[entry_index];
+		strncpy(entry->value, value, sizeof(entry->value) - 1);
+		entry->value[sizeof(entry->value) - 1] = '\0';
+		entry->version++;
+		entry->updated_at = timestamp;
+		entry->log_index = log_index;
+		entry->deleted = false;
+		
+		elog(DEBUG1, "pgraft_kv: Updated key '%s' (version %lld)", key, entry->version);
+	}
+	else
+	{
+		/* Create new entry */
+		if (store->num_entries >= 1000)
+		{
+			SpinLockRelease(&store->mutex);
+			elog(ERROR, "pgraft_kv: Key/value store is full (1000 entries)");
+			return -1;
+		}
+		
+		entry = &store->entries[store->num_entries];
+		strncpy(entry->key, key, sizeof(entry->key) - 1);
+		entry->key[sizeof(entry->key) - 1] = '\0';
+		strncpy(entry->value, value, sizeof(entry->value) - 1);
+		entry->value[sizeof(entry->value) - 1] = '\0';
+		entry->version = 1;
+		entry->created_at = timestamp;
+		entry->updated_at = timestamp;
+		entry->log_index = log_index;
+		entry->deleted = false;
+		
+		store->num_entries++;
+		
+		elog(DEBUG1, "pgraft_kv: Created new key '%s'", key);
+	}
+	
+	store->puts++;
+	store->total_operations++;
+	store->last_applied_index = log_index;
+	
+	SpinLockRelease(&store->mutex);
+	
+	/* Persist to disk */
+	pgraft_kv_save_to_disk(PGRAFT_KV_PERSIST_FILE);
+	
+	return 0;
+}
+
+/*
+ * GET operation - retrieve value for a key
+ */
+int
+pgraft_kv_get(const char *key, char *value, size_t value_size, int64_t *version)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	pgraft_kv_entry_t *entry;
+	int entry_index;
+	
+	if (!store || !key || !value)
+	{
+		elog(ERROR, "pgraft_kv: Invalid parameters for GET operation");
+		return -1;
+	}
+	
+	SpinLockAcquire(&store->mutex);
+	
+	entry_index = pgraft_kv_find_entry_index(key);
+	
+	if (entry_index < 0)
+	{
+		SpinLockRelease(&store->mutex);
+		elog(DEBUG1, "pgraft_kv: Key '%s' not found", key);
+		return -1;  /* Key not found */
+	}
+	
+	entry = &store->entries[entry_index];
+	
+	/* Copy value */
+	strncpy(value, entry->value, value_size - 1);
+	value[value_size - 1] = '\0';
+	
+	if (version)
+		*version = entry->version;
+	
+	store->gets++;
+	store->total_operations++;
+	
+	SpinLockRelease(&store->mutex);
+	
+	elog(DEBUG1, "pgraft_kv: Retrieved key '%s' (version %lld)", key, entry->version);
+	
+	return 0;  /* Success */
+}
+
+/*
+ * DELETE operation - mark a key as deleted
+ */
+int
+pgraft_kv_delete(const char *key, int64_t log_index)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	pgraft_kv_entry_t *entry;
+	int entry_index;
+	
+	if (!store || !key)
+	{
+		elog(ERROR, "pgraft_kv: Invalid parameters for DELETE operation");
+		return -1;
+	}
+	
+	SpinLockAcquire(&store->mutex);
+	
+	entry_index = pgraft_kv_find_entry_index(key);
+	
+	if (entry_index < 0)
+	{
+		SpinLockRelease(&store->mutex);
+		elog(DEBUG1, "pgraft_kv: Key '%s' not found for deletion", key);
+		return -1;  /* Key not found */
+	}
+	
+	entry = &store->entries[entry_index];
+	entry->deleted = true;
+	entry->updated_at = GetCurrentTimestamp();
+	entry->log_index = log_index;
+	entry->version++;
+	
+	store->deletes++;
+	store->total_operations++;
+	store->last_applied_index = log_index;
+	
+	SpinLockRelease(&store->mutex);
+	
+	/* Persist to disk */
+	pgraft_kv_save_to_disk(PGRAFT_KV_PERSIST_FILE);
+	
+	elog(DEBUG1, "pgraft_kv: Deleted key '%s'", key);
+	
+	return 0;
+}
+
+/*
+ * Check if key exists
+ */
+bool
+pgraft_kv_exists(const char *key)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	bool exists;
+	
+	if (!store || !key)
+		return false;
+	
+	SpinLockAcquire(&store->mutex);
+	exists = (pgraft_kv_find_entry_index(key) >= 0);
+	SpinLockRelease(&store->mutex);
+	
+	return exists;
+}
+
+/*
+ * Get statistics
+ */
+int
+pgraft_kv_get_stats(pgraft_kv_store_t *stats)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	
+	if (!store || !stats)
+		return -1;
+	
+	SpinLockAcquire(&store->mutex);
+	memcpy(stats, store, sizeof(pgraft_kv_store_t));
+	SpinLockRelease(&store->mutex);
+	
+	return 0;
+}
+
+/*
+ * Save key/value store to disk for persistence
+ */
+int
+pgraft_kv_save_to_disk(const char *path)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	FILE *file;
+	size_t written;
+	
+	if (!store || !path)
+		return -1;
+	
+	file = fopen(path, "wb");
+	if (!file)
+	{
+		elog(WARNING, "pgraft_kv: Failed to open file for writing: %s", path);
+		return -1;
+	}
+	
+	SpinLockAcquire(&store->mutex);
+	
+	/* Write the entire store structure */
+	written = fwrite(store, sizeof(pgraft_kv_store_t), 1, file);
+	
+	SpinLockRelease(&store->mutex);
+	
+	fclose(file);
+	
+	if (written != 1)
+	{
+		elog(WARNING, "pgraft_kv: Failed to write store to disk");
+		return -1;
+	}
+	
+	elog(DEBUG1, "pgraft_kv: Saved store to disk (%d entries)", store->num_entries);
+	return 0;
+}
+
+/*
+ * Load key/value store from disk
+ */
+int
+pgraft_kv_load_from_disk(const char *path)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	pgraft_kv_store_t temp_store;
+	FILE *file;
+	size_t read_size;
+	
+	if (!store || !path)
+		return -1;
+	
+	/* Check if file exists */
+	file = fopen(path, "rb");
+	if (!file)
+	{
+		elog(DEBUG1, "pgraft_kv: No existing store file found at %s", path);
+		return -1;
+	}
+	
+	/* Read into temporary structure first */
+	read_size = fread(&temp_store, sizeof(pgraft_kv_store_t), 1, file);
+	fclose(file);
+	
+	if (read_size != 1)
+	{
+		elog(WARNING, "pgraft_kv: Failed to read store from disk");
+		return -1;
+	}
+	
+	SpinLockAcquire(&store->mutex);
+	
+	/* Copy data except the mutex */
+	memcpy(store->entries, temp_store.entries, sizeof(store->entries));
+	store->num_entries = temp_store.num_entries;
+	store->total_operations = temp_store.total_operations;
+	store->last_applied_index = temp_store.last_applied_index;
+	store->puts = temp_store.puts;
+	store->deletes = temp_store.deletes;
+	store->gets = temp_store.gets;
+	
+	SpinLockRelease(&store->mutex);
+	
+	elog(INFO, "pgraft_kv: Loaded store from disk (%d entries)", store->num_entries);
+	return 0;
+}
+
+/*
+ * List all keys as JSON
+ */
+void
+pgraft_kv_list_keys(char *keys_json, size_t json_size)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	int i, pos = 0;
+	bool first = true;
+	
+	if (!store || !keys_json || json_size < 3)
+		return;
+	
+	SpinLockAcquire(&store->mutex);
+	
+	pos += snprintf(keys_json + pos, json_size - pos, "[");
+	
+	for (i = 0; i < store->num_entries && pos < json_size - 10; i++)
+	{
+		if (!store->entries[i].deleted)
+		{
+			if (!first)
+				pos += snprintf(keys_json + pos, json_size - pos, ",");
+			
+			pos += snprintf(keys_json + pos, json_size - pos, "\"%s\"", 
+							store->entries[i].key);
+			first = false;
+		}
+	}
+	
+	pos += snprintf(keys_json + pos, json_size - pos, "]");
+	
+	SpinLockRelease(&store->mutex);
+}
+
+/*
+ * Compact the store by removing deleted entries
+ */
+void
+pgraft_kv_compact(void)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	int i, j = 0;
+	
+	if (!store)
+		return;
+	
+	SpinLockAcquire(&store->mutex);
+	
+	/* Move non-deleted entries to the beginning */
+	for (i = 0; i < store->num_entries; i++)
+	{
+		if (!store->entries[i].deleted)
+		{
+			if (i != j)
+			{
+				memcpy(&store->entries[j], &store->entries[i], sizeof(pgraft_kv_entry_t));
+			}
+			j++;
+		}
+	}
+	
+	/* Clear the rest */
+	for (i = j; i < store->num_entries; i++)
+	{
+		memset(&store->entries[i], 0, sizeof(pgraft_kv_entry_t));
+	}
+	
+	store->num_entries = j;
+	
+	SpinLockRelease(&store->mutex);
+	
+	/* Persist the compacted store */
+	pgraft_kv_save_to_disk(PGRAFT_KV_PERSIST_FILE);
+	
+	elog(INFO, "pgraft_kv: Compacted store to %d active entries", j);
+}
+
+/*
+ * Reset the store
+ */
+void
+pgraft_kv_reset(void)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	
+	if (!store)
+		return;
+	
+	SpinLockAcquire(&store->mutex);
+	
+	memset(store->entries, 0, sizeof(store->entries));
+	store->num_entries = 0;
+	store->total_operations = 0;
+	store->last_applied_index = 0;
+	store->puts = 0;
+	store->deletes = 0;
+	store->gets = 0;
+	
+	SpinLockRelease(&store->mutex);
+	
+	/* Remove persistence file */
+	unlink(PGRAFT_KV_PERSIST_FILE);
+	
+	elog(INFO, "pgraft_kv: Store reset");
+}
