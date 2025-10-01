@@ -1,4 +1,4 @@
-name: pgraft-build-rocky-pg-17
+name: pgraft-build-rocky-pg-16
 
 on:
   workflow_dispatch:
@@ -27,16 +27,15 @@ jobs:
             perl \
             perl-IPC-Run
 
-      - name: Install PostgreSQL 17
+      - name: Install PostgreSQL 16
         run: |
           dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
           dnf -qy module disable postgresql
-          dnf install -y postgresql17 postgresql17-server postgresql17-devel
+          dnf install -y postgresql16 postgresql16-server postgresql16-devel
 
       - name: Detect PostgreSQL paths
         run: |
-          # Find pg_config (Rocky puts it in /usr/pgsql-17/bin/)
-          PG_CONFIG=$(find /usr -name pg_config -path "*/pgsql-17/*" | head -1)
+          PG_CONFIG=$(find /usr -name pg_config -path "*/pgsql-16/*" | head -1)
           PG_BINDIR=$(dirname ${PG_CONFIG})
           PG_LIBDIR=$(${PG_CONFIG} --libdir)
           PG_PREFIX=$(dirname ${PG_BINDIR})
@@ -46,27 +45,14 @@ jobs:
           echo "PG_LIBDIR=${PG_LIBDIR}" >> $GITHUB_ENV
           echo "PG_PREFIX=${PG_PREFIX}" >> $GITHUB_ENV
           
-          echo "Detected PostgreSQL paths:"
+          echo "Detected PostgreSQL 16 paths:"
           echo "  PG_CONFIG = ${PG_CONFIG}"
-          echo "  PG_PREFIX = ${PG_PREFIX}"
-          echo "  PG_BINDIR = ${PG_BINDIR}"
-          echo "  PG_LIBDIR = ${PG_LIBDIR}"
-
-      - name: Verify PostgreSQL installation
-        run: |
-          ${PG_CONFIG} --version
-          ${PG_CONFIG} --includedir
-          ${PG_CONFIG} --libdir
 
       - name: Install Go
         run: |
           wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
           tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
           echo "/usr/local/go/bin" >> $GITHUB_PATH
-
-      - name: Verify Go installation
-        run: |
-          /usr/local/go/bin/go version
 
       - name: Set up build environment
         run: |
@@ -88,17 +74,9 @@ jobs:
         run: |
           cp Makefile Makefile.original
           
-          # Replace hardcoded paths with detected paths
           sed -i "s|PG_CONFIG = /usr/local/pgsql.17/bin/pg_config|PG_CONFIG = ${PG_CONFIG}|g" Makefile
           sed -i "s|/usr/local/pgsql.17/lib|${PG_LIBDIR}|g" Makefile
           sed -i 's|pgraft_go.dylib|pgraft_go.so|g' Makefile
-          
-          echo "Detected paths:"
-          echo "  PG_CONFIG = ${PG_CONFIG}"
-          echo "  PG_LIBDIR = ${PG_LIBDIR}"
-          echo ""
-          echo "Makefile changes:"
-          diff -u Makefile.original Makefile || true
 
       - name: Build pgraft
         run: |
@@ -111,29 +89,15 @@ jobs:
           if [ -f pgraft.so ]; then
             echo "✓ Build successful: pgraft.so"
             ls -lh pgraft.so
-            file pgraft.so
           else
-            echo "✗ Build failed: pgraft.so not found"
+            echo "✗ Build failed"
             exit 1
-          fi
-          
-          if [ -f src/pgraft_go.so ]; then
-            echo "✓ Go library built: pgraft_go.so"
-            ls -lh src/pgraft_go.so
-          fi
-
-      - name: Check for warnings
-        run: |
-          if grep -i "warning:" build.log; then
-            echo "⚠ Warnings found in build"
-          else
-            echo "✓ No warnings"
           fi
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pgraft-rocky-pg17
+          name: pgraft-rocky-pg16
           path: |
             pgraft.so
             src/pgraft_go.so

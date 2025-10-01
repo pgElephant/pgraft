@@ -1,0 +1,91 @@
+name: pgraft-build-mac-pg-18
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL 18
+        run: |
+          brew install postgresql@18 || brew install postgresql
+
+      - name: Detect PostgreSQL paths
+        run: |
+          BREW_PREFIX=$(brew --prefix)
+          PG_PREFIX=$(brew --prefix postgresql@18 || brew --prefix postgresql)
+          
+          echo "BREW_PREFIX=${BREW_PREFIX}" >> $GITHUB_ENV
+          echo "PG_PREFIX=${PG_PREFIX}" >> $GITHUB_ENV
+          echo "PG_CONFIG=${PG_PREFIX}/bin/pg_config" >> $GITHUB_ENV
+          
+          echo "PostgreSQL 18 prefix: ${PG_PREFIX}"
+
+      - name: Verify PostgreSQL installation
+        run: |
+          export PATH="${PG_PREFIX}/bin:$PATH"
+          which pg_config
+          pg_config --version
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Set up build environment
+        run: |
+          PG_INCLUDEDIR=$(${PG_CONFIG} --includedir)
+          PG_INCLUDEDIR_SERVER=$(${PG_CONFIG} --includedir-server)
+          PG_LIBDIR=$(${PG_CONFIG} --libdir)
+          
+          echo "CGO_CFLAGS=-I${PG_INCLUDEDIR} -I${PG_INCLUDEDIR_SERVER}" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L${PG_LIBDIR}" >> $GITHUB_ENV
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+          echo "${PG_PREFIX}/bin" >> $GITHUB_PATH
+
+      - name: Download Go dependencies
+        run: |
+          cd src
+          go mod download
+          go mod verify
+
+      - name: Patch Makefile for macOS
+        run: |
+          cp Makefile Makefile.original
+          
+          PG_BIN="${PG_PREFIX}/bin/pg_config"
+          PG_LIB="${PG_PREFIX}/lib"
+          
+          sed -i '' "s|PG_CONFIG = /usr/local/pgsql.17/bin/pg_config|PG_CONFIG = ${PG_BIN}|g" Makefile
+          sed -i '' "s|-L/usr/local/pgsql.17/lib|-L${PG_LIB}|g" Makefile
+
+      - name: Build pgraft
+        run: |
+          make clean || true
+          make all 2>&1 | tee build.log
+
+      - name: Verify build output
+        run: |
+          if [ -f pgraft.dylib ]; then
+            echo "✓ Build successful: pgraft.dylib"
+            ls -lh pgraft.dylib
+          else
+            echo "✗ Build failed"
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgraft-macos-pg18
+          path: |
+            pgraft.dylib
+            src/pgraft_go.dylib
+            pgraft.control
+            pgraft--1.0.sql
+
