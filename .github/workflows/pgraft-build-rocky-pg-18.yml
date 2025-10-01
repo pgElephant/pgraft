@@ -24,8 +24,7 @@ jobs:
             make \
             wget \
             gnupg2 \
-            perl \
-            perl-IPC-Run
+            perl
 
       - name: Install PostgreSQL 18
         run: |
