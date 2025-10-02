@@ -1,4 +1,4 @@
-# pgraft - PostgreSQL Raft Consensus Extension
+# pgraft — Raft-based PostgreSQL extension for leader election & high availability
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-blue.svg)](https://postgresql.org/)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
@@ -14,9 +14,9 @@
 | **macOS** | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-16.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-16.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-17.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-17.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-18.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-18.yml) |
 | **Rocky** | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-16.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-16.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-17.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-17.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-18.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-18.yml) |
 
-**pgraft** is a production-ready PostgreSQL extension that implements the Raft consensus algorithm for distributed PostgreSQL clusters. It provides automatic leader election, log replication, and 100% split-brain protection using the battle-tested etcd-io/raft library.
+**pgraft** is a production‑ready PostgreSQL extension that embeds the Raft consensus protocol to deliver automatic leader election, deterministic failover, crash‑safe log replication, and 100% split‑brain prevention for PostgreSQL clusters — powered by the proven etcd‑io/raft library.
 
-**Supported PostgreSQL versions**: 16, 17, 18 (requires PostgreSQL 15+ features)
+**Supported PostgreSQL versions**: 16, 17, 18
 
 ## Quick Links
 
@@ -39,13 +39,26 @@
 
 ## Installation
 
-```bash
-# Build
-cd pgraft
-make clean && make
+## Quick install (60 seconds)
 
-# Install (adjust paths for your PostgreSQL installation)
-make install
+Prerequisites: PostgreSQL 16–18 with server headers, make, gcc/clang
+
+```bash
+# from repo root
+make
+sudo make install
+```
+
+Enable in postgresql.conf and restart:
+
+```conf
+shared_preload_libraries = 'pgraft'
+```
+
+Create the extension:
+
+```sql
+CREATE EXTENSION pgraft;
 ```
 
 **For detailed installation instructions, see the [Installation Guide](https://pgelephant.github.io/pgraft/getting-started/installation/).**
@@ -268,9 +281,9 @@ MIT License - see LICENSE file for details.
 - **[etcd-io/raft](https://github.com/etcd-io/raft)** - Raft consensus implementation used by pgraft
 - **[PostgreSQL](https://www.postgresql.org/)** - The world's most advanced open source database
 
-## Keywords
+## SEO/Discoverability keywords
 
-PostgreSQL extension, Raft consensus, distributed database, high availability, leader election, log replication, split-brain protection, distributed systems, database clustering, fault tolerance, PostgreSQL HA, PostgreSQL cluster, database replication, consensus algorithm
+PostgreSQL Raft, Postgres leader election, PostgreSQL automatic failover, PostgreSQL high availability, PostgreSQL clustering, Raft log replication, split‑brain prevention, Postgres background worker consensus, deterministic failover, HA Postgres on Kubernetes, distributed consensus for PostgreSQL, PostgreSQL Raft extension
 
 ---
 
