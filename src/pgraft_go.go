@@ -370,8 +370,17 @@ func (ps *PersistentStorage) saveToDisk() error {
 		snapshotPtr = &snapshot
 	}
 
+	// CRITICAL FIX: Validate that commit index doesn't exceed available entries
+	// If HardState.Commit > lastIndex, clamp it to lastIndex to prevent corruption
+	validatedHardState := hardState
+	if validatedHardState.Commit > lastIndex {
+		logWarning("WARNING: HardState.Commit (%d) exceeds lastIndex (%d), clamping to %d to prevent corruption",
+			validatedHardState.Commit, lastIndex, lastIndex)
+		validatedHardState.Commit = lastIndex
+	}
+
 	state := StorageState{
-		HardState: hardState,
+		HardState: validatedHardState,
 		Entries:   entries,
 		Snapshot:  snapshotPtr,
 	}
@@ -1637,15 +1646,8 @@ func processReady(rd raft.Ready) {
 		len(rd.Messages), len(rd.Entries), len(rd.CommittedEntries), !raft.IsEmptyHardState(rd.HardState), !raft.IsEmptySnap(rd.Snapshot),
 		status.RaftState.String(), status.Term, status.Lead)
 
-	if !raft.IsEmptyHardState(rd.HardState) {
-		if raftStorage == nil {
-			logInfo("ERROR - raftStorage is nil, cannot persist HardState")
-			return
-		}
-		raftStorage.SetHardState(rd.HardState)
-		logInfo("Persisted HardState: term=%d, vote=%d, commit=%d", rd.HardState.Term, rd.HardState.Vote, rd.HardState.Commit)
-	}
-
+	// CRITICAL: Persist entries BEFORE HardState to ensure consistency
+	// The HardState.Commit index must not reference entries that aren't persisted yet
 	if len(rd.Entries) > 0 {
 		logInfo("About to persist %d entries...", len(rd.Entries))
 		if raftStorage == nil {
@@ -1654,6 +1656,16 @@ func processReady(rd raft.Ready) {
 		}
 		raftStorage.Append(rd.Entries)
 		logInfo("Persisted %d entries", len(rd.Entries))
+	}
+
+	// Now persist HardState after entries are safely on disk
+	if !raft.IsEmptyHardState(rd.HardState) {
+		if raftStorage == nil {
+			logInfo("ERROR - raftStorage is nil, cannot persist HardState")
+			return
+		}
+		raftStorage.SetHardState(rd.HardState)
+		logInfo("Persisted HardState: term=%d, vote=%d, commit=%d", rd.HardState.Term, rd.HardState.Vote, rd.HardState.Commit)
 	}
 
 	logInfo("About to send %d messages...", len(rd.Messages))
@@ -2806,7 +2818,7 @@ func processRaftTicker() {
 				/*
 					select {
 					case rd := <-raftNode.Ready():
-						logInfo("ticker received ready message")
+							logInfo("ticker received ready message")
 						raftReady <- rd
 					default:
 						// No ready message

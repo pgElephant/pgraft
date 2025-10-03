@@ -222,13 +222,12 @@ pgraft_main(Datum main_arg)
 	elog(LOG, "pgraft: background worker raft initialization successful");
 	
 	/* Establish initial connections to all cluster peers */
-	/* TEMPORARILY DISABLED - will be re-enabled after verifying cluster starts */
-	/* elog(LOG, "pgraft: background worker connecting to cluster peers");
+	elog(LOG, "pgraft: background worker connecting to cluster peers");
 	if (pgraft_go_connect_to_peers() != 0)
 	{
 		elog(WARNING, "pgraft: background worker failed to connect to some peers");
 	}
-	elog(LOG, "pgraft: background worker peer connections initiated"); */
+	elog(LOG, "pgraft: background worker peer connections initiated");
 	
 	BackgroundWorkerUnblockSignals();
 	elog(LOG, "pgraft: background worker signal handling set up");

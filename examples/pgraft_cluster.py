@@ -52,6 +52,7 @@ class PgraftClusterManager:
         self.log_dir = Path.cwd() / "logs"
         self.verbose = verbose
         self.current_user = getpass.getuser()
+        self.pg_bin_dir = "/usr/local/pgsql.17/bin"  # PostgreSQL 17 binaries
         self.nodes = {
             'primary1': NodeConfig(
                 name='primary1',
@@ -124,21 +125,21 @@ class PgraftClusterManager:
         required_commands = ['pg_ctl', 'initdb', 'psql']
         
         for cmd in required_commands:
+            cmd_path = f"{self.pg_bin_dir}/{cmd}"
             try:
-                result = subprocess.run(['which', cmd], capture_output=True, text=True)
-                if result.returncode != 0:
-                    self.log(f"✗ {cmd} not found in PATH", "ERROR")
-                    self.log("Please install PostgreSQL and ensure it's in your PATH", "ERROR")
+                if not Path(cmd_path).exists():
+                    self.log(f"✗ {cmd} not found at {cmd_path}", "ERROR")
+                    self.log("Please install PostgreSQL 17 at /usr/local/pgsql.17", "ERROR")
                     sys.exit(1)
-                self.log(f"✓ Found {cmd}: {result.stdout.strip()}", verbose_level=1)
+                self.log(f"✓ Found {cmd}: {cmd_path}", verbose_level=1)
             except Exception as e:
                 self.log(f"✗ {cmd} not found: {e}", "ERROR")
-                self.log("Please install PostgreSQL and ensure it's in your PATH", "ERROR")
+                self.log("Please install PostgreSQL 17 at /usr/local/pgsql.17", "ERROR")
                 sys.exit(1)
         
         # Check PostgreSQL version
         try:
-            result = subprocess.run(['pg_ctl', '--version'], capture_output=True, text=True)
+            result = subprocess.run([f'{self.pg_bin_dir}/pg_ctl', '--version'], capture_output=True, text=True)
             if result.returncode == 0:
                 self.log(f"PostgreSQL version: {result.stdout.strip()}", verbose_level=1)
         except Exception as e:
@@ -254,7 +255,7 @@ class PgraftClusterManager:
         
         # Run initdb
         initdb_cmd = [
-            'initdb',
+            f'{self.pg_bin_dir}/initdb',
             '-D', node.data_dir,
             '--auth-local=trust',
             '--auth-host=trust',
@@ -306,7 +307,7 @@ class PgraftClusterManager:
         log_file = node_log_dir / 'postgresql.log'
         
         pg_ctl_cmd = [
-            'pg_ctl',
+            f'{self.pg_bin_dir}/pg_ctl',
             '-D', node.data_dir,
             '-l', str(log_file),
             'start'
@@ -388,7 +389,7 @@ class PgraftClusterManager:
         self.log(f"[{node.name}] - Stopping...")
         
         pg_ctl_cmd = [
-            'pg_ctl',
+            f'{self.pg_bin_dir}/pg_ctl',
             '-D', node.data_dir,
             'stop'
         ]
