@@ -29,6 +29,8 @@ extern const char *_GoStringPtr(_GoString_ s);
 #include <stdint.h>
 #include <string.h>
 
+// No external C callbacks - we'll use file-based IPC or shared memory
+
 typedef struct pgraft_go_cluster_member {
 	char   *name;
 	char   *peer_host;
@@ -167,6 +169,7 @@ extern void pgraft_go_set_debug(int enabled);
 //
 extern int pgraft_go_set_log_file(char* logFilePath);
 extern int pgraft_go_start(void);
+extern int pgraft_go_propose(char* data, size_t len);
 extern int pgraft_go_stop(void);
 extern char* pgraft_go_get_nodes(void);
 extern void cleanup_pgraft(void);
@@ -176,6 +179,7 @@ extern int pgraft_go_init_config(struct pgraft_go_config* config);
 
 // Helper function to establish initial connections to all peers
 // This should be called AFTER pgraft_go_start() from the background worker
+//
 extern int pgraft_go_connect_to_peers(void);
 extern int pgraft_go_init(int nodeID, char* address, int port);
 extern int pgraft_go_start_background(void);

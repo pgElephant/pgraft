@@ -55,6 +55,16 @@ typedef struct
 
 /* Command queue configuration */
 #define MAX_COMMANDS 100
+#define MAX_APPLY_ENTRIES 1000
+
+/* Apply entry structure for Raft log application */
+typedef struct
+{
+	uint64		raft_index;			/* Raft log index */
+	char		data[4096];			/* Entry data */
+	size_t		data_len;			/* Data length */
+	bool		applied;			/* Whether applied to PostgreSQL */
+}			pgraft_apply_entry_t;
 
 /* Background worker state structure */
 typedef struct
@@ -75,6 +85,13 @@ typedef struct
 	int			status_head;		/* Index of next status to read */
 	int			status_tail;		/* Index of next slot to write */
 	int			status_count;		/* Number of status entries */
+
+	/* Fixed-size circular buffer for Raft log entries to apply */
+	pgraft_apply_entry_t apply_queue[MAX_APPLY_ENTRIES];
+	int			apply_head;			/* Index of next entry to apply */
+	int			apply_tail;			/* Index of next slot to write */
+	int			apply_count;		/* Number of entries to apply */
+	uint64		last_applied_index; /* Last Raft index applied to PostgreSQL */
 }			pgraft_worker_state_t;
 
 /* Core consensus types */
@@ -139,5 +156,11 @@ bool		pgraft_add_command_to_status(pgraft_command_t *cmd);
 bool		pgraft_get_command_status(int64_t timestamp, pgraft_command_t *status_cmd);
 bool		pgraft_update_command_status(int64_t timestamp, COMMAND_STATUS status, const char *error_message);
 bool		pgraft_remove_completed_commands(void);
+
+/* Apply queue functions (for Raft log replication) */
+bool		pgraft_enqueue_apply_entry(uint64 raft_index, const char *data, size_t data_len);
+bool		pgraft_dequeue_apply_entry(pgraft_apply_entry_t *entry);
+bool		pgraft_apply_queue_is_empty(void);
+int			pgraft_get_apply_queue_count(void);
 
 #endif

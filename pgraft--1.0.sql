@@ -12,6 +12,39 @@
 CREATE SCHEMA pgraft;
 
 -- ============================================================================
+-- Raft Replication Tables (for 100% Raft-based replication)
+-- ============================================================================
+
+-- Key-value store (etcd-compatible)
+-- This table stores data replicated via Raft
+CREATE TABLE IF NOT EXISTS pgraft.kv (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    version BIGINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Applied Raft log entries tracking
+-- Tracks which entries have been applied to PostgreSQL
+CREATE TABLE IF NOT EXISTS pgraft.applied_entries (
+    raft_index BIGINT PRIMARY KEY,
+    raft_term BIGINT NOT NULL,
+    entry_type INTEGER NOT NULL,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index mapping: Raft index → PostgreSQL operation
+-- Useful for debugging and crash recovery
+CREATE TABLE IF NOT EXISTS pgraft.log_index_mapping (
+    raft_index BIGINT PRIMARY KEY,
+    operation_type TEXT NOT NULL,
+    target_table TEXT,
+    operation_data JSONB,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================================================
 -- Core Raft Functions
 -- ============================================================================
 

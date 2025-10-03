@@ -301,3 +301,126 @@ pgraft_remove_completed_commands(void)
 	
 	return true;
 }
+
+/*
+ * Enqueue a Raft log entry for application to PostgreSQL
+ * Called from Go applyEntry() when a Raft entry is committed
+ */
+bool
+pgraft_enqueue_apply_entry(uint64 raft_index, const char *data, size_t data_len)
+{
+	pgraft_worker_state_t *state;
+	pgraft_apply_entry_t *entry;
+	
+	state = pgraft_worker_get_state();
+	if (state == NULL) {
+		elog(ERROR, "pgraft: failed to get worker state in pgraft_enqueue_apply_entry");
+		return false;
+	}
+	
+	/* Check if queue is full */
+	if (state->apply_count >= MAX_APPLY_ENTRIES) {
+		elog(WARNING, "pgraft: apply queue is full (%d entries), cannot enqueue index %lu",
+			 MAX_APPLY_ENTRIES, (unsigned long) raft_index);
+		return false;
+	}
+	
+	/* Check data length */
+	if (data_len > sizeof(entry->data)) {
+		elog(WARNING, "pgraft: entry data too large (%zu bytes, max %zu), index %lu",
+			 data_len, sizeof(entry->data), (unsigned long) raft_index);
+		return false;
+	}
+	
+	/* Get pointer to next slot in circular buffer */
+	entry = &state->apply_queue[state->apply_tail];
+	
+	/* Initialize entry */
+	entry->raft_index = raft_index;
+	entry->data_len = data_len;
+	if (data && data_len > 0) {
+		memcpy(entry->data, data, data_len);
+	}
+	entry->applied = false;
+	
+	/* Update circular buffer pointers */
+	state->apply_tail = (state->apply_tail + 1) % MAX_APPLY_ENTRIES;
+	state->apply_count++;
+	
+	elog(DEBUG1, "pgraft: enqueued apply entry %lu (count=%d)",
+		 (unsigned long) raft_index, state->apply_count);
+	
+	return true;
+}
+
+/*
+ * Dequeue a Raft log entry for application to PostgreSQL
+ * Called from background worker to apply entries
+ */
+bool
+pgraft_dequeue_apply_entry(pgraft_apply_entry_t *entry)
+{
+	pgraft_worker_state_t *state;
+	pgraft_apply_entry_t *queued_entry;
+	
+	if (entry == NULL) {
+		return false;
+	}
+	
+	state = pgraft_worker_get_state();
+	if (state == NULL) {
+		return false;
+	}
+	
+	/* Check if queue is empty */
+	if (state->apply_count == 0) {
+		return false;
+	}
+	
+	/* Get pointer to next entry in circular buffer */
+	queued_entry = &state->apply_queue[state->apply_head];
+	
+	/* Copy entry data */
+	*entry = *queued_entry;
+	
+	/* Update circular buffer pointers */
+	state->apply_head = (state->apply_head + 1) % MAX_APPLY_ENTRIES;
+	state->apply_count--;
+	
+	elog(DEBUG2, "pgraft: dequeued apply entry %lu (count=%d)",
+		 (unsigned long) entry->raft_index, state->apply_count);
+	
+	return true;
+}
+
+/*
+ * Check if apply queue is empty
+ */
+bool
+pgraft_apply_queue_is_empty(void)
+{
+	pgraft_worker_state_t *state;
+	
+	state = pgraft_worker_get_state();
+	if (state == NULL) {
+		return true;
+	}
+	
+	return (state->apply_count == 0);
+}
+
+/*
+ * Get number of entries in apply queue
+ */
+int
+pgraft_get_apply_queue_count(void)
+{
+	pgraft_worker_state_t *state;
+	
+	state = pgraft_worker_get_state();
+	if (state == NULL) {
+		return 0;
+	}
+	
+	return state->apply_count;
+}

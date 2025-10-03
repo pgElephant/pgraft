@@ -12,11 +12,13 @@
 package main
 
 /*
-#cgo CFLAGS: -I/usr/local/pgsql.17/include/server
+#cgo CFLAGS: -I/usr/local/pgsql.17/include/server -I../include
 #cgo LDFLAGS: -L/usr/local/pgsql.17/lib
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+
+// No external C callbacks - we'll use file-based IPC or shared memory
 
 typedef struct pgraft_go_cluster_member {
 	char   *name;
@@ -617,6 +619,34 @@ func pgraft_go_start() C.int {
 	atomic.StoreInt32(&running, 1)
 	logInfo("INFO - Started successfully - Ready processing active, tick will be called from worker")
 
+	return 0
+}
+
+//export pgraft_go_propose
+func pgraft_go_propose(data *C.char, len C.size_t) C.int {
+	if atomic.LoadInt32(&running) == 0 {
+		logError("cannot propose: raft not running")
+		return -1
+	}
+
+	if raftNode == nil {
+		logError("cannot propose: raftNode is nil")
+		return -1
+	}
+
+	// Convert C string to Go bytes
+	goData := C.GoBytes(unsafe.Pointer(data), C.int(len))
+
+	logInfo("proposing entry to raft: len=%d, data='%s'", len, string(goData))
+
+	// Propose to Raft
+	err := raftNode.Propose(raftCtx, goData)
+	if err != nil {
+		logError("failed to propose to raft: %v", err)
+		return -1
+	}
+
+	logInfo("successfully proposed entry to raft")
 	return 0
 }
 
@@ -1778,39 +1808,43 @@ func applyEntry(entry raftpb.Entry) {
 	logInfo("applying committed entry: index=%d, term=%d, type=%s",
 		entry.Index, entry.Term, entry.Type.String())
 
-	// Update applied index
-	appliedIndex = entry.Index
-
 	// Process different entry types
 	switch entry.Type {
 	case raftpb.EntryNormal:
-		// Check if this is a key/value operation
-		if len(entry.Data) >= 8 { // Minimum size for a key/value log entry
-			if isKeyValueLogEntry(entry.Data) {
-				logInfo("Applying key/value operation (index=%d)", entry.Index)
-				applyKeyValueLogEntry(entry.Data, entry.Index)
-			} else {
-				logInfo("Applied normal entry: %s", string(entry.Data))
-			}
-		} else {
-			logInfo("Applied normal entry: %s", string(entry.Data))
+		// Apply to PostgreSQL on ALL nodes (leader + followers)
+		if len(entry.Data) == 0 {
+			logInfo("empty entry at index %d, skipping", entry.Index)
+			appliedIndex = entry.Index
+			return
 		}
+
+		// Store committed entry data for background worker to apply
+		// The background worker will read from Raft storage and apply to PostgreSQL
+
+		// Update applied index
+		appliedIndex = entry.Index
+		logInfo("✅ COMMITTED entry %d (len=%d bytes) - READY FOR APPLICATION: %s",
+			entry.Index, len(entry.Data), string(entry.Data))
+
 	case raftpb.EntryConfChange:
 		// Apply configuration change
 		var cc raftpb.ConfChange
 		if err := cc.Unmarshal(entry.Data); err != nil {
-			logInfo("Failed to unmarshal ConfChange: %v", err)
+			logError("failed to unmarshal ConfChange: %v", err)
 			return
 		}
 		applyConfChange(cc)
+		appliedIndex = entry.Index
+
 	case raftpb.EntryConfChangeV2:
 		// Apply configuration change v2
 		var cc raftpb.ConfChangeV2
 		if err := cc.Unmarshal(entry.Data); err != nil {
-			logInfo("Failed to unmarshal ConfChangeV2: %v", err)
+			logError("failed to unmarshal ConfChangeV2: %v", err)
 			return
 		}
 		applyConfChangeV2(cc)
+		appliedIndex = entry.Index
 	}
 }
 
