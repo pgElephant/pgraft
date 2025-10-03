@@ -37,6 +37,7 @@ static pgraft_go_add_peer_func pgraft_go_add_peer_ptr = NULL;
 static pgraft_go_remove_peer_func pgraft_go_remove_peer_ptr = NULL;
 static pgraft_go_get_leader_func pgraft_go_get_leader_ptr = NULL;
 static pgraft_go_get_term_func pgraft_go_get_term_ptr = NULL;
+static pgraft_go_is_initialized_func pgraft_go_is_initialized_ptr = NULL;
 static pgraft_go_is_leader_func pgraft_go_is_leader_ptr = NULL;
 static pgraft_go_append_log_func pgraft_go_append_log_ptr = NULL;
 static pgraft_go_get_nodes_func pgraft_go_get_nodes_ptr = NULL;
@@ -58,14 +59,26 @@ pgraft_go_load_library(void)
 	char	   *lib_path_to_load;
 
 	/* Check if already loaded in this process */
-	if (go_lib_handle != NULL)
+	if (go_lib_handle != NULL && pgraft_go_init_ptr != NULL)
 	{
-		elog(DEBUG1, "pgraft: Go library already loaded in this process");
+		elog(DEBUG1, "pgraft: go library already loaded in this process");
 		return 0; /* Already loaded */
+	}
+	
+	/* If handle exists but function pointers are NULL, we need to reload symbols */
+	if (go_lib_handle != NULL && pgraft_go_init_ptr == NULL)
+	{
+		elog(LOG, "pgraft: go library handle exists but symbols not loaded, reloading symbols");
+		if (pgraft_go_load_symbols() != 0)
+		{
+			return -1;
+		}
+		elog(LOG, "pgraft: go library symbols reloaded successfully");
+		return 0;
 	}
 
 	/* Determine library path */
-	lib_path_to_load = pgraft_go_library_path;
+	lib_path_to_load = go_library_path;
 	if (lib_path_to_load == NULL || strlen(lib_path_to_load) == 0)
 	{
 		/* Fallback to default path if GUC is not set */
@@ -76,21 +89,21 @@ pgraft_go_load_library(void)
 	/* Verify library exists before loading */
 	if (access(lib_path_to_load, R_OK) != 0)
 	{
-		elog(ERROR, "pgraft: Go library does not exist or is not readable: %s", lib_path_to_load);
+		elog(ERROR, "pgraft: go library does not exist or is not readable: %s", lib_path_to_load);
 		return -1;
 	}
 
-	elog(LOG, "pgraft: Attempting to load Go library from %s", lib_path_to_load);
+		elog(LOG, "pgraft: attempting to load Go library from %s", lib_path_to_load);
 
 	/* Load the library */
 	go_lib_handle = dlopen(lib_path_to_load, RTLD_LAZY | RTLD_GLOBAL);
 	if (go_lib_handle == NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load Go library from %s: %s", lib_path_to_load, dlerror());
+		elog(ERROR, "pgraft: failed to load Go library from %s: %s", lib_path_to_load, dlerror());
 		return -1;
 	}
 
-	elog(LOG, "pgraft: Go library loaded successfully");
+	elog(LOG, "pgraft: go library loaded successfully");
 
 	/* Load function symbols with proper error handling */
 	if (pgraft_go_load_symbols() != 0)
@@ -111,7 +124,7 @@ pgraft_go_load_library(void)
 	/* Update shared memory state */
 	pgraft_state_set_go_lib_loaded(true);
 
-	elog(INFO, "pgraft: Go library loaded successfully");
+	elog(INFO, "pgraft: go library loaded successfully");
 
 	return 0;
 }
@@ -147,7 +160,7 @@ pgraft_go_unload_library(void)
 	/* Update shared memory state */
 	pgraft_state_set_go_lib_loaded(false);
 	
-	elog(INFO, "pgraft: Go library unloaded");
+	elog(INFO, "pgraft: go library unloaded");
 }
 
 /*
@@ -156,12 +169,9 @@ pgraft_go_unload_library(void)
 bool
 pgraft_go_is_loaded(void)
 {
-	/* Check if loaded in this process */
-	if (go_lib_handle != NULL)
-		return true;
-	
-	/* Check shared memory state */
-	return pgraft_state_is_go_lib_loaded();
+	/* Check if loaded in THIS process (process-local check only) */
+	/* Each process must load its own copy of the shared library */
+	return (go_lib_handle != NULL);
 }
 
 /* Function pointer accessors */
@@ -174,7 +184,7 @@ pgraft_go_get_init_func(void)
 pgraft_go_start_func
 pgraft_go_get_start_func(void)
 {
-	elog(INFO, "pgraft: Returning pgraft_go_start_ptr");
+	elog(INFO, "pgraft: returning pgraft_go_start_ptr");
 	return pgraft_go_start_ptr;
 }
 
@@ -271,13 +281,13 @@ pgraft_go_init(int node_id, char *address, int port)
 	pgraft_go_init_func init_func;
 	
 	if (!pgraft_go_is_loaded()) {
-		elog(ERROR, "pgraft: Go library not loaded");
+		elog(ERROR, "pgraft: go library not loaded");
 		return -1;
 	}
 	
 	init_func = pgraft_go_get_init_func();
 	if (init_func == NULL) {
-		elog(ERROR, "pgraft: Failed to get init function");
+		elog(ERROR, "pgraft: failed to get init function");
 		return -1;
 	}
 	
@@ -293,13 +303,13 @@ pgraft_go_init_with_config(pgraft_go_config_t *config)
 	pgraft_go_init_func init_func;
 	
 	if (!pgraft_go_is_loaded()) {
-		elog(ERROR, "pgraft: Go library not loaded");
+		elog(ERROR, "pgraft: go library not loaded");
 		return -1;
 	}
 	
 	if (pgraft_go_init_config_ptr == NULL)
 	{
-		elog(WARNING, "pgraft: New configuration function not available, falling back to legacy init");
+		elog(WARNING, "pgraft: new configuration function not available, falling back to legacy init");
 		init_func = pgraft_go_get_init_func();
 		if (init_func != NULL)
 		{
@@ -307,12 +317,12 @@ pgraft_go_init_with_config(pgraft_go_config_t *config)
 		}
 		else
 		{
-			elog(ERROR, "pgraft: No init function available");
+			elog(ERROR, "pgraft: no init function available");
 			return -1;
 		}
 	}
 	
-	elog(INFO, "pgraft: Initializing with configuration");
+	elog(INFO, "pgraft: initializing with configuration");
 	elog(INFO, "pgraft: node_id=%d, cluster_id=%s, address=%s:%d",
 		 config->node_id,
 		 config->cluster_id ? config->cluster_id : "(null)",
@@ -335,17 +345,41 @@ pgraft_go_start(void)
 	pgraft_go_start_func start_func;
 	
 	if (!pgraft_go_is_loaded()) {
-		elog(ERROR, "pgraft: Go library not loaded");
+		elog(ERROR, "pgraft: go library not loaded");
 		return -1;
 	}
 	
 	start_func = pgraft_go_get_start_func();
 	if (start_func == NULL) {
-		elog(ERROR, "pgraft: Failed to get start function");
+		elog(ERROR, "pgraft: failed to get start function");
 		return -1;
 	}
 	
 	return start_func();
+}
+
+/*
+ * Connect to all cluster peers
+ */
+int
+pgraft_go_connect_to_peers(void)
+{
+	typedef int (*connect_peers_func)(void);
+	connect_peers_func func;
+	
+	if (!pgraft_go_is_loaded()) {
+		elog(WARNING, "pgraft: go library not loaded, cannot connect to peers");
+		return -1;
+	}
+	
+	dlerror();  /* Clear any existing error */
+	func = (connect_peers_func) dlsym(go_lib_handle, "pgraft_go_connect_to_peers");
+	if (func == NULL) {
+		elog(WARNING, "pgraft: pgraft_go_connect_to_peers function not found: %s", dlerror());
+		return -1;
+	}
+	
+	return func();
 }
 
 /*
@@ -357,13 +391,13 @@ pgraft_go_start_network_server(int port)
 	pgraft_go_start_network_server_func start_network_server;
 	
 	if (!pgraft_go_is_loaded()) {
-		elog(ERROR, "pgraft: Go library not loaded");
+		elog(ERROR, "pgraft: go library not loaded");
 		return -1;
 	}
 	
 	start_network_server = pgraft_go_get_start_network_server_func();
 	if (start_network_server == NULL) {
-		elog(ERROR, "pgraft: Failed to get start_network_server function");
+		elog(ERROR, "pgraft: failed to get start_network_server function");
 		return -1;
 	}
 	
@@ -374,12 +408,22 @@ pgraft_go_start_network_server(int port)
  * Check if this node is the leader
  */
 int
+pgraft_go_is_initialized(void)
+{
+	if (!pgraft_go_is_loaded() || pgraft_go_is_initialized_ptr == NULL) {
+		return 0;
+	}
+	
+	return pgraft_go_is_initialized_ptr();
+}
+
+int
 pgraft_go_is_leader(void)
 {
 	pgraft_go_is_leader_func is_leader_func;
 	
 	if (!pgraft_go_is_loaded()) {
-		elog(DEBUG1, "pgraft: Go library not loaded, cannot check leader status");
+		elog(DEBUG1, "pgraft: go library not loaded, cannot check leader status");
 		return -1; /* Not ready */
 	}
 	
@@ -399,7 +443,7 @@ void
 pgraft_go_init_shared_memory(void)
 {
 	/* Go library manages its own state, no shared memory needed */
-	elog(LOG, "pgraft: Go shared memory initialization completed");
+	elog(LOG, "pgraft: go shared memory initialization completed");
 }
 
 /*
@@ -417,7 +461,7 @@ pgraft_go_load_symbols(void)
 	pgraft_go_init_ptr = (pgraft_go_init_func) dlsym(go_lib_handle, "pgraft_go_init");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load symbol 'pgraft_go_init': %s", error);
+		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_init': %s", error);
 		return -1;
 	}
 	
@@ -436,48 +480,56 @@ pgraft_go_load_symbols(void)
 	pgraft_go_start_ptr = (pgraft_go_start_func) dlsym(go_lib_handle, "pgraft_go_start");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load symbol 'pgraft_go_start': %s", error);
+		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_start': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_stop_ptr = (pgraft_go_stop_func) dlsym(go_lib_handle, "pgraft_go_stop");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load symbol 'pgraft_go_stop': %s", error);
+		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_stop': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_add_peer_ptr = (pgraft_go_add_peer_func) dlsym(go_lib_handle, "pgraft_go_add_peer");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load symbol 'pgraft_go_add_peer': %s", error);
+		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_add_peer': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_get_leader_ptr = (pgraft_go_get_leader_func) dlsym(go_lib_handle, "pgraft_go_get_leader");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load symbol 'pgraft_go_get_leader': %s", error);
+		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_get_leader': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_get_term_ptr = (pgraft_go_get_term_func) dlsym(go_lib_handle, "pgraft_go_get_term");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load symbol 'pgraft_go_get_term': %s", error);
+		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_get_term': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_version_ptr = (pgraft_go_version_func) dlsym(go_lib_handle, "pgraft_go_version");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: Failed to load symbol 'pgraft_go_version': %s", error);
+		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_version': %s", error);
 		return -1;
 	}
 	
 	/* Load optional symbols - clear dlerror() before each to avoid false positives */
 	dlerror(); /* Clear any existing error */
 	pgraft_go_remove_peer_ptr = (pgraft_go_remove_peer_func) dlsym(go_lib_handle, "pgraft_go_remove_peer");
+	
+	dlerror();
+	pgraft_go_is_initialized_ptr = (pgraft_go_is_initialized_func) dlsym(go_lib_handle, "pgraft_go_is_initialized");
+	if (pgraft_go_is_initialized_ptr != NULL) {
+		elog(DEBUG1, "pgraft: is_initialized function loaded successfully");
+	} else {
+		elog(WARNING, "pgraft: failed to load pgraft_go_is_initialized: %s", dlerror());
+	}
 	
 	dlerror();
 	pgraft_go_is_leader_ptr = (pgraft_go_is_leader_func) dlsym(go_lib_handle, "pgraft_go_is_leader");
@@ -517,7 +569,7 @@ pgraft_go_load_symbols(void)
 	dlerror(); /* Clear error */
 	pgraft_go_replicate_log_entry_ptr = (pgraft_go_replicate_log_entry_func) dlsym(go_lib_handle, "pgraft_go_replicate_log_entry");
 	
-   	elog(LOG, "pgraft: All Go library symbols loaded successfully");
+   	elog(LOG, "pgraft: all go library symbols loaded successfully");
 	return 0;
 }
 
@@ -532,25 +584,25 @@ pgraft_go_check_version(void)
 	
 	if (pgraft_go_version_ptr == NULL)
 	{
-		elog(WARNING, "pgraft: Version function not available, skipping version check");
+		elog(WARNING, "pgraft: version function not available, skipping version check");
 		return 0;
 	}
 	
 	version = pgraft_go_version_ptr();
 	if (version == NULL)
 	{
-		elog(WARNING, "pgraft: Version function returned NULL, skipping version check");
+		elog(WARNING, "pgraft: version function returned NULL, skipping version check");
 		return 0;
 	}
 	
 	if (strcmp(version, expected_version) != 0)
 	{
-		elog(WARNING, "pgraft: Version mismatch - expected %s, got %s", expected_version, version);
+		elog(WARNING, "pgraft: version mismatch - expected %s, got %s", expected_version, version);
 		/* Don't fail, just warn */
 	}
 	else
 	{
-		elog(LOG, "pgraft: Version check passed - %s", version);
+		elog(LOG, "pgraft: version check passed - %s", version);
 	}
 	
 	return 0;
@@ -564,7 +616,7 @@ pgraft_go_trigger_heartbeat(void)
 {
 	if (!pgraft_go_is_loaded())
 	{
-		elog(ERROR, "pgraft: Go library not loaded");
+		elog(ERROR, "pgraft: go library not loaded");
 		return -1;
 	}
 	
@@ -598,7 +650,7 @@ pgraft_go_tick(void)
 		if (tick_func == NULL)
 		{
 			error = dlerror();
-			elog(WARNING, "pgraft: Failed to load pgraft_go_tick: %s", error ? error : "unknown error");
+			elog(WARNING, "pgraft: failed to load pgraft_go_tick: %s", error ? error : "unknown error");
 			return -1;
 		}
 		elog(LOG, "pgraft: pgraft_go_tick function loaded successfully");
@@ -617,7 +669,7 @@ pgraft_go_append_log(char *data, int length)
 {
 	if (!pgraft_go_is_loaded())
 	{
-		elog(ERROR, "pgraft: Go library not loaded");
+		elog(ERROR, "pgraft: go library not loaded");
 		return -1;
 	}
 	
@@ -643,3 +695,4 @@ pgraft_go_free_string(char *str)
 		pgraft_go_free_string_ptr(str);
 	}
 }
+

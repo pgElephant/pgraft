@@ -29,7 +29,7 @@ pgraft_log_init_shared_memory(void)
 {
 	bool		found;
 	
-	elog(INFO, "pgraft: Initializing log replication shared memory");
+	elog(INFO, "pgraft: initializing log replication shared memory");
 	
 	/* Allocate shared memory */
 	g_log_state = (pgraft_log_state_t *) ShmemInitStruct("pgraft_log_state",
@@ -38,7 +38,7 @@ pgraft_log_init_shared_memory(void)
 	
 	if (!found)
 	{
-		elog(INFO, "pgraft: Creating new log replication shared memory");
+		elog(INFO, "pgraft: creating new log replication shared memory");
 		
 		/* Initialize shared memory */
 		memset(g_log_state, 0, sizeof(pgraft_log_state_t));
@@ -56,11 +56,11 @@ pgraft_log_init_shared_memory(void)
 		g_log_state->entries_applied = 0;
 		g_log_state->replication_errors = 0;
 		
-		elog(INFO, "pgraft: Log replication shared memory initialized");
+		elog(INFO, "pgraft: log replication shared memory initialized");
 	}
 	else
 	{
-		elog(INFO, "pgraft: Log replication shared memory already exists");
+		elog(INFO, "pgraft: log replication shared memory already exists");
 	}
 }
 
@@ -90,13 +90,13 @@ pgraft_log_append_entry(int64_t term, const char *data, int32_t data_size)
 	state = pgraft_log_get_shared_memory();
 	if (!state)
 	{
-		elog(ERROR, "pgraft: Failed to get shared memory");
+		elog(ERROR, "pgraft: failed to get shared memory");
 		return -1;
 	}
 	
 	if (data_size > 1024)
 	{
-		elog(ERROR, "pgraft: Data size %d exceeds maximum 1024", data_size);
+		elog(ERROR, "pgraft: data size %d exceeds maximum 1024", data_size);
 		return -1;
 	}
 	
@@ -105,7 +105,7 @@ pgraft_log_append_entry(int64_t term, const char *data, int32_t data_size)
 	if (state->log_size >= 1000)
 	{
 		SpinLockRelease(&state->mutex);
-		elog(ERROR, "pgraft: Log is full (1000 entries)");
+		elog(ERROR, "pgraft: log is full (1000 entries)");
 		return -1;
 	}
 	
@@ -143,7 +143,7 @@ pgraft_log_commit_entry(int64_t index)
 	state = pgraft_log_get_shared_memory();
 	if (!state)
 	{
-		elog(ERROR, "pgraft: Failed to get shared memory");
+		elog(ERROR, "pgraft: failed to get shared memory");
 		return -1;
 	}
 	
@@ -165,7 +165,7 @@ pgraft_log_commit_entry(int64_t index)
 	}
 	
 	SpinLockRelease(&state->mutex);
-	elog(WARNING, "pgraft: Entry %lld not found", index);
+	elog(WARNING, "pgraft: entry %lld not found", index);
 	return -1;
 }
 
@@ -177,7 +177,7 @@ pgraft_log_apply_entry(int64_t index)
 {
     pgraft_log_state_t *state = pgraft_log_get_shared_memory();
     if (!state) {
-        elog(ERROR, "pgraft: Failed to get shared memory");
+        elog(ERROR, "pgraft: failed to get shared memory");
         return -1;
     }
     
@@ -188,7 +188,7 @@ pgraft_log_apply_entry(int64_t index)
         if (state->entries[i].index == index) {
             if (!state->entries[i].committed) {
                 SpinLockRelease(&state->mutex);
-			elog(WARNING, "pgraft: Cannot apply uncommitted entry %lld", index);
+			elog(WARNING, "pgraft: cannot apply uncommitted entry %lld", index);
                 return -1;
             }
             
@@ -204,7 +204,7 @@ pgraft_log_apply_entry(int64_t index)
     }
     
     SpinLockRelease(&state->mutex);
-    elog(WARNING, "pgraft: Entry %lld not found", index);
+    elog(WARNING, "pgraft: entry %lld not found", index);
     return -1;
 }
 
@@ -216,7 +216,7 @@ pgraft_log_get_entry(int64_t index, pgraft_log_entry_t* entry)
 {
     pgraft_log_state_t *state = pgraft_log_get_shared_memory();
     if (!state || !entry) {
-        elog(ERROR, "pgraft: Invalid parameters");
+        elog(ERROR, "pgraft: invalid parameters");
         return -1;
     }
     
@@ -243,7 +243,7 @@ pgraft_log_get_last_index(int64_t* last_index)
 {
     pgraft_log_state_t *state = pgraft_log_get_shared_memory();
     if (!state || !last_index) {
-        elog(ERROR, "pgraft: Invalid parameters");
+        elog(ERROR, "pgraft: invalid parameters");
         return -1;
     }
     
@@ -262,7 +262,7 @@ pgraft_log_get_commit_index(int64_t* commit_index)
 {
     pgraft_log_state_t *state = pgraft_log_get_shared_memory();
     if (!state || !commit_index) {
-        elog(ERROR, "pgraft: Invalid parameters");
+        elog(ERROR, "pgraft: invalid parameters");
         return -1;
     }
     
@@ -281,7 +281,7 @@ pgraft_log_get_last_applied(int64_t* last_applied)
 {
     pgraft_log_state_t *state = pgraft_log_get_shared_memory();
     if (!state || !last_applied) {
-        elog(ERROR, "pgraft: Invalid parameters");
+        elog(ERROR, "pgraft: invalid parameters");
         return -1;
     }
     
@@ -304,7 +304,7 @@ pgraft_log_replicate_to_node(int32_t node_id, int64_t from_index)
     
     state = pgraft_log_get_shared_memory();
     if (!state) {
-        elog(ERROR, "pgraft: Failed to get shared memory");
+        elog(ERROR, "pgraft: failed to get shared memory");
         return -1;
     }
     
@@ -368,7 +368,7 @@ pgraft_log_get_statistics(pgraft_log_state_t* stats)
 {
     pgraft_log_state_t *state = pgraft_log_get_shared_memory();
     if (!state || !stats) {
-        elog(ERROR, "pgraft: Invalid parameters");
+        elog(ERROR, "pgraft: invalid parameters");
         return -1;
     }
     
@@ -387,7 +387,7 @@ pgraft_log_get_replication_status(char* status, size_t status_size)
 {
     pgraft_log_state_t *state = pgraft_log_get_shared_memory();
     if (!state || !status || status_size == 0) {
-        elog(ERROR, "pgraft: Invalid parameters");
+        elog(ERROR, "pgraft: invalid parameters");
         return -1;
     }
     
@@ -438,7 +438,7 @@ pgraft_log_cleanup_old_entries(int64_t before_index)
     SpinLockRelease(&state->mutex);
     
     if (removed > 0) {
-		elog(INFO, "pgraft: Removed %d old entries before index %lld", removed, before_index);
+		elog(INFO, "pgraft: removed %d old entries before index %lld", removed, before_index);
     }
 }
 
@@ -466,5 +466,5 @@ pgraft_log_reset(void)
     
     SpinLockRelease(&state->mutex);
     
-    elog(INFO, "pgraft: Log reset completed");
+    elog(INFO, "pgraft: log reset completed");
 }

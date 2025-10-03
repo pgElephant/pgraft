@@ -57,58 +57,179 @@ PG_FUNCTION_INFO_V1(pgraft_replicate_entry_func);
 
 
 /*
- * Initialize pgraft node with GUC variables (etcd-style configuration)
+ * Internal function to initialize raft from GUCs (callable from worker or SQL)
  */
-Datum
-pgraft_init(PG_FUNCTION_ARGS)
+int
+pgraft_init_from_gucs(void)
 {
 	pgraft_go_config_t config;
+	pgraft_cluster_member_t *cluster_members = NULL;
+	pgraft_go_cluster_member_t *go_members = NULL;
+	int			cluster_member_count = 0;
 	char	   *cluster_id;
-	char	   *data_dir;
 	int			result;
+	int			i;
 	
-	/* Get configuration from etcd-style GUC variables */
-	config.node_id = pgraft_node_id;
-	config.port = pgraft_port;
-	config.address = pgraft_address;
-	config.election_timeout = pgraft_election_timeout;
-	config.heartbeat_interval = pgraft_heartbeat_interval;
-	config.snapshot_interval = pgraft_snapshot_interval;
+	elog(LOG, "pgraft_init_from_gucs: initializing raft with etcd-style configuration");
+	
+	/* Check if already initialized (background worker may have already done this) */
+	if (pgraft_go_is_initialized())
+	{
+		elog(LOG, "pgraft_init_from_gucs: raft already initialized, skipping");
+		return 0;
+	}
+	
+	/* Initialize config structure */
+	memset(&config, 0, sizeof(pgraft_go_config_t));
+	
+	/* Get basic configuration from etcd-compatible GUCs */
+	config.name = name;
+	config.initial_cluster_state = (strcmp(initial_cluster_state, "new") == 0) ? 1 : 0;
+	
+	/* Parse initial_cluster into structured array */
+	elog(INFO, "pgraft_init: parsing initial_cluster='%s', name='%s'", 
+		 initial_cluster ? initial_cluster : "(null)", 
+		 name ? name : "(null)");
+	
+	pgraft_parse_initial_cluster(initial_cluster, &cluster_members, &cluster_member_count);
+	
+	if (cluster_member_count == 0)
+	{
+		elog(ERROR, "pgraft: no cluster members found in initial_cluster");
+		return -1;
+	}
+	
+	/* Convert to Go cluster member structure with parsed host/port */
+	go_members = (pgraft_go_cluster_member_t *) palloc(cluster_member_count * sizeof(pgraft_go_cluster_member_t));
+	
+	for (i = 0; i < cluster_member_count; i++)
+	{
+		go_members[i].name = cluster_members[i].name;
+		
+		/* Parse peer URL into host and port */
+		if (!pgraft_parse_url(cluster_members[i].peer_url, &go_members[i].peer_host, &go_members[i].peer_port))
+		{
+			elog(ERROR, "pgraft: failed to parse peer URL for member '%s': %s", 
+				 cluster_members[i].name, cluster_members[i].peer_url);
+			pfree(go_members);
+			pfree(cluster_members);
+			return -1;
+		}
+		
+		elog(INFO, "pgraft_init: cluster member %d: %s -> %s:%d", 
+			 i + 1, go_members[i].name, go_members[i].peer_host, go_members[i].peer_port);
+	}
+	
+	config.cluster_members = go_members;
+	config.cluster_member_count = cluster_member_count;
+	
+	/* Parse listen_peer_urls into host/port */
+	if (!pgraft_parse_url(listen_peer_urls, &config.listen_peer_host, &config.listen_peer_port))
+	{
+		elog(ERROR, "pgraft: failed to parse listen_peer_urls: %s", listen_peer_urls);
+		return -1;
+	}
+	
+	/* Parse listen_client_urls into host/port */
+	if (listen_client_urls && strlen(listen_client_urls) > 0)
+	{
+		if (!pgraft_parse_url(listen_client_urls, &config.listen_client_host, &config.listen_client_port))
+		{
+			elog(WARNING, "pgraft: failed to parse listen_client_urls: %s", listen_client_urls);
+		}
+	}
+	
+	/* Parse advertise_client_urls into host/port */
+	if (advertise_client_urls && strlen(advertise_client_urls) > 0)
+	{
+		if (!pgraft_parse_url(advertise_client_urls, &config.advertise_client_host, &config.advertise_client_port))
+		{
+			elog(WARNING, "pgraft: failed to parse advertise_client_urls: %s", advertise_client_urls);
+		}
+	}
+	
+	/* Parse initial_advertise_peer_urls into host/port */
+	if (initial_advertise_peer_urls && strlen(initial_advertise_peer_urls) > 0)
+	{
+		if (!pgraft_parse_url(initial_advertise_peer_urls, &config.initial_advertise_peer_host, &config.initial_advertise_peer_port))
+		{
+			elog(WARNING, "pgraft: failed to parse initial_advertise_peer_urls: %s", initial_advertise_peer_urls);
+		}
+	}
+	
+	config.election_timeout = election_timeout;
+	config.heartbeat_interval = heartbeat_interval;
+	config.snapshot_interval = snapshot_count;
+	config.quota_backend_bytes = quota_backend_bytes;
+	config.max_request_bytes = max_request_bytes;
+	config.max_snapshots = max_snapshots;
+	config.max_wals = max_wals;
+	config.auto_compaction_retention = atoi(auto_compaction_retention);
+	config.auto_compaction_mode = (strcmp(auto_compaction_mode, "periodic") == 0) ? 1 : 0;
+	config.compaction_batch_limit = compaction_batch_limit;
+	
+	config.log_level = log_level;
+	config.log_outputs = log_outputs;
+	config.log_package_levels = log_package_levels;
+	
+	config.client_cert_auth = client_cert_auth ? 1 : 0;
+	config.trusted_ca_file = trusted_ca_file;
+	config.cert_file = cert_file;
+	config.key_file = key_file;
+	config.client_cert_file = client_cert_file;
+	config.client_key_file = client_key_file;
+	config.peer_trusted_ca_file = peer_trusted_ca_file;
+	config.peer_cert_file = peer_cert_file;
+	config.peer_key_file = peer_key_file;
+	config.peer_client_cert_auth = peer_client_cert_auth ? 1 : 0;
+	config.peer_cert_allowed_cn = peer_cert_allowed_cn;
+	config.peer_cert_allowed_hostname = peer_cert_allowed_hostname ? 1 : 0;
+	config.cipher_suites = cipher_suites;
+	config.cors = cors;
+	config.host_whitelist = host_whitelist;
+	config.listen_metrics_urls = listen_metrics_urls;
+	config.metrics = metrics;
+	
+	
 	config.max_log_entries = pgraft_max_log_entries;
 	config.batch_size = pgraft_batch_size;
 	config.max_batch_delay = pgraft_max_batch_delay;
 	
-	/* Handle cluster_id (prefer new parameter, fall back to legacy) */
-	cluster_id = pgraft_cluster_id;
+	/* Use etcd-compatible GUC variables */
+	cluster_id = initial_cluster_token;
 	if (!cluster_id || strlen(cluster_id) == 0) {
-		cluster_id = pgraft_cluster_name;
-		if (!cluster_id || strlen(cluster_id) == 0) {
-			elog(ERROR, "pgraft: pgraft.cluster_id must be set (similar to etcd initial-cluster-token)");
-			PG_RETURN_BOOL(false);
-		}
-		elog(WARNING, "pgraft: Using deprecated pgraft.cluster_name, please use pgraft.cluster_id");
+		elog(ERROR, "pgraft: initial_cluster_token must be set");
+		return -1;
 	}
 	config.cluster_id = cluster_id;
 	
-	/* Handle data_dir (prefer new parameter, generate default if not set) */
-	data_dir = pgraft_data_dir;
+	/* Use etcd-compatible data directory */
 	if (!data_dir || strlen(data_dir) == 0)
 	{
-		data_dir = psprintf("/tmp/pgraft/node_%d", config.node_id);
+		/* Use node name for default data directory (etcd-style) */
+		config.data_dir = psprintf("/tmp/pgraft/%s", name ? name : "node");
 	}
-	config.data_dir = data_dir;
-	
-	if (!config.address || strlen(config.address) == 0)
+	else
 	{
-		elog(ERROR, "pgraft: pgraft.address must be set");
-		PG_RETURN_BOOL(false);
+		config.data_dir = data_dir;
 	}
 	
-	if (config.port < 1024 || config.port > 65535)
+	/* Validate that we have parsed peer URLs */
+	if (!config.listen_peer_host || strlen(config.listen_peer_host) == 0)
 	{
-		elog(ERROR, "pgraft: pgraft.port must be between 1024 and 65535");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: listen_peer_urls must be set and valid");
+		return -1;
 	}
+	
+	if (config.listen_peer_port < 1024 || config.listen_peer_port > 65535)
+	{
+		elog(ERROR, "pgraft: listen_peer_urls port must be between 1024 and 65535 (got %d)", config.listen_peer_port);
+		return -1;
+	}
+	
+	/* For backward compatibility, also set address and port from parsed peer URL */
+	config.address = config.listen_peer_host;
+	config.port = config.listen_peer_port;
 	
 	pgraft_validate_configuration();
 	
@@ -116,31 +237,52 @@ pgraft_init(PG_FUNCTION_ARGS)
 	{
 		if (pgraft_go_load_library() != 0)
 		{
-			elog(ERROR, "pgraft: Failed to load Go library");
-			PG_RETURN_BOOL(false);
+			elog(ERROR, "pgraft: failed to load Go library");
+			return -1;
 		}
 	}
 	
 	result = pgraft_go_init_with_config(&config);
 	if (result != 0)
 	{
-		elog(ERROR, "pgraft: Failed to initialize raft node");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: failed to initialize raft node");
+		return -1;
 	}
 	
 	result = pgraft_go_start();
 	if (result != 0)
 	{
-		elog(ERROR, "pgraft: Failed to start raft node");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: failed to start raft node");
+		return -1;
 	}
 	
 	result = pgraft_go_start_network_server(config.port);
 	if (result != 0)
 	{
-		elog(WARNING, "pgraft: Failed to start network server");
+		elog(WARNING, "pgraft: failed to start network server");
 	}
 	
+    return 0;
+}
+
+/*
+ * SQL wrapper for pgraft_init() - just calls the internal init function
+ */
+Datum
+pgraft_init(PG_FUNCTION_ARGS)
+{
+	int result;
+	
+	elog(LOG, "pgraft_init: SQL function called");
+	result = pgraft_init_from_gucs();
+	
+	if (result != 0)
+	{
+		elog(WARNING, "pgraft_init: initialization failed");
+		PG_RETURN_BOOL(false);
+	}
+	
+	elog(LOG, "pgraft_init: initialization successful");
     PG_RETURN_BOOL(true);
 }
 
@@ -180,52 +322,52 @@ pgraft_add_node(PG_FUNCTION_ARGS)
 	
 	/* Validate parameters */
 	if (node_id < 1 || node_id > 1000) {
-		elog(ERROR, "pgraft: Invalid node_id %d, must be between 1 and 1000", node_id);
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: invalid node_id %d, must be between 1 and 1000", node_id);
+		return -1;
 	}
 	
 	if (!address || strlen(address) == 0) {
-		elog(ERROR, "pgraft: Address cannot be empty");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: address cannot be empty");
+		return -1;
 	}
 	
 	if (port < 1024 || port > 65535) {
-		elog(ERROR, "pgraft: Invalid port %d, must be between 1024 and 65535", port);
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: invalid port %d, must be between 1024 and 65535", port);
+		return -1;
 	}
 	
 	/* Check if Go library is loaded */
 	if (!pgraft_go_is_loaded()) {
-		elog(ERROR, "pgraft: Go library not loaded. Initialize cluster first with pgraft_init()");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: go library not loaded. Initialize cluster first with pgraft_init()");
+		return -1;
 	}
 	
 	leader_status = pgraft_go_is_leader();
 	if (leader_status < 0)
 	{
-		elog(ERROR, "pgraft: Cannot add node - raft consensus not ready");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: cannot add node - raft consensus not ready");
+		return -1;
 	}
 	if (leader_status == 0)
 	{
-		elog(ERROR, "pgraft: Cannot add node - this node is not the leader");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: cannot add node - this node is not the leader");
+		return -1;
 	}
 	
 	add_peer_func = pgraft_go_get_add_peer_func();
 	if (add_peer_func == NULL)
 	{
-		elog(ERROR, "pgraft: Failed to get add_peer function");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: failed to get add_peer function");
+		return -1;
 	}
 	
 	result = add_peer_func(node_id, address, port);
 	if (result != 0)
 	{
-		elog(ERROR, "pgraft: Failed to add node %d", node_id);
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: failed to add node %d", node_id);
+		return -1;
 	}
-    PG_RETURN_BOOL(true);
+    return 0;
 }
 
 /*
@@ -241,21 +383,21 @@ pgraft_remove_node(PG_FUNCTION_ARGS)
 	
 	if (pgraft_core_remove_node(node_id) != 0)
 	{
-		elog(ERROR, "pgraft: Failed to remove node from core system");
-		PG_RETURN_BOOL(false);
-	}
-	
+		elog(ERROR, "pgraft: failed to remove node from core system");
+        return -1;
+    }
+    
 	if (pgraft_go_is_loaded())
 	{
 		remove_peer_func = pgraft_go_get_remove_peer_func();
 		if (remove_peer_func && remove_peer_func(node_id) != 0)
 		{
-			elog(ERROR, "pgraft: Failed to remove node from Go library");
-			PG_RETURN_BOOL(false);
-		}
-	}
-	
-	PG_RETURN_BOOL(true);
+			elog(ERROR, "pgraft: failed to remove node from Go library");
+            return -1;
+        }
+    }
+    
+    return 0;
 }
 
 
@@ -272,13 +414,13 @@ pgraft_get_cluster_status_table(PG_FUNCTION_ARGS)
     HeapTuple	tuple;
     
     if (pgraft_core_get_cluster_state(&cluster) != 0) {
-        elog(ERROR, "pgraft: Failed to get cluster state");
+        elog(ERROR, "pgraft: failed to get cluster state");
         PG_RETURN_NULL();
     }
     
     /* Build tuple descriptor */
     if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-        elog(ERROR, "pgraft: Return type must be a row type");
+        elog(ERROR, "pgraft: return type must be a row type");
     
     /* Prepare values */
     values[0] = Int32GetDatum(cluster.node_id);
@@ -446,7 +588,7 @@ pgraft_get_worker_state(PG_FUNCTION_ARGS)
 	
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
-		elog(WARNING, "pgraft: Failed to get worker state");
+		elog(WARNING, "pgraft: failed to get worker state");
 		PG_RETURN_TEXT_P(cstring_to_text("ERROR"));
 	}
 	
@@ -499,11 +641,11 @@ pgraft_test(PG_FUNCTION_ARGS)
     if (pgraft_go_is_loaded()) {
         pgraft_go_test_func test_func = pgraft_go_get_test_func();
         if (test_func && test_func() == 0) {
-            PG_RETURN_BOOL(true);
+            return 0;
         }
     }
     
-    PG_RETURN_BOOL(false);
+    return -1;
 }
 
 /*
@@ -521,7 +663,7 @@ pgraft_set_debug(PG_FUNCTION_ARGS)
         }
     }
     
-    PG_RETURN_BOOL(true);
+    return 0;
 }
 
 /*
@@ -541,11 +683,11 @@ pgraft_log_append(PG_FUNCTION_ARGS)
     
     /* Queue LOG_APPEND command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_APPEND, data, (int)term)) {
-        elog(ERROR, "pgraft: Failed to queue LOG_APPEND command");
-        PG_RETURN_BOOL(false);
+        elog(ERROR, "pgraft: failed to queue LOG_APPEND command");
+        return -1;
     }
     
-    PG_RETURN_BOOL(true);
+    return 0;
 }
 
 /*
@@ -559,11 +701,11 @@ pgraft_log_commit(PG_FUNCTION_ARGS)
     
     /* Queue LOG_COMMIT command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_COMMIT, NULL, (int)index)) {
-        elog(ERROR, "pgraft: Failed to queue LOG_COMMIT command");
-        PG_RETURN_BOOL(false);
+        elog(ERROR, "pgraft: failed to queue LOG_COMMIT command");
+        return -1;
     }
     
-    PG_RETURN_BOOL(true);
+    return 0;
 }
 
 /*
@@ -577,11 +719,11 @@ pgraft_log_apply(PG_FUNCTION_ARGS)
     
     /* Queue LOG_APPLY command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_APPLY, NULL, (int)index)) {
-        elog(ERROR, "pgraft: Failed to queue LOG_APPLY command");
-        PG_RETURN_BOOL(false);
+        elog(ERROR, "pgraft: failed to queue LOG_APPLY command");
+        return -1;
     }
     
-    PG_RETURN_BOOL(true);
+    return 0;
 }
 
 /*
@@ -595,7 +737,7 @@ pgraft_log_get_entry_sql(PG_FUNCTION_ARGS)
     StringInfoData result;
     
     if (pgraft_log_get_entry(index, &entry) != 0) {
-        elog(ERROR, "pgraft: Failed to get log entry %lld", index);
+        elog(ERROR, "pgraft: failed to get log entry %lld", index);
         PG_RETURN_NULL();
     }
     initStringInfo(&result);
@@ -621,13 +763,13 @@ pgraft_log_get_stats_table(PG_FUNCTION_ARGS)
     HeapTuple	tuple;
     
     if (pgraft_log_get_statistics(&stats) != 0) {
-        elog(ERROR, "pgraft: Failed to get log statistics");
+        elog(ERROR, "pgraft: failed to get log statistics");
         PG_RETURN_NULL();
     }
     
     /* Build tuple descriptor */
     if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-        elog(ERROR, "pgraft: Return type must be a row type");
+        elog(ERROR, "pgraft: return type must be a row type");
     
     /* Prepare values */
     values[0] = Int64GetDatum(stats.log_size);
@@ -661,13 +803,13 @@ pgraft_log_get_replication_status_table(PG_FUNCTION_ARGS)
     HeapTuple	tuple;
     
     if (pgraft_log_get_statistics(&stats) != 0) {
-        elog(ERROR, "pgraft: Failed to get replication status");
+        elog(ERROR, "pgraft: failed to get replication status");
         PG_RETURN_NULL();
     }
     
     /* Build tuple descriptor */
     if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-        elog(ERROR, "pgraft: Return type must be a row type");
+        elog(ERROR, "pgraft: return type must be a row type");
     
     /* Prepare values */
     values[0] = Int64GetDatum(stats.log_size);
@@ -764,11 +906,11 @@ Datum
 pgraft_log_sync_with_leader_sql(PG_FUNCTION_ARGS)
 {
     if (pgraft_log_sync_with_leader() != 0) {
-        elog(ERROR, "pgraft: Failed to sync with leader");
-        PG_RETURN_BOOL(false);
+        elog(ERROR, "pgraft: failed to sync with leader");
+        return -1;
     }
     
-    PG_RETURN_BOOL(true);
+    return 0;
 }
 
 /*
@@ -796,24 +938,24 @@ pgraft_replicate_entry_func(PG_FUNCTION_ARGS)
 			result = replicate_func(data, data_len);
 			if (result == 1)
 			{
-				PG_RETURN_BOOL(true);
+				return 0;
 			}
 			else
 			{
-				elog(WARNING, "pgraft: Failed to replicate log entry");
-				PG_RETURN_BOOL(false);
+				elog(WARNING, "pgraft: failed to replicate log entry");
+				return -1;
 			}
 		}
 		else
 		{
-			elog(ERROR, "pgraft: Replicate function not available");
-			PG_RETURN_BOOL(false);
+			elog(ERROR, "pgraft: replicate function not available");
+			return -1;
 		}
 	}
 	else
 	{
-		elog(ERROR, "pgraft: Go library not loaded");
-		PG_RETURN_BOOL(false);
+		elog(ERROR, "pgraft: go library not loaded");
+		return -1;
 	}
 }
 

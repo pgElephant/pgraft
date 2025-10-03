@@ -49,14 +49,14 @@ pgraft_kv_replicate_put(const char *key, const char *value, const char *client_i
 		"{\"type\": \"kv_put\", \"key\": \"%s\", \"value\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
 		key, value, (long long)log_entry.timestamp, client_id);
 	
-	elog(INFO, "pgraft_kv: Replicating PUT operation: %s", json_data);
+	elog(INFO, "pgraft_kv: replicating PUT operation: %s", json_data);
 	
 	if (pgraft_go_is_loaded())
 	{
 		result = pgraft_go_append_log(json_data, strlen(json_data));
 		if (result < 0)
 		{
-			elog(WARNING, "pgraft_kv: Failed to replicate through Raft, applying directly");
+			elog(WARNING, "pgraft_kv: failed to replicate through Raft, applying directly");
 			result = pgraft_kv_put(key, value, 0);
 		}
 	}
@@ -89,14 +89,14 @@ pgraft_kv_replicate_delete(const char *key, const char *client_id)
 		"{\"type\": \"kv_delete\", \"key\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
 		key, (long long)log_entry.timestamp, client_id);
 	
-	elog(INFO, "pgraft_kv: Replicating DELETE operation: %s", json_data);
+	elog(INFO, "pgraft_kv: replicating DELETE operation: %s", json_data);
 	
 	if (pgraft_go_is_loaded())
 	{
 		result = pgraft_go_append_log(json_data, strlen(json_data));
 		if (result < 0)
 		{
-			elog(WARNING, "pgraft_kv: Failed to replicate through Raft, applying directly");
+			elog(WARNING, "pgraft_kv: failed to replicate through Raft, applying directly");
 			result = pgraft_kv_delete(key, 0);
 		}
 	}
@@ -117,7 +117,7 @@ pgraft_kv_apply_log_entry(const pgraft_kv_log_entry_t *log_entry, int64_t log_in
 	int result = 0;
 	
 	if (!log_entry) {
-		elog(WARNING, "pgraft_kv: NULL log entry provided");
+		elog(WARNING, "pgraft_kv: null log entry provided");
 		return -1;
 	}
 	
@@ -129,7 +129,7 @@ pgraft_kv_apply_log_entry(const pgraft_kv_log_entry_t *log_entry, int64_t log_in
 			result = pgraft_kv_delete(log_entry->key, log_index);
 			break;
 		default:
-			elog(WARNING, "pgraft_kv: Unknown operation type: %d", log_entry->op_type);
+			elog(WARNING, "pgraft_kv: unknown operation type: %d", log_entry->op_type);
 			result = -1;
 			break;
 	}
@@ -159,7 +159,7 @@ pgraft_kv_init_shared_memory(void)
 {
 	bool		found;
 	
-	elog(INFO, "pgraft: Initializing key/value store shared memory");
+	elog(INFO, "pgraft: initializing key/value store shared memory");
 	
 	/* Allocate shared memory */
 	g_kv_store = (pgraft_kv_store_t *) ShmemInitStruct("pgraft_kv_store",
@@ -168,7 +168,7 @@ pgraft_kv_init_shared_memory(void)
 	
 	if (!found)
 	{
-		elog(INFO, "pgraft: Creating new key/value store shared memory");
+		elog(INFO, "pgraft: creating new key/value store shared memory");
 		
 		/* Initialize shared memory */
 		memset(g_kv_store, 0, sizeof(pgraft_kv_store_t));
@@ -184,17 +184,17 @@ pgraft_kv_init_shared_memory(void)
 		g_kv_store->deletes = 0;
 		g_kv_store->gets = 0;
 		
-		elog(INFO, "pgraft: Key/value store initialized");
+		elog(INFO, "pgraft: key/value store initialized");
 		
 		/* Try to load existing data from disk */
 		if (pgraft_kv_load_from_disk(PGRAFT_KV_PERSIST_FILE) == 0)
 		{
-			elog(INFO, "pgraft: Loaded existing key/value data from disk");
+			elog(INFO, "pgraft: loaded existing key/value data from disk");
 		}
 	}
 	else
 	{
-		elog(INFO, "pgraft: Using existing key/value store shared memory");
+		elog(INFO, "pgraft: using existing key/value store shared memory");
 	}
 }
 
@@ -243,19 +243,19 @@ pgraft_kv_put(const char *key, const char *value, int64_t log_index)
 	
 	if (!store || !key || !value)
 	{
-		elog(ERROR, "pgraft_kv: Invalid parameters for PUT operation");
+		elog(ERROR, "pgraft_kv: invalid parameters for PUT operation");
 		return -1;
 	}
 	
 	if (strlen(key) >= 256)
 	{
-		elog(ERROR, "pgraft_kv: Key too long (max 255 characters)");
+		elog(ERROR, "pgraft_kv: key too long (max 255 characters)");
 		return -1;
 	}
 	
 	if (strlen(value) >= 1024)
 	{
-		elog(ERROR, "pgraft_kv: Value too long (max 1023 characters)");
+		elog(ERROR, "pgraft_kv: value too long (max 1023 characters)");
 		return -1;
 	}
 	
@@ -283,7 +283,7 @@ pgraft_kv_put(const char *key, const char *value, int64_t log_index)
 		if (store->num_entries >= 1000)
 		{
 			SpinLockRelease(&store->mutex);
-			elog(ERROR, "pgraft_kv: Key/value store is full (1000 entries)");
+			elog(ERROR, "pgraft_kv: key/value store is full (1000 entries)");
 			return -1;
 		}
 		
@@ -327,7 +327,7 @@ pgraft_kv_get(const char *key, char *value, size_t value_size, int64_t *version)
 	
 	if (!store || !key || !value)
 	{
-		elog(ERROR, "pgraft_kv: Invalid parameters for GET operation");
+		elog(ERROR, "pgraft_kv: invalid parameters for GET operation");
 		return -1;
 	}
 	
@@ -373,7 +373,7 @@ pgraft_kv_delete(const char *key, int64_t log_index)
 	
 	if (!store || !key)
 	{
-		elog(ERROR, "pgraft_kv: Invalid parameters for DELETE operation");
+		elog(ERROR, "pgraft_kv: invalid parameters for DELETE operation");
 		return -1;
 	}
 	
@@ -461,7 +461,7 @@ pgraft_kv_save_to_disk(const char *path)
 	file = fopen(path, "wb");
 	if (!file)
 	{
-		elog(WARNING, "pgraft_kv: Failed to open file for writing: %s", path);
+		elog(WARNING, "pgraft_kv: failed to open file for writing: %s", path);
 		return -1;
 	}
 	
@@ -476,7 +476,7 @@ pgraft_kv_save_to_disk(const char *path)
 	
 	if (written != 1)
 	{
-		elog(WARNING, "pgraft_kv: Failed to write store to disk");
+		elog(WARNING, "pgraft_kv: failed to write store to disk");
 		return -1;
 	}
 	
@@ -512,7 +512,7 @@ pgraft_kv_load_from_disk(const char *path)
 	
 	if (read_size != 1)
 	{
-		elog(WARNING, "pgraft_kv: Failed to read store from disk");
+		elog(WARNING, "pgraft_kv: failed to read store from disk");
 		return -1;
 	}
 	
@@ -529,7 +529,7 @@ pgraft_kv_load_from_disk(const char *path)
 	
 	SpinLockRelease(&store->mutex);
 	
-	elog(INFO, "pgraft_kv: Loaded store from disk (%d entries)", store->num_entries);
+	elog(INFO, "pgraft_kv: loaded store from disk (%d entries)", store->num_entries);
 	return 0;
 }
 
@@ -608,7 +608,7 @@ pgraft_kv_compact(void)
 	/* Persist the compacted store */
 	pgraft_kv_save_to_disk(PGRAFT_KV_PERSIST_FILE);
 	
-	elog(INFO, "pgraft_kv: Compacted store to %d active entries", j);
+	elog(INFO, "pgraft_kv: compacted store to %d active entries", j);
 }
 
 /*
@@ -637,5 +637,5 @@ pgraft_kv_reset(void)
 	/* Remove persistence file */
 	unlink(PGRAFT_KV_PERSIST_FILE);
 	
-	elog(INFO, "pgraft_kv: Store reset");
+	elog(INFO, "pgraft_kv: store reset");
 }

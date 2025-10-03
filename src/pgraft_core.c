@@ -29,7 +29,7 @@ pgraft_core_init(int32_t node_id, const char *address, int32_t port)
 	cluster = pgraft_core_get_shared_memory();
 	if (!cluster)
 	{
-		elog(ERROR, "pgraft: Core init failed to get shared memory");
+		elog(ERROR, "pgraft: core init failed to get shared memory");
 		return -1;
 	}
 	
@@ -37,7 +37,7 @@ pgraft_core_init(int32_t node_id, const char *address, int32_t port)
 	if (cluster->initialized)
 	{
 		SpinLockRelease(&cluster->mutex);
-		elog(INFO, "pgraft: Core system already initialized");
+		elog(INFO, "pgraft: core system already initialized");
 		return 0;
 	}
 	
@@ -60,8 +60,8 @@ pgraft_core_init(int32_t node_id, const char *address, int32_t port)
 	cluster->initialized = true;
 	SpinLockRelease(&cluster->mutex);
 	
-	elog(INFO, "pgraft: Core initialized node %d at %s:%d", node_id, address, port);
-	elog(INFO, "pgraft: Cluster state: term=%d, leader=%lld, state=%s",
+	elog(INFO, "pgraft: core initialized node %d at %s:%d", node_id, address, port);
+	elog(INFO, "pgraft: cluster state: term=%d, leader=%lld, state=%s",
 		 cluster->current_term, cluster->leader_id, cluster->state);
 	
 	return 0;
@@ -79,7 +79,7 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 	cluster = pgraft_core_get_shared_memory();
 	if (!cluster)
 	{
-		elog(ERROR, "pgraft: Cannot add node %d - failed to get shared memory", node_id);
+		elog(ERROR, "pgraft: cannot add node %d - failed to get shared memory", node_id);
 		return -1;
 	}
 	
@@ -87,14 +87,14 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 	if (!cluster->initialized)
 	{
 		SpinLockRelease(&cluster->mutex);
-		elog(ERROR, "pgraft: Cannot add node %d - core system not initialized", node_id);
+		elog(ERROR, "pgraft: cannot add node %d - core system not initialized", node_id);
 		return -1;
 	}
 	
 	if (cluster->num_nodes >= 16)
 	{
 		SpinLockRelease(&cluster->mutex);
-		elog(ERROR, "pgraft: Maximum number of nodes (16) reached");
+		elog(ERROR, "pgraft: maximum number of nodes (16) reached");
 		return -1;
 	}
 	
@@ -109,8 +109,8 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 	
 	SpinLockRelease(&cluster->mutex);
 	
-	elog(INFO, "pgraft: Added node %d at %s:%d", node_id, address, port);
-	elog(INFO, "pgraft: Total nodes in cluster: %d", cluster->num_nodes);
+	elog(INFO, "pgraft: added node %d at %s:%d", node_id, address, port);
+	elog(INFO, "pgraft: total nodes in cluster: %d", cluster->num_nodes);
 	return 0;
 }
 
@@ -127,7 +127,7 @@ pgraft_core_remove_node(int32_t node_id)
 	cluster = pgraft_core_get_shared_memory();
 	if (!cluster)
 	{
-		elog(ERROR, "pgraft: Cannot remove node %d - failed to get shared memory", node_id);
+		elog(ERROR, "pgraft: cannot remove node %d - failed to get shared memory", node_id);
 		return -1;
 	}
 	
@@ -135,7 +135,7 @@ pgraft_core_remove_node(int32_t node_id)
 	if (!cluster->initialized)
 	{
 		SpinLockRelease(&cluster->mutex);
-		elog(ERROR, "pgraft: Cannot remove node %d - core system not initialized", node_id);
+		elog(ERROR, "pgraft: cannot remove node %d - core system not initialized", node_id);
 		return -1;
 	}
 	
@@ -147,13 +147,13 @@ pgraft_core_remove_node(int32_t node_id)
 				cluster->nodes[j] = cluster->nodes[j + 1];
 			cluster->num_nodes--;
 			SpinLockRelease(&cluster->mutex);
-			elog(INFO, "pgraft: Removed node %d", node_id);
+			elog(INFO, "pgraft: removed node %d", node_id);
 			return 0;
 		}
 	}
 	
 	SpinLockRelease(&cluster->mutex);
-	elog(WARNING, "pgraft: Node %d not found", node_id);
+	elog(WARNING, "pgraft: node %d not found", node_id);
 	return -1;
 }
 
@@ -169,7 +169,7 @@ pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 	
 	if (!cluster)
 	{
-		elog(WARNING, "pgraft: cluster parameter is NULL");
+		elog(WARNING, "pgraft: cluster parameter is null");
 		return -1;
 	}
 	
@@ -181,14 +181,14 @@ pgraft_core_get_cluster_state(pgraft_cluster_t *cluster)
 	if (!shm_cluster->initialized)
 	{
 		SpinLockRelease(&shm_cluster->mutex);
-		elog(LOG, "pgraft: Core system not initialized in shared memory.");
+		elog(LOG, "pgraft: core system not initialized in shared memory.");
 		memset(cluster, 0, sizeof(pgraft_cluster_t));
 	}
 	else
 	{
 		*cluster = *shm_cluster;
 		SpinLockRelease(&shm_cluster->mutex);
-		elog(LOG, "pgraft: Got cluster state from shared memory: leader=%lld, term=%d", 
+		elog(LOG, "pgraft: got cluster state from shared memory: leader=%lld, term=%d", 
 			 (long long)cluster->leader_id, cluster->current_term);
 	}
 	
@@ -329,7 +329,7 @@ pgraft_core_cleanup(void)
 		if (cluster->initialized)
 		{
 			cluster->initialized = false;
-			elog(INFO, "pgraft: Core system cleaned up");
+			elog(INFO, "pgraft: core system cleaned up");
 		}
 		SpinLockRelease(&cluster->mutex);
 	}
@@ -344,7 +344,7 @@ pgraft_core_init_shared_memory(void)
 	pgraft_cluster_t *cluster;
 	bool		found;
 	
-	elog(INFO, "pgraft: Initializing shared memory");
+	elog(INFO, "pgraft: initializing shared memory");
 	
 	/* Get the shared memory pointer (should already be allocated) */
 	cluster = (pgraft_cluster_t *) ShmemInitStruct("pgraft_cluster",
@@ -355,7 +355,7 @@ pgraft_core_init_shared_memory(void)
 	{
 		if (!found)
 		{
-			elog(INFO, "pgraft: Creating new shared memory");
+			elog(INFO, "pgraft: creating new shared memory");
 			
 			/* Initialize shared memory */
 			memset(cluster, 0, sizeof(pgraft_cluster_t));
@@ -375,16 +375,16 @@ pgraft_core_init_shared_memory(void)
 			cluster->heartbeats_sent = 0;
 			cluster->elections_triggered = 0;
 			
-			elog(INFO, "pgraft: Shared memory initialized");
+			elog(INFO, "pgraft: shared memory initialized");
 		}
 		else
 		{
-			elog(INFO, "pgraft: Shared memory already exists");
+			elog(INFO, "pgraft: shared memory already exists");
 		}
 	}
 	else
 	{
-		elog(ERROR, "pgraft: Failed to get shared memory pointer");
+		elog(ERROR, "pgraft: failed to get shared memory pointer");
 	}
 }
 

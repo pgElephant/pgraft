@@ -24,6 +24,7 @@
 #include "../include/pgraft_log.h"
 #include "../include/pgraft_kv.h"
 #include "../include/pgraft_guc.h"
+#include "../include/pgraft_sql.h"
 
 /* Function declarations */
 /* Forward declarations */
@@ -72,7 +73,7 @@ pgraft_shmem_request_hook(void)
 	/* Request shared memory for background worker state */
 	RequestAddinShmemSpace(sizeof(pgraft_worker_state_t));
 	
-	elog(LOG, "pgraft: Shared memory request hook completed");
+	elog(LOG, "pgraft: shared memory request hook completed");
 }
 
 
@@ -82,7 +83,7 @@ pgraft_shmem_request_hook(void)
 static void
 pgraft_shmem_startup_hook(void)
 {
-	elog(LOG, "pgraft: Shared memory startup hook called");
+	elog(LOG, "pgraft: shared memory startup hook called");
 	
 	/* Initialize shared memory structures */
 	pgraft_core_init_shared_memory();
@@ -91,7 +92,7 @@ pgraft_shmem_startup_hook(void)
 	pgraft_kv_init_shared_memory();
 	pgraft_worker_init_shared_memory();
 	
-	elog(LOG, "pgraft: All shared memory structures initialized");
+	elog(LOG, "pgraft: all shared memory structures initialized");
 }
 
 /*
@@ -100,27 +101,27 @@ pgraft_shmem_startup_hook(void)
 void
 _PG_init(void)
 {
-	elog(INFO, "pgraft: Initializing extension version %s", PGRAFT_VERSION);
+	elog(INFO, "pgraft: initializing extension version %s", PGRAFT_VERSION);
 
 	/* Install shared memory request hook */
 	prev_shmem_request_hook = shmem_request_hook;
 	shmem_request_hook = pgraft_shmem_request_hook;
-	elog(LOG, "pgraft: Shared memory request hook installed");
+	elog(LOG, "pgraft: shared memory request hook installed");
 
 	/* Install shared memory startup hook */
 	prev_shmem_startup_hook = shmem_startup_hook;
 	shmem_startup_hook = pgraft_shmem_startup_hook;
-	elog(LOG, "pgraft: Shared memory startup hook installed");
+	elog(LOG, "pgraft: shared memory startup hook installed");
 
 	/* Register GUC variables */
 	pgraft_register_guc_variables();
-	elog(LOG, "pgraft: GUC variables registered");
+	elog(LOG, "pgraft: guc variables registered");
 
 	/* Register background worker */
 	pgraft_register_worker();
-	elog(LOG, "pgraft: Background worker registration completed");
+	elog(LOG, "pgraft: background worker registration completed");
 
-	elog(INFO, "pgraft: Extension initialized successfully");
+	elog(INFO, "pgraft: extension initialized successfully");
 }
 
 /*
@@ -159,7 +160,7 @@ pgraft_register_worker(void)
 	}
 
 	/* For dynamic loading, try to register a worker if none is running */
-	elog(LOG, "pgraft: Extension loaded dynamically - attempting to register background worker");
+	elog(LOG, "pgraft: extension loaded dynamically - attempting to register background worker");
 	
 	worker.bgw_notify_pid = MyProcPid;
 	
@@ -193,28 +194,62 @@ pgraft_main(Datum main_arg)
 	
 	sleep_count = 0;
 	
-	elog(LOG, "pgraft: Background worker main function started");
+	elog(LOG, "pgraft: background worker main function started");
+	
+	/* Load Go library in the background worker process */
+	if (!pgraft_go_is_loaded())
+	{
+		elog(LOG, "pgraft: background worker loading Go library");
+		if (pgraft_go_load_library() != 0)
+		{
+			elog(ERROR, "pgraft: background worker failed to load Go library");
+			return;
+		}
+		elog(LOG, "pgraft: background worker Go library loaded successfully");
+	}
+	else
+	{
+		elog(LOG, "pgraft: background worker Go library already loaded");
+	}
+	
+	/* Initialize Raft in the background worker (not in client backend) */
+	elog(LOG, "pgraft: background worker initializing raft consensus");
+	if (pgraft_init_from_gucs() != 0)
+	{
+		elog(ERROR, "pgraft: background worker failed to initialize raft");
+		return;
+	}
+	elog(LOG, "pgraft: background worker raft initialization successful");
+	
+	/* Establish initial connections to all cluster peers */
+	/* TEMPORARILY DISABLED - will be re-enabled after verifying cluster starts */
+	/* elog(LOG, "pgraft: background worker connecting to cluster peers");
+	if (pgraft_go_connect_to_peers() != 0)
+	{
+		elog(WARNING, "pgraft: background worker failed to connect to some peers");
+	}
+	elog(LOG, "pgraft: background worker peer connections initiated"); */
 	
 	BackgroundWorkerUnblockSignals();
-	elog(LOG, "pgraft: Background worker signal handling set up");
+	elog(LOG, "pgraft: background worker signal handling set up");
 	
 	state = pgraft_worker_get_state();
 	if (state == NULL)
 	{
-		elog(ERROR, "pgraft: Failed to get worker state in background worker");
+		elog(ERROR, "pgraft: failed to get worker state in background worker");
 		return;
 	}
-	elog(LOG, "pgraft: Worker state obtained successfully");
+	elog(LOG, "pgraft: worker state obtained successfully");
 
 	state->status = WORKER_STATUS_RUNNING;
-	elog(LOG, "pgraft: Worker status set to RUNNING");
-	elog(LOG, "pgraft: Background worker started and running");
+	elog(LOG, "pgraft: worker status set to RUNNING");
+	elog(LOG, "pgraft: background worker started and running");
 
 	while (state->status != WORKER_STATUS_STOPPED)
 	{
 		if (sleep_count % 5 == 0)
 		{
-			elog(LOG, "pgraft: Worker loop - command_count=%d, head=%d, tail=%d", 
+			elog(LOG, "pgraft: worker loop - command_count=%d, head=%d, tail=%d", 
 				 state->command_count, state->command_head, state->command_tail);
 		}
 		
@@ -223,7 +258,7 @@ pgraft_main(Datum main_arg)
 			tick_result = pgraft_go_tick();
 			if (sleep_count % 20 == 0)
 			{
-				elog(LOG, "pgraft: Calling tick... result=%d", tick_result);
+				elog(LOG, "pgraft: calling tick... result=%d", tick_result);
 			}
 		}
 		
@@ -241,7 +276,7 @@ pgraft_main(Datum main_arg)
 		
 		if (pgraft_dequeue_command(&cmd))
 		{
-			elog(LOG, "pgraft: Worker processing command %d for node %d", cmd.type, cmd.node_id);
+			elog(LOG, "pgraft: worker processing command %d for node %d", cmd.type, cmd.node_id);
 			
 			pgraft_add_command_to_status(&cmd);
 			cmd.status = COMMAND_STATUS_PROCESSING;
@@ -339,14 +374,14 @@ pgraft_main(Datum main_arg)
 					break;
 					
 				case COMMAND_SHUTDOWN:
-					elog(LOG, "pgraft: SHUTDOWN command received");
+					elog(LOG, "pgraft: shutdown command received");
 					state->status = WORKER_STATUS_STOPPED;
 					cmd.status = COMMAND_STATUS_COMPLETED;
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
 					break;
 					
 				default:
-					elog(WARNING, "pgraft: Unknown command type %d", cmd.type);
+					elog(WARNING, "pgraft: unknown command type %d", cmd.type);
 					cmd.status = COMMAND_STATUS_FAILED;
 					snprintf(cmd.error_message, sizeof(cmd.error_message), 
 							"Unknown command type %d", cmd.type);
@@ -360,13 +395,13 @@ pgraft_main(Datum main_arg)
 		
 		if (sleep_count >= 10)
 		{
-			elog(LOG, "pgraft: Background worker running... (alive check)");
+			elog(LOG, "pgraft: background worker running... (alive check)");
 			sleep_count = 0;
 		}
 	}
 
 	state->status = WORKER_STATUS_STOPPED;
-	elog(LOG, "pgraft: Background worker stopped");
+	elog(LOG, "pgraft: background worker stopped");
 }
 
 /*
@@ -411,45 +446,45 @@ pgraft_init_system(int node_id, const char *address, int port)
 
 	if (pgraft_core_init(node_id, (char *)address, port) != 0)
 	{
-		elog(WARNING, "pgraft: Failed to initialize core system");
+		elog(WARNING, "pgraft: failed to initialize core system");
 		return -1;
 	}
-	elog(LOG, "pgraft: Core system initialized");
+	elog(LOG, "pgraft: core system initialized");
 
 	if (pgraft_go_load_library() != 0)
 	{
-		elog(WARNING, "pgraft: Failed to load Go library");
+		elog(WARNING, "pgraft: failed to load Go library");
 		return -1;
 	}
-	elog(LOG, "pgraft: Go library loaded");
+	elog(LOG, "pgraft: go library loaded");
 
 	init_func = pgraft_go_get_init_func();
 	if (!init_func)
 	{
-		elog(WARNING, "pgraft: Failed to get Go init function");
+		elog(WARNING, "pgraft: failed to get Go init function");
 		return -1;
 	}
 
 	if (init_func(node_id, (char *)address, port) != 0)
 	{
-		elog(WARNING, "pgraft: Failed to initialize Go Raft library");
+		elog(WARNING, "pgraft: failed to initialize Go Raft library");
 		return -1;
 	}
-	elog(LOG, "pgraft: Go Raft library initialized");
+	elog(LOG, "pgraft: go raft library initialized");
 
 	if (pgraft_go_start() != 0)
 	{
-		elog(WARNING, "pgraft: Failed to start Go Raft goroutines");
+		elog(WARNING, "pgraft: failed to start Go Raft goroutines");
 		return -1;
 	}
-	elog(LOG, "pgraft: Go Raft goroutines started successfully");
+	elog(LOG, "pgraft: go raft goroutines started successfully");
 
 	if (pgraft_go_start_network_server(port) != 0)
 	{
-		elog(WARNING, "pgraft: Failed to start network server");
+		elog(WARNING, "pgraft: failed to start network server");
 		return -1;
 	}
-	elog(LOG, "pgraft: Network server started successfully");
+	elog(LOG, "pgraft: network server started successfully");
 
 	return 0;
 }
@@ -523,10 +558,10 @@ pgraft_add_node_system(int node_id, const char *address, int port)
 
 	if (pgraft_core_add_node(node_id, (char *)address, port) != 0)
 	{
-		elog(WARNING, "pgraft: Failed to add node %d to core system", node_id);
+		elog(WARNING, "pgraft: failed to add node %d to core system", node_id);
 		return -1;
 	}
-	elog(LOG, "pgraft: Node %d added to core system", node_id);
+	elog(LOG, "pgraft: node %d added to core system", node_id);
 
 	if (pgraft_go_is_loaded())
 	{
@@ -537,25 +572,25 @@ pgraft_add_node_system(int node_id, const char *address, int port)
 			{
 				if (add_peer_func(node_id, (char *)address, port) == 0)
 				{
-					elog(LOG, "pgraft: Node %d added to Go Raft library", node_id);
+					elog(LOG, "pgraft: node %d added to go raft library", node_id);
 					break;
 				}
 				if (retry_count < 2)
 				{
-					elog(WARNING, "pgraft: Failed to add node %d to Go Raft library (attempt %d), retrying...", 
+					elog(WARNING, "pgraft: failed to add node %d to Go Raft library (attempt %d), retrying...", 
 						 node_id, retry_count + 1);
 					pg_usleep(1000000);
 				}
 				else
 				{
-					elog(WARNING, "pgraft: Failed to add node %d to Go Raft library after 3 attempts", node_id);
+					elog(WARNING, "pgraft: failed to add node %d to Go Raft library after 3 attempts", node_id);
 					return -1;
 				}
 			}
 		}
 	}
 
-	elog(INFO, "pgraft: Node %d successfully added to cluster", node_id);
+	elog(INFO, "pgraft: node %d successfully added to cluster", node_id);
 	return 0;
 }
 
@@ -573,20 +608,20 @@ pgraft_remove_node_system(int node_id)
 		remove_peer_func = pgraft_go_get_remove_peer_func();
 		if (remove_peer_func) {
 			if (remove_peer_func(node_id) != 0) {
-				elog(WARNING, "pgraft: Failed to remove node %d from Go Raft library", node_id);
+				elog(WARNING, "pgraft: failed to remove node %d from Go Raft library", node_id);
 				return -1;
 			}
-			elog(LOG, "pgraft: Node %d removed from Go Raft library", node_id);
+			elog(LOG, "pgraft: node %d removed from go raft library", node_id);
 		}
 	}
 
 	/* Remove from core system */
 	if (pgraft_core_remove_node(node_id) != 0) {
-		elog(WARNING, "pgraft: Failed to remove node %d from core system", node_id);
+		elog(WARNING, "pgraft: failed to remove node %d from core system", node_id);
 		return -1;
 	}
 
-	elog(INFO, "pgraft: Node %d successfully removed from cluster", node_id);
+	elog(INFO, "pgraft: node %d successfully removed from cluster", node_id);
 	return 0;
 }
 
@@ -597,10 +632,10 @@ static int
 pgraft_log_append_system(const char *log_data, int log_index)
 {
 	if (pgraft_log_append_entry((int64_t)log_index, log_data, strlen(log_data)) != 0) {
-		elog(WARNING, "pgraft: Failed to append log entry at index %d", log_index);
+		elog(WARNING, "pgraft: failed to append log entry at index %d", log_index);
 		return -1;
 	}
-	elog(INFO, "pgraft: Log entry at index %d appended", log_index);
+	elog(INFO, "pgraft: log entry at index %d appended", log_index);
 	return 0;
 }
 
@@ -611,10 +646,10 @@ static int
 pgraft_log_commit_system(int log_index)
 {
 	if (pgraft_log_commit_entry((int64_t)log_index) != 0) {
-		elog(WARNING, "pgraft: Failed to commit log entry at index %d", log_index);
+		elog(WARNING, "pgraft: failed to commit log entry at index %d", log_index);
 		return -1;
 	}
-	elog(INFO, "pgraft: Log entry at index %d committed", log_index);
+	elog(INFO, "pgraft: log entry at index %d committed", log_index);
 	return 0;
 }
 
@@ -625,10 +660,10 @@ static int
 pgraft_log_apply_system(int log_index)
 {
 	if (pgraft_log_apply_entry((int64_t)log_index) != 0) {
-		elog(WARNING, "pgraft: Failed to apply log entry at index %d", log_index);
+		elog(WARNING, "pgraft: failed to apply log entry at index %d", log_index);
 		return -1;
 	}
-	elog(INFO, "pgraft: Log entry at index %d applied", log_index);
+	elog(INFO, "pgraft: log entry at index %d applied", log_index);
 	return 0;
 }
 
@@ -638,6 +673,6 @@ pgraft_log_apply_system(int log_index)
 void
 _PG_fini(void)
 {
-	elog(INFO, "pgraft: Extension cleanup completed");
+	elog(INFO, "pgraft: extension cleanup completed");
 }
 

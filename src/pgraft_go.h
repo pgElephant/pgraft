@@ -29,15 +29,68 @@ extern const char *_GoStringPtr(_GoString_ s);
 #include <stdint.h>
 #include <string.h>
 
+typedef struct pgraft_go_cluster_member {
+	char   *name;
+	char   *peer_host;
+	int		peer_port;
+} pgraft_go_cluster_member;
+
 typedef struct pgraft_go_config {
 	int		node_id;
 	char   *cluster_id;
 	char   *address;
 	int		port;
 	char   *data_dir;
+	pgraft_go_cluster_member *cluster_members;
+	int		cluster_member_count;
+	int		initial_cluster_state;
+	char   *name;
+	char   *listen_peer_host;
+	int		listen_peer_port;
+	char   *listen_client_host;
+	int		listen_client_port;
+	char   *advertise_client_host;
+	int		advertise_client_port;
+	char   *initial_advertise_peer_host;
+	int		initial_advertise_peer_port;
 	int		election_timeout;
 	int		heartbeat_interval;
 	int		snapshot_interval;
+	int		quota_backend_bytes;
+	int		max_request_bytes;
+	int		max_snapshots;
+	int		max_wals;
+	int		auto_compaction_retention;
+	int		auto_compaction_mode;
+	int		compaction_batch_limit;
+	char   *log_level;
+	char   *log_outputs;
+	char   *log_package_levels;
+	int		client_cert_auth;
+	char   *trusted_ca_file;
+	char   *cert_file;
+	char   *key_file;
+	char   *client_cert_file;
+	char   *client_key_file;
+	char   *peer_trusted_ca_file;
+	char   *peer_cert_file;
+	char   *peer_key_file;
+	int		peer_client_cert_auth;
+	char   *peer_cert_allowed_cn;
+	int		peer_cert_allowed_hostname;
+	char   *cipher_suites;
+	char   *cors;
+	char   *host_whitelist;
+	char   *listen_metrics_urls;
+	char   *metrics;
+	int		experimental_initial_corrupt_check;
+	char   *experimental_corrupt_check_time;
+	char   *experimental_enable_v2v3;
+	int		experimental_enable_lease_checkpoint;
+	int		experimental_compaction_batch_limit;
+	int		experimental_peer_skip_client_san_verification;
+	int		experimental_self_signed_cert_validity;
+	char   *experimental_watch_progress_notify_interval;
 	int		max_log_entries;
 	int		batch_size;
 	int		max_batch_delay;
@@ -120,6 +173,10 @@ extern void cleanup_pgraft(void);
 extern char* pgraft_go_version(void);
 extern int pgraft_go_test(void);
 extern int pgraft_go_init_config(struct pgraft_go_config* config);
+
+// Helper function to establish initial connections to all peers
+// This should be called AFTER pgraft_go_start() from the background worker
+extern int pgraft_go_connect_to_peers(void);
 extern int pgraft_go_init(int nodeID, char* address, int port);
 extern int pgraft_go_start_background(void);
 extern int pgraft_go_add_peer(int nodeID, char* address, int port);
@@ -127,6 +184,7 @@ extern int pgraft_go_remove_peer(int nodeID);
 extern char* pgraft_go_get_state(void);
 extern int64_t pgraft_go_get_leader(void);
 extern int32_t pgraft_go_get_term(void);
+extern int pgraft_go_is_initialized(void);
 extern int pgraft_go_is_leader(void);
 extern int pgraft_go_append_log(char* data, int length);
 extern char* pgraft_go_get_stats(void);

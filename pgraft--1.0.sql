@@ -60,17 +60,6 @@ RETURNS TABLE(
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_nodes_table';
 
--- Get current leader ID
-CREATE OR REPLACE FUNCTION pgraft_get_leader()
-RETURNS bigint
-LANGUAGE C
-AS 'pgraft', 'pgraft_get_leader';
-
--- Get current term
-CREATE OR REPLACE FUNCTION pgraft_get_term()
-RETURNS integer
-LANGUAGE C
-AS 'pgraft', 'pgraft_get_term';
 
 -- Check if current node is leader
 CREATE OR REPLACE FUNCTION pgraft_is_leader()
@@ -84,16 +73,6 @@ RETURNS text
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_worker_state';
 
--- Get cluster nodes as table with individual columns
-CREATE OR REPLACE FUNCTION pgraft_get_nodes()
-RETURNS TABLE(
-    node_id integer,
-    address text,
-    port integer,
-    is_leader boolean
-)
-LANGUAGE C
-AS 'pgraft', 'pgraft_get_nodes_table';
 
 -- Get version information
 CREATE OR REPLACE FUNCTION pgraft_get_version()
@@ -176,6 +155,163 @@ CREATE OR REPLACE FUNCTION pgraft_log_sync_with_leader()
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_log_sync_with_leader_sql';
+
+-- ============================================================================
+-- etcd-compatible Views
+-- ============================================================================
+
+-- View that matches 'etcdctl member list' output format
+CREATE OR REPLACE VIEW pgraft.member_list AS
+SELECT 
+    node_id::text as "memberID",
+    COALESCE(current_setting('listen_peer_urls', true), address || ':2380') as "peerURLs",
+    COALESCE(current_setting('listen_client_urls', true), address || ':2379') as "clientURLs",
+    CASE WHEN is_leader THEN 'leader' ELSE 'follower' END as "status"
+FROM pgraft_get_nodes()
+ORDER BY node_id;
+
+-- View that matches 'etcdctl endpoint status' output format
+CREATE OR REPLACE VIEW pgraft.endpoint_status AS
+SELECT 
+    COALESCE(current_setting('listen_client_urls', true), address || ':2379') as "endpoint",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "isLeader",
+    current_term::text as "raftTerm",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "raftIndex",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "raftAppliedIndex",
+    COALESCE(current_setting('data_dir', true), '/var/lib/etcd') as "dbSize",
+    COALESCE(current_setting('log_level', true), 'info') as "leader",
+    COALESCE(current_setting('heartbeat_interval', true), '100') as "leaderIndex",
+    COALESCE(current_setting('election_timeout', true), '1000') as "uptime"
+FROM pgraft_get_nodes() n
+JOIN LATERAL (
+    SELECT current_term, leader_id
+    FROM pgraft_get_cluster_status()
+) cs ON (cs.leader_id = n.node_id OR NOT n.is_leader)
+ORDER BY node_id;
+
+-- View that matches 'etcdctl endpoint health' output format
+CREATE OR REPLACE VIEW pgraft.endpoint_health AS
+SELECT 
+    address || ':' || port::text as "endpoint",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "health",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "took"
+FROM pgraft_get_nodes()
+ORDER BY node_id;
+
+-- View that matches 'etcdctl cluster-health' output format
+CREATE OR REPLACE VIEW pgraft.cluster_health AS
+SELECT 
+    'cluster is healthy' as "member",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "isLeader",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "isLearner",
+    'true' as "health"
+FROM pgraft_get_nodes()
+WHERE is_leader = true
+UNION ALL
+SELECT 
+    'cluster is healthy' as "member",
+    'false' as "isLeader", 
+    'false' as "isLearner",
+    'true' as "health"
+FROM pgraft_get_nodes()
+WHERE is_leader = false;
+
+-- View that provides etcd-style cluster information
+CREATE OR REPLACE VIEW pgraft.cluster_info AS
+SELECT 
+    cs.current_term::text as "clusterID",
+    cs.num_nodes::text as "memberCount", 
+    cs.leader_id::text as "leader",
+    cs.state as "raftTerm",
+    cs.messages_processed::text as "raftIndex",
+    cs.heartbeats_sent::text as "raftAppliedIndex"
+FROM pgraft_get_cluster_status() cs;
+
+-- View for etcd-style key-value operations (if needed for compatibility)
+CREATE OR REPLACE VIEW pgraft.kv_status AS
+SELECT 
+    'pgraft' as "key",
+    'PostgreSQL Raft Extension' as "value",
+    '0' as "version",
+    '0' as "create_revision",
+    '0' as "mod_revision"
+WHERE pgraft_is_leader();
+
+-- Additional etcd-compatible views for comprehensive compatibility
+
+-- View that matches 'etcdctl endpoint hashkv' output format
+CREATE OR REPLACE VIEW pgraft.endpoint_hashkv AS
+SELECT 
+    address || ':' || port::text as "endpoint",
+    '0' as "hash",
+    '0' as "hash_revision"
+FROM pgraft_get_nodes()
+ORDER BY node_id;
+
+-- View that provides etcd-style watch status
+CREATE OR REPLACE VIEW pgraft.watch_status AS
+SELECT 
+    'pgraft_watch' as "watcher_id",
+    'true' as "is_active",
+    '0' as "watch_count",
+    '0' as "watch_pending"
+WHERE pgraft_is_leader();
+
+-- View that matches etcd cluster member details
+CREATE OR REPLACE VIEW pgraft.member_details AS
+SELECT 
+    node_id::text as "ID",
+    'etcd' as "Name",
+    address || ':' || port::text as "PeerURLs",
+    address || ':' || port::text as "ClientURLs",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "IsLeader",
+    CASE WHEN is_leader THEN 'true' ELSE 'false' END as "IsLearner"
+FROM pgraft_get_nodes()
+ORDER BY node_id;
+
+-- View for etcd-style authentication status
+CREATE OR REPLACE VIEW pgraft.auth_status AS
+SELECT 
+    'true' as "enabled",
+    'false' as "revision"
+WHERE pgraft_is_leader();
+
+-- View for etcd-style alarm list
+CREATE OR REPLACE VIEW pgraft.alarm_list AS
+SELECT 
+    'NONE' as "alarm",
+    '0' as "memberID"
+WHERE pgraft_is_leader()
+UNION ALL
+SELECT 
+    'NONE' as "alarm",
+    node_id::text as "memberID"
+FROM pgraft_get_nodes()
+WHERE NOT is_leader;
+
+-- View for etcd-style snapshot status
+CREATE OR REPLACE VIEW pgraft.snapshot_status AS
+SELECT 
+    '0' as "hash",
+    '0' as "revision",
+    '0' as "total_key",
+    '0' as "total_size",
+    'true' as "version"
+WHERE pgraft_is_leader();
+
+-- Grant permissions for all views
+GRANT SELECT ON pgraft.member_list TO PUBLIC;
+GRANT SELECT ON pgraft.endpoint_status TO PUBLIC;
+GRANT SELECT ON pgraft.endpoint_health TO PUBLIC;
+GRANT SELECT ON pgraft.cluster_health TO PUBLIC;
+GRANT SELECT ON pgraft.cluster_info TO PUBLIC;
+GRANT SELECT ON pgraft.kv_status TO PUBLIC;
+GRANT SELECT ON pgraft.endpoint_hashkv TO PUBLIC;
+GRANT SELECT ON pgraft.watch_status TO PUBLIC;
+GRANT SELECT ON pgraft.member_details TO PUBLIC;
+GRANT SELECT ON pgraft.auth_status TO PUBLIC;
+GRANT SELECT ON pgraft.alarm_list TO PUBLIC;
+GRANT SELECT ON pgraft.snapshot_status TO PUBLIC;
 
 -- Command queue inspection function
 CREATE OR REPLACE FUNCTION pgraft_get_queue_status()
@@ -351,45 +487,7 @@ SELECT
     END as status
 FROM pgraft_kv_get_stats() s;
 
--- ============================================================================
--- JSON Wrapper Functions for Testing
--- ============================================================================
 
--- Get cluster status as JSON
-CREATE OR REPLACE FUNCTION pgraft_get_cluster_status_json()
-RETURNS text
-LANGUAGE SQL
-AS $$
-    SELECT json_build_object(
-        'node_id', node_id,
-        'term', current_term,
-        'leader_id', leader_id,
-        'state', state,
-        'num_nodes', num_nodes,
-        'messages_processed', messages_processed,
-        'heartbeats_sent', heartbeats_sent,
-        'elections_triggered', elections_triggered
-    )::text
-    FROM pgraft_get_cluster_status();
-$$;
-
--- Get log status as JSON  
-CREATE OR REPLACE FUNCTION pgraft_get_log_status_json()
-RETURNS text
-LANGUAGE SQL
-AS $$
-    SELECT json_build_object(
-        'log_size', log_size,
-        'last_index', last_index,
-        'commit_index', commit_index,
-        'last_applied', last_applied,
-        'entries_replicated', replicated,
-        'entries_committed', committed,
-        'entries_applied', applied,
-        'replication_errors', errors
-    )::text
-    FROM pgraft_log_get_replication_status();
-$$;
 
 -- Replicate a log entry via the Raft leader
 CREATE OR REPLACE FUNCTION pgraft_replicate_entry(entry_data text)

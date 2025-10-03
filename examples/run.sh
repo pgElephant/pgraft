@@ -13,8 +13,9 @@ if [ ! -d "venv" ]; then
     ./setup.sh
 fi
 
-# Set PostgreSQL 17.6 PATH
+# Set PostgreSQL 17.6 PATH and library paths
 export PATH="/usr/local/pgsql.17/bin:$PATH"
+export DYLD_LIBRARY_PATH="/usr/local/pgsql.17/lib:/opt/homebrew/lib:$DYLD_LIBRARY_PATH"
 
 # Activate virtual environment and run the script
 source venv/bin/activate

@@ -4,6 +4,9 @@
 #include "postgres.h"
 #include "fmgr.h"
 
+/* Internal initialization function (callable from worker) */
+int			pgraft_init_from_gucs(void);
+
 /* SQL function declarations */
 Datum		pgraft_init(PG_FUNCTION_ARGS);
 Datum		pgraft_init_guc(PG_FUNCTION_ARGS);

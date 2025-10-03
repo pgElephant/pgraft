@@ -52,11 +52,11 @@ replicate_kv_operation(pgraft_kv_op_type_t op_type, const char *key, const char 
 	} else if (op_type == PGRAFT_KV_DELETE) {
 		result = pgraft_kv_replicate_delete(key, log_entry.client_id);
 	} else {
-		elog(ERROR, "pgraft_kv: Unsupported operation type: %d", op_type);
+		elog(ERROR, "pgraft_kv: unsupported operation type: %d", op_type);
 		return -1;
 	}
 	if (result != 0) {
-		elog(WARNING, "pgraft_kv: Failed to replicate operation (error: %d)", result);
+		elog(WARNING, "pgraft_kv: failed to replicate operation (error: %d)", result);
 		return -1;
 	}
 	
@@ -80,17 +80,17 @@ pgraft_kv_put_sql(PG_FUNCTION_ARGS)
 	
 	/* Validate inputs */
 	if (strlen(key) == 0) {
-		elog(ERROR, "pgraft_kv: Key cannot be empty");
+		elog(ERROR, "pgraft_kv: key cannot be empty");
 		PG_RETURN_BOOL(false);
 	}
 	
 	if (strlen(key) >= 256) {
-		elog(ERROR, "pgraft_kv: Key too long (max 255 characters)");
+		elog(ERROR, "pgraft_kv: key too long (max 255 characters)");
 		PG_RETURN_BOOL(false);
 	}
 	
 	if (strlen(value) >= 1024) {
-		elog(ERROR, "pgraft_kv: Value too long (max 1023 characters)");
+		elog(ERROR, "pgraft_kv: value too long (max 1023 characters)");
 		PG_RETURN_BOOL(false);
 	}
 	
@@ -120,7 +120,7 @@ pgraft_kv_get_sql(PG_FUNCTION_ARGS)
 	
 	/* Validate inputs */
 	if (strlen(key) == 0) {
-		elog(ERROR, "pgraft_kv: Key cannot be empty");
+		elog(ERROR, "pgraft_kv: key cannot be empty");
 		PG_RETURN_NULL();
 	}
 	
@@ -151,7 +151,7 @@ pgraft_kv_delete_sql(PG_FUNCTION_ARGS)
 	
 	/* Validate inputs */
 	if (strlen(key) == 0) {
-		elog(ERROR, "pgraft_kv: Key cannot be empty");
+		elog(ERROR, "pgraft_kv: key cannot be empty");
 		PG_RETURN_BOOL(false);
 	}
 	
@@ -178,7 +178,7 @@ pgraft_kv_exists_sql(PG_FUNCTION_ARGS)
 	
 	/* Validate inputs */
 	if (strlen(key) == 0) {
-		elog(ERROR, "pgraft_kv: Key cannot be empty");
+		elog(ERROR, "pgraft_kv: key cannot be empty");
 		PG_RETURN_BOOL(false);
 	}
 	
@@ -223,7 +223,7 @@ pgraft_kv_stats_sql(PG_FUNCTION_ARGS)
 	/* Get statistics */
 	result = pgraft_kv_get_stats(&stats);
 	if (result != 0) {
-		elog(ERROR, "pgraft_kv: Failed to get statistics");
+		elog(ERROR, "pgraft_kv: failed to get statistics");
 		PG_RETURN_NULL();
 	}
 	
@@ -254,13 +254,13 @@ pgraft_kv_get_stats_table(PG_FUNCTION_ARGS)
 	/* Get the store */
 	store = pgraft_kv_get_store();
 	if (!store) {
-		elog(ERROR, "pgraft_kv: Key/value store not initialized");
+		elog(ERROR, "pgraft_kv: key/value store not initialized");
 		PG_RETURN_NULL();
 	}
 	
 	/* Build tuple descriptor */
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-		elog(ERROR, "pgraft_kv: Return type must be a row type");
+		elog(ERROR, "pgraft_kv: return type must be a row type");
 	
 	/* Calculate active vs deleted entries */
 	for (int i = 0; i < store->num_entries; i++) {

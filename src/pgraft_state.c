@@ -28,7 +28,7 @@ pgraft_state_init_shared_memory(void)
 {
 	bool		found;
 	
-	elog(INFO, "pgraft: Initializing Go state shared memory");
+	elog(INFO, "pgraft: initializing Go state shared memory");
 	
 	/* Allocate shared memory */
 	g_go_state = (pgraft_go_state_t *) ShmemInitStruct("pgraft_go_state",
@@ -37,7 +37,7 @@ pgraft_state_init_shared_memory(void)
 	
 	if (!found)
 	{
-		elog(INFO, "pgraft: Creating new Go state shared memory");
+		elog(INFO, "pgraft: creating new Go state shared memory");
 		
 		/* Initialize shared memory */
 		memset(g_go_state, 0, sizeof(pgraft_go_state_t));
@@ -69,11 +69,11 @@ pgraft_state_init_shared_memory(void)
 		g_go_state->go_heartbeats_sent = 0;
 		g_go_state->go_elections_triggered = 0;
 		
-		elog(INFO, "pgraft: Go state shared memory initialized");
+		elog(INFO, "pgraft: go state shared memory initialized");
 	}
 	else
 	{
-		elog(INFO, "pgraft: Go state shared memory already exists");
+		elog(INFO, "pgraft: go state shared memory already exists");
 	}
 }
 
@@ -102,7 +102,7 @@ pgraft_state_save_go_library_state(void)
 	state = pgraft_state_get_shared_memory();
 	if (!state)
 	{
-		elog(ERROR, "pgraft: Failed to get shared memory");
+		elog(ERROR, "pgraft: failed to get shared memory");
 		return;
 	}
 	
@@ -132,7 +132,7 @@ pgraft_state_restore_go_library_state(void)
 	state = pgraft_state_get_shared_memory();
 	if (!state)
 	{
-		elog(ERROR, "pgraft: Failed to get shared memory");
+		elog(ERROR, "pgraft: failed to get shared memory");
 		return;
 	}
 	
@@ -147,12 +147,12 @@ pgraft_state_restore_go_library_state(void)
 	
 	if (was_loaded && was_initialized)
 	{
-		elog(INFO, "pgraft: Restoring Go library state (was running: %s)", 
+		elog(INFO, "pgraft: restoring Go library state (was running: %s)", 
 			 was_running ? "yes" : "no");
 	}
 	else
 	{
-		elog(INFO, "pgraft: No previous Go library state found");
+		elog(INFO, "pgraft: no previous Go library state found");
 	}
 }
 
@@ -164,7 +164,7 @@ pgraft_state_save_go_raft_state(void)
 {
     pgraft_go_state_t *state = pgraft_state_get_shared_memory();
     if (!state) {
-        elog(ERROR, "pgraft: Failed to get shared memory");
+        elog(ERROR, "pgraft: failed to get shared memory");
         return;
     }
     
@@ -192,7 +192,7 @@ pgraft_state_restore_go_raft_state(void)
     
     state = pgraft_state_get_shared_memory();
     if (!state) {
-        elog(ERROR, "pgraft: Failed to get shared memory");
+        elog(ERROR, "pgraft: failed to get shared memory");
         return;
     }
     
@@ -205,10 +205,10 @@ pgraft_state_restore_go_raft_state(void)
     SpinLockRelease(&state->mutex);
     
     if (was_initialized) {
-        elog(INFO, "pgraft: Restoring Go Raft state (was running: %s)", 
+        elog(INFO, "pgraft: restoring Go Raft state (was running: %s)", 
              was_running ? "yes" : "no");
     } else {
-        elog(INFO, "pgraft: No previous Go Raft state found");
+        elog(INFO, "pgraft: no previous Go Raft state found");
     }
 }
 
@@ -220,7 +220,7 @@ pgraft_state_save_node_config(int32_t node_id, const char* address, int32_t port
 {
     pgraft_go_state_t *state = pgraft_state_get_shared_memory();
     if (!state) {
-        elog(ERROR, "pgraft: Failed to get shared memory");
+        elog(ERROR, "pgraft: failed to get shared memory");
         return;
     }
     
@@ -244,7 +244,7 @@ pgraft_state_restore_node_config(int32_t* node_id, char* address, int32_t* port)
 {
     pgraft_go_state_t *state = pgraft_state_get_shared_memory();
     if (!state || !node_id || !address || !port) {
-        elog(ERROR, "pgraft: Invalid parameters");
+        elog(ERROR, "pgraft: invalid parameters");
         return;
     }
     
@@ -269,7 +269,7 @@ pgraft_state_save_cluster_nodes(int32_t num_nodes, int32_t* node_ids,
 {
     pgraft_go_state_t *state = pgraft_state_get_shared_memory();
     if (!state) {
-        elog(ERROR, "pgraft: Failed to get shared memory");
+        elog(ERROR, "pgraft: failed to get shared memory");
         return;
     }
     
@@ -297,7 +297,7 @@ pgraft_state_restore_cluster_nodes(int32_t* num_nodes, int32_t* node_ids,
 {
     pgraft_go_state_t *state = pgraft_state_get_shared_memory();
     if (!state || !num_nodes || !node_ids || !node_addresses || !node_ports) {
-        elog(ERROR, "pgraft: Invalid parameters");
+        elog(ERROR, "pgraft: invalid parameters");
         return;
     }
     
@@ -384,5 +384,5 @@ void
 pgraft_worker_init_shared_memory(void)
 {
 	/* Worker state is managed in pgraft_core.c */
-	elog(LOG, "pgraft: Worker shared memory initialization completed");
+	elog(LOG, "pgraft: worker shared memory initialization completed");
 }

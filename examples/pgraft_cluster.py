@@ -475,18 +475,11 @@ class PgraftClusterManager:
                 cursor.execute("CREATE EXTENSION IF NOT EXISTS pgraft")
                 self.log(f"[{node_name}] - pgraft extension created/loaded")
                 
-                # Initialize pgraft (gets configuration from GUC variables)
-                cursor.execute("SELECT pgraft_init()")
-                result = cursor.fetchone()[0]
-                if result:
-                    self.log(f"[{node_name}] - pgraft initialized successfully")
-                else:
-                    self.log(f"[{node_name}] - pgraft initialization failed", "ERROR")
-                    cursor.close()
-                    conn.close()
-                    sys.exit(1)
+                # Background worker automatically initializes raft consensus
+                # Wait a moment for background worker to initialize
+                time.sleep(2)
                 
-                # Background worker will handle consensus process automatically
+                self.log(f"[{node_name}] - Background worker handling raft consensus")
                 self.log(f"[{node_name}] - pgraft consensus process will start automatically")
                 self.log(f"[{node_name}] - pgraft network worker started automatically")
                 
@@ -532,12 +525,13 @@ class PgraftClusterManager:
                 self.log(f"[{node_name}] - Failed to setup pgraft extension: {e}", "ERROR")
                 sys.exit(1)
         
-        # Wait for leader election before configuring peers
+        # Wait for leader election
         self.log("Waiting for leader election (10 seconds)...")
         time.sleep(10)
         
-        # Configure cluster peers after all nodes are set up
-        self.configure_cluster_peers()
+        # Note: Cluster peers are automatically configured via initial_cluster GUC
+        # No need to manually add nodes - they are already part of the cluster
+        self.log("Cluster peers automatically configured via initial_cluster setting")
     
     def configure_cluster_peers(self):
         """Configure cluster peers by adding nodes to each other"""
@@ -807,6 +801,84 @@ class PgraftClusterManager:
         self.log("✓ Cluster initialization completed successfully")
         self.print_status()
     
+    def install_extension(self) -> None:
+        """Install pgraft extension (compile, make install, copy Go lib)"""
+        self.log("Installing pgraft extension...")
+        
+        # Get the pgraft source directory (parent of examples)
+        pgraft_dir = Path(__file__).parent.parent
+        self.log(f"pgraft source directory: {pgraft_dir}")
+        
+        try:
+            # Step 1: Clean and compile
+            self.log("Step 1: Cleaning and compiling pgraft extension...")
+            result = subprocess.run(
+                ['make', 'clean', '&&', 'make'],
+                cwd=pgraft_dir,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            self.log("✓ Compilation successful")
+            
+            # Step 2: Make install
+            self.log("Step 2: Installing extension...")
+            result = subprocess.run(
+                ['make', 'install'],
+                cwd=pgraft_dir,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            self.log("✓ make install successful")
+            
+            # Step 3: Copy Go library
+            self.log("Step 3: Copying Go library...")
+            go_lib_src = pgraft_dir / "src" / "pgraft_go.dylib"
+            go_lib_dst = Path("/usr/local/pgsql.17/lib/pgraft_go.dylib")
+            
+            if go_lib_src.exists():
+                subprocess.run(['cp', str(go_lib_src), str(go_lib_dst)], check=True)
+                self.log(f"✓ Go library copied: {go_lib_dst}")
+            else:
+                self.log(f"✗ Go library not found: {go_lib_src}", "ERROR")
+                return
+            
+            # Step 4: Copy main extension library
+            self.log("Step 4: Copying main extension library...")
+            ext_lib_src = pgraft_dir / "pgraft.dylib"
+            ext_lib_dst = Path("/usr/local/pgsql.17/lib/pgraft.dylib")
+            
+            if ext_lib_src.exists():
+                subprocess.run(['cp', str(ext_lib_src), str(ext_lib_dst)], check=True)
+                self.log(f"✓ Extension library copied: {ext_lib_dst}")
+            else:
+                self.log(f"✗ Extension library not found: {ext_lib_src}", "ERROR")
+                return
+            
+            # Step 5: Copy SQL file
+            self.log("Step 5: Copying SQL extension file...")
+            sql_src = pgraft_dir / "pgraft--1.0.sql"
+            sql_dst = Path("/usr/local/pgsql.17/share/extension/pgraft--1.0.sql")
+            
+            if sql_src.exists():
+                subprocess.run(['cp', str(sql_src), str(sql_dst)], check=True)
+                self.log(f"✓ SQL file copied: {sql_dst}")
+            else:
+                self.log(f"✗ SQL file not found: {sql_src}", "ERROR")
+                return
+            
+            self.log("✓ pgraft extension installation completed successfully")
+            
+        except subprocess.CalledProcessError as e:
+            self.log(f"✗ Installation failed: {e.stderr}", "ERROR")
+            sys.exit(1)
+        except Exception as e:
+            self.log(f"✗ Installation error: {e}", "ERROR")
+            sys.exit(1)
+
     def destroy_cluster(self) -> None:
         """Destroy the entire cluster"""
         self.log("Destroying PostgreSQL pgraft cluster...")
@@ -830,6 +902,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  python pgraft_cluster.py --install  # Install pgraft extension
   python pgraft_cluster.py --init     # Initialize cluster
   python pgraft_cluster.py --verify   # Verify cluster health
   python pgraft_cluster.py --status   # Show cluster status
@@ -837,6 +910,7 @@ Examples:
         """
     )
     
+    parser.add_argument('--install', action='store_true', help='Install pgraft extension (compile, make install, copy Go lib)')
     parser.add_argument('--init', action='store_true', help='Initialize cluster')
     parser.add_argument('--verify', action='store_true', help='Verify cluster health')
     parser.add_argument('--destroy', action='store_true', help='Destroy cluster')
@@ -847,14 +921,16 @@ Examples:
     
     args = parser.parse_args()
     
-    if not any([args.init, args.verify, args.destroy, args.status]):
+    if not any([args.install, args.init, args.verify, args.destroy, args.status]):
         parser.print_help()
         sys.exit(1)
     
     manager = PgraftClusterManager(args.base_dir, args.verbose)
     
     try:
-        if args.init:
+        if args.install:
+            manager.install_extension()
+        elif args.init:
             manager.init_cluster()
         elif args.verify:
             success = manager.verify_cluster()

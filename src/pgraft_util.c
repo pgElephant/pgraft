@@ -26,13 +26,13 @@ pgraft_queue_command(COMMAND_TYPE type, int node_id, const char *address, int po
 	
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
-		elog(ERROR, "pgraft: Failed to get worker state in pgraft_queue_command");
+		elog(ERROR, "pgraft: failed to get worker state in pgraft_queue_command");
 		return false;
 	}
 	
 	/* Check if queue is full */
 	if (state->command_count >= MAX_COMMANDS) {
-		elog(WARNING, "pgraft: Command queue is full, cannot queue new command");
+		elog(WARNING, "pgraft: command queue is full, cannot queue new command");
 		return false;
 	}
 	
@@ -66,7 +66,7 @@ pgraft_queue_command(COMMAND_TYPE type, int node_id, const char *address, int po
 	state->command_tail = (state->command_tail + 1) % MAX_COMMANDS;
 	state->command_count++;
 	
-	elog(LOG, "pgraft: Command %d queued for node %d at %s:%d (count=%d)", 
+	elog(LOG, "pgraft: command %d queued for node %d at %s:%d (count=%d)", 
 		 type, node_id, address, port, state->command_count);
 	return true;
 }
@@ -132,7 +132,7 @@ pgraft_queue_log_command(COMMAND_TYPE type, const char *log_data, int log_index)
 	
 	/* Check if queue is full */
 	if (state->command_count >= MAX_COMMANDS) {
-		elog(WARNING, "pgraft: Command queue is full, cannot queue log command");
+		elog(WARNING, "pgraft: command queue is full, cannot queue log command");
 		return false;
 	}
 	
@@ -164,7 +164,7 @@ pgraft_queue_log_command(COMMAND_TYPE type, const char *log_data, int log_index)
 	state->command_tail = (state->command_tail + 1) % MAX_COMMANDS;
 	state->command_count++;
 	
-	elog(LOG, "pgraft: Log command %d queued (index=%d, count=%d)", type, log_index, state->command_count);
+	elog(LOG, "pgraft: log command %d queued (index=%d, count=%d)", type, log_index, state->command_count);
 	return true;
 }
 
@@ -184,7 +184,7 @@ pgraft_add_command_to_status(pgraft_command_t *cmd)
 	
 	/* Check if status buffer is full */
 	if (state->status_count >= MAX_COMMANDS) {
-		elog(WARNING, "pgraft: Status buffer is full, removing oldest entry");
+		elog(WARNING, "pgraft: status buffer is full, removing oldest entry");
 		/* Remove oldest status entry */
 		state->status_head = (state->status_head + 1) % MAX_COMMANDS;
 		state->status_count--;
@@ -296,7 +296,7 @@ pgraft_remove_completed_commands(void)
 	state->status_count -= removed;
 	
 	if (removed > 0) {
-		elog(LOG, "pgraft: Removed %d completed commands from status buffer", removed);
+		elog(LOG, "pgraft: removed %d completed commands from status buffer", removed);
 	}
 	
 	return true;
