@@ -1,6 +1,7 @@
-# pgraft Tutorial: Complete Setup and Usage Guide
 
-This tutorial will walk you through setting up a complete pgraft cluster from scratch, including installation, configuration, and advanced usage scenarios.
+# pgraft Tutorial: Complete Setup and Usage Guide (pgElephant Suite)
+
+This tutorial will walk you through setting up a complete **pgraft** cluster from scratch, including installation, configuration, and advanced usage scenarios. All steps, scripts, and best practices are up to date and consistent with the unified [pgElephant](https://pgelephant.com) suite.
 
 ## Table of Contents
 

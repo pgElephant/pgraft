@@ -1,60 +1,38 @@
-# User Guide
 
-Comprehensive guides for using pgraft in production.
+# User Guide (pgElephant Suite)
+
+Comprehensive guides for using **pgraft** in production, as part of the unified [pgElephant](https://pgelephant.com) high-availability suite. All documentation and product pages share a consistent, professional template and feature matrix.
 
 ## Overview
 
-This section contains detailed documentation for operating pgraft clusters, from basic configuration to advanced cluster operations.
+This section contains detailed documentation for operating pgraft clusters, from basic configuration to advanced cluster operations. For related products, see [RAM](https://pgelephant.com/ram), [RALE](https://pgelephant.com/rale), and [FauxDB](https://pgelephant.com/fauxdb).
 
 ## Contents
 
-### Complete Tutorial
-
-Step-by-step guide covering installation, configuration, and advanced usage scenarios.
-
-[Read Tutorial](tutorial.md){ .md-button .md-button--primary }
-
-### Configuration Reference
-
-Complete reference of all configuration parameters and tuning guidelines.
-
-[Configuration Guide](configuration.md){ .md-button }
-
-### SQL Functions
-
-Comprehensive reference for all SQL functions provided by pgraft.
-
-[SQL Functions](sql-functions.md){ .md-button }
-
-### Cluster Operations
-
-Learn how to add/remove nodes, handle elections, and perform maintenance.
-
-[Cluster Operations](cluster-operations.md){ .md-button }
+- [Complete Tutorial](tutorial.md){ .md-button .md-button--primary } — Step-by-step guide covering installation, configuration, and advanced usage scenarios
+- [Configuration Guide](configuration.md){ .md-button } — Complete reference of all configuration parameters and tuning guidelines
+- [SQL Functions](sql-functions.md){ .md-button } — Comprehensive reference for all SQL functions provided by pgraft
+- [Cluster Operations](cluster-operations.md){ .md-button } — Learn how to add/remove nodes, handle elections, and perform maintenance
 
 ## Quick Links
 
-### Common Tasks
-
+**Common Tasks:**
 - **Initialize a node**: `SELECT pgraft_init();`
 - **Check if leader**: `SELECT pgraft_is_leader();`
 - **Add a node**: `SELECT pgraft_add_node(node_id, address, port);`
 - **Get cluster status**: `SELECT * FROM pgraft_get_cluster_status();`
 - **View all nodes**: `SELECT * FROM pgraft_get_nodes();`
 
-### Configuration Parameters
+**Key Configuration Parameters:**
+- `pgraft.cluster_id` — Cluster identifier (must match on all nodes)
+- `pgraft.node_id` — Unique node identifier
+- `pgraft.address` — Node listen address
+- `pgraft.port` — Raft communication port
+- `pgraft.election_timeout` — Election timeout in milliseconds
 
-Key parameters to know:
+**Common Patterns:**
 
-- `pgraft.cluster_id` - Cluster identifier (must match on all nodes)
-- `pgraft.node_id` - Unique node identifier
-- `pgraft.address` - Node listen address
-- `pgraft.port` - Raft communication port
-- `pgraft.election_timeout` - Election timeout in milliseconds
-
-### Common Patterns
-
-**Three-node cluster setup:**
+Three-node cluster setup:
 ```sql
 -- On each node
 CREATE EXTENSION pgraft;
@@ -65,7 +43,7 @@ SELECT pgraft_add_node(2, '192.168.1.12', 7002);
 SELECT pgraft_add_node(3, '192.168.1.13', 7003);
 ```
 
-**Health check:**
+Health check:
 ```sql
 SELECT 
     pgraft_is_leader() as is_leader,
@@ -77,10 +55,10 @@ SELECT
 ## Best Practices
 
 1. **Use odd number of nodes** (3, 5, or 7) for optimal fault tolerance
-2. **Always add nodes from the leader** - Configuration replicates automatically
-3. **Monitor continuously** - Track leader, term, and worker status
+2. **Always add nodes from the leader** — Configuration replicates automatically
+3. **Monitor continuously** — Track leader, term, and worker status
 4. **Test failover scenarios** before going to production
-5. **Use fast storage** - SSD or NVMe recommended
+5. **Use fast storage** — SSD or NVMe recommended
 
 ## Next Steps
 

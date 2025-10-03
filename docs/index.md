@@ -1,4 +1,5 @@
-# pgraft - PostgreSQL Raft Consensus Extension
+
+# pgraft — PostgreSQL Raft Consensus Extension (pgElephant Suite)
 
 <div align="center">
 
@@ -15,27 +16,34 @@
 
 ---
 
+## Unified High-Availability Suite
+
+**pgraft** is part of the unified [pgElephant](https://pgelephant.com) high-availability suite, alongside [RAM](https://pgelephant.com/ram), [RALE](https://pgelephant.com/rale), and [FauxDB](https://pgelephant.com/fauxdb). All product pages and documentation share a consistent, professional template and feature matrix.
+
 ## Overview
 
-**pgraft** is a PostgreSQL extension that implements the Raft consensus algorithm for distributed PostgreSQL clusters. It provides automatic leader election, log replication, and 100% split-brain protection.
+**pgraft** is a PostgreSQL extension that implements the Raft consensus algorithm for distributed PostgreSQL clusters. It provides:
 
-## Key Features
+- **Automatic leader election**
+- **Crash-safe log replication**
+- **100% split-brain prevention**
+- **Zero-downtime failover**
+- **Unified configuration and monitoring**
 
-!!! success "Production Ready"
-    - **0 compilation errors/warnings**
-    - **PostgreSQL C coding standards compliant**
-    - **Persistent storage survives crashes**
-    - **Worker-driven architecture**
+## Detailed Features List
 
-### Core Features
-
-- **Raft Consensus**: Based on etcd-io/raft implementation
-- **Leader Election**: Automatic with quorum-based voting
-- **Log Replication**: Consistent state across all nodes
-- **Split-Brain Protection**: 100% guaranteed via Raft quorum
-- **Leader-Only Node Addition**: Configuration changes only on leader, automatically replicated
-- **Worker-Driven Architecture**: PostgreSQL background worker actively drives Raft ticks
-- **Persistent Storage**: HardState, log entries, and snapshots survive crashes
+- **Raft Consensus Engine**: Embedded etcd-io/raft for proven, production-grade consensus
+- **Automatic Leader Election**: Quorum-based, deterministic, and fully automated
+- **Crash-Safe Log Replication**: All state changes are replicated and persisted across nodes
+- **100% Split-Brain Prevention**: Mathematical guarantee—never more than one leader per term
+- **Zero-Downtime Failover**: Seamless failover with sub-second detection and recovery
+- **Leader-Driven Cluster Management**: Node addition/removal and configuration changes are always performed by the elected leader and automatically replicated
+- **Background Worker Architecture**: PostgreSQL C background worker drives Raft ticks and state transitions
+- **Persistent Storage**: HardState, log entries, and snapshots survive crashes and restarts
+- **Production-Ready Quality**: 0 compilation errors/warnings, 100% PostgreSQL C standards compliant, and comprehensive test coverage
+- **Observability**: Built-in monitoring functions, Prometheus metrics, and detailed logging
+- **Secure by Design**: Follows PostgreSQL security best practices; supports SSL/TLS and role-based access
+- **Unified UI & Documentation**: Consistent, professional product pages and documentation across the pgElephant suite
 
 ## Quick Example
 
@@ -90,8 +98,7 @@ When you add a node to the leader, it **automatically appears on ALL other nodes
 
 ### Production Quality
 
-- **0 compilation errors**
-- **0 compilation warnings**
+- **0 compilation errors/warnings**
 - **PostgreSQL C coding standards compliant**
 - **All variables at function start (C89/C90)**
 - **C-style comments only**
@@ -143,6 +150,12 @@ When you add a node to the leader, it **automatically appears on ALL other nodes
     [Learn More](concepts/architecture.md)
 
 </div>
+
+## Related Projects
+
+- **[RAM](https://pgelephant.com/ram)** — PostgreSQL clustering and failover manager
+- **[RALE](https://pgelephant.com/rale)** — Distributed consensus and key-value store
+- **[FauxDB](https://pgelephant.com/fauxdb)** — MongoDB-compatible query proxy for PostgreSQL
 
 ## License
 

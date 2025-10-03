@@ -1,6 +1,7 @@
-# Configuration
 
-This page describes all available configuration parameters for pgraft.
+# Configuration (pgElephant Suite)
+
+This page describes all available configuration parameters for **pgraft**, part of the unified [pgElephant](https://pgelephant.com) high-availability suite. All configuration and monitoring is unified with the rest of the suite.
 
 ## PostgreSQL Configuration
 
@@ -131,7 +132,6 @@ pgraft.metrics_port = 9100
 Here's a complete configuration for a production 3-node cluster:
 
 === "Node 1"
-
     ```ini
     # PostgreSQL settings
     port = 5432
@@ -161,7 +161,6 @@ Here's a complete configuration for a production 3-node cluster:
     ```
 
 === "Node 2"
-
     ```ini
     # PostgreSQL settings
     port = 5432
@@ -191,7 +190,6 @@ Here's a complete configuration for a production 3-node cluster:
     ```
 
 === "Node 3"
-
     ```ini
     # PostgreSQL settings
     port = 5432

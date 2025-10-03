@@ -14,7 +14,12 @@
 | **macOS** | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-16.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-16.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-17.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-17.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-18.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-18.yml) |
 | **Rocky** | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-16.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-16.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-17.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-17.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-18.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-18.yml) |
 
-**pgraft** is a production‑ready PostgreSQL extension that embeds the Raft consensus protocol to deliver automatic leader election, deterministic failover, crash‑safe log replication, and 100% split‑brain prevention for PostgreSQL clusters — powered by the proven etcd‑io/raft library.
+**pgraft** is a production-ready PostgreSQL extension that embeds the Raft consensus protocol to deliver automatic leader election, deterministic failover, crash-safe log replication, and 100% split-brain prevention for PostgreSQL clusters—powered by the proven etcd-io/raft library.
+
+**Now part of the unified pgElephant high-availability suite.**
+- Consistent UI and documentation across [pgraft](https://pgelephant.com/pgraft), [RAM](https://pgelephant.com/ram), [RALE](https://pgelephant.com/rale), and [FauxDB](https://pgelephant.com/fauxdb).
+- All product pages use a single, professional template for a seamless experience.
+- See the [website](https://pgelephant.com) for live demos and feature comparisons.
 
 **Supported PostgreSQL versions**: 16, 17, 18
 
@@ -26,16 +31,20 @@
 - **[SQL Functions](https://pgelephant.github.io/pgraft/user-guide/sql-functions/)** - Complete API reference
 - **[Contributing](CONTRIBUTING.md)** - How to contribute
 
-## Key Features
+## Detailed Features List
 
-- **Raft Consensus**: Based on etcd-io/raft implementation
-- **Leader Election**: Automatic with quorum-based voting
-- **Log Replication**: Consistent state across all nodes
-- **Split-Brain Protection**: 100% guaranteed via Raft quorum
-- **Leader-Only Node Addition**: Configuration changes only on leader, automatically replicated
-- **Worker-Driven Architecture**: PostgreSQL background worker actively drives Raft ticks
-- **Persistent Storage**: HardState, log entries, and snapshots survive crashes
-- **Production Ready**: 0 compilation errors/warnings, PostgreSQL C standards compliant
+- **Raft Consensus Engine**: Embedded etcd-io/raft for proven, production-grade consensus.
+- **Automatic Leader Election**: Quorum-based, deterministic, and fully automated.
+- **Crash-Safe Log Replication**: All state changes are replicated and persisted across nodes.
+- **100% Split-Brain Prevention**: Mathematical guarantee—never more than one leader per term.
+- **Zero-Downtime Failover**: Seamless failover with sub-second detection and recovery.
+- **Leader-Driven Cluster Management**: Node addition/removal and configuration changes are always performed by the elected leader and automatically replicated.
+- **Background Worker Architecture**: PostgreSQL C background worker drives Raft ticks and state transitions.
+- **Persistent Storage**: HardState, log entries, and snapshots survive crashes and restarts.
+- **Production-Ready Quality**: 0 compilation errors/warnings, 100% PostgreSQL C standards compliant, and comprehensive test coverage.
+- **Observability**: Built-in monitoring functions, Prometheus metrics, and detailed logging.
+- **Secure by Design**: Follows PostgreSQL security best practices; supports SSL/TLS and role-based access.
+- **Unified UI & Documentation**: Consistent, professional product pages and documentation across the pgElephant suite.
 
 ## Installation
 
@@ -280,6 +289,9 @@ MIT License - see LICENSE file for details.
 
 - **[etcd-io/raft](https://github.com/etcd-io/raft)** - Raft consensus implementation used by pgraft
 - **[PostgreSQL](https://www.postgresql.org/)** - The world's most advanced open source database
+- **[RAM](https://pgelephant.com/ram)** - PostgreSQL clustering and failover manager
+- **[RALE](https://pgelephant.com/rale)** - Distributed consensus and key-value store
+- **[FauxDB](https://pgelephant.com/fauxdb)** - MongoDB-compatible query proxy for PostgreSQL
 
 ## SEO/Discoverability keywords
 

@@ -1,33 +1,21 @@
-# Getting Started
 
-Welcome to pgraft! This section will help you get up and running quickly.
+# Getting Started with pgraft (pgElephant Suite)
+
+Welcome! This section will help you get up and running with **pgraft**, part of the unified [pgElephant](https://pgelephant.com) high-availability suite (see also: [RAM](https://pgelephant.com/ram), [RALE](https://pgelephant.com/rale), [FauxDB](https://pgelephant.com/fauxdb)).
 
 ## What is pgraft?
 
-**pgraft** is a PostgreSQL extension that implements the Raft consensus algorithm for distributed PostgreSQL clusters. It provides:
-
-- **Leader election** - Automatic with quorum-based voting
-- **Log replication** - Consistent state across all nodes
-- **Split-brain protection** - 100% guaranteed via Raft quorum
-- **Automatic configuration replication** - Changes on leader replicate to all nodes
+**pgraft** is a PostgreSQL extension that brings production-grade Raft consensus, automatic leader election, crash-safe log replication, and 100% split-brain prevention to distributed PostgreSQL clusters. All configuration and monitoring is unified with the rest of the pgElephant suite.
 
 ## Quick Navigation
 
-### Installation
-
-Learn how to install pgraft on your system.
-
-[Install pgraft](installation.md){ .md-button .md-button--primary }
-
-### Quick Start
-
-Set up your first cluster in minutes.
-
-[Quick Start Guide](quick-start.md){ .md-button }
+- [Install pgraft](installation.md){ .md-button .md-button--primary }
+- [Quick Start Guide](quick-start.md){ .md-button }
+- [Complete Tutorial](../user-guide/tutorial.md)
+- [Configuration Reference](../user-guide/configuration.md)
+- [Cluster Operations](../user-guide/cluster-operations.md)
 
 ## Prerequisites
-
-Before you begin, ensure you have:
 
 - **PostgreSQL 17+** with development headers
 - **Go 1.21+** for building
@@ -36,25 +24,21 @@ Before you begin, ensure you have:
 
 ## Learning Path
 
-We recommend following this path:
-
-1. **Installation** - Get pgraft installed on your system
-2. **Quick Start** - Create your first 3-node cluster
-3. **Tutorial** - Learn all features in depth
-4. **Configuration** - Understand all available settings
-5. **Operations** - Learn monitoring and maintenance
+1. **Installation** — Get pgraft installed on your system
+2. **Quick Start** — Create your first 3-node cluster
+3. **Tutorial** — Learn all features in depth
+4. **Configuration** — Understand all available settings
+5. **Operations** — Learn monitoring and maintenance
 
 ## System Requirements
 
-### Minimum Requirements
-
+**Minimum:**
 - **CPU**: 2 cores per node
 - **RAM**: 4GB per node
 - **Disk**: 10GB free space per node
 - **Network**: Reliable connectivity between nodes
 
-### Recommended for Production
-
+**Recommended for Production:**
 - **CPU**: 4+ cores per node
 - **RAM**: 16GB+ per node
 - **Disk**: SSD or NVMe storage
@@ -62,13 +46,11 @@ We recommend following this path:
 
 ## Next Steps
 
-Ready to begin?
-
 - **New to pgraft?** Start with [Installation](installation.md)
 - **Want to test quickly?** Jump to [Quick Start](quick-start.md)
 - **Need detailed guidance?** Check the [Complete Tutorial](../user-guide/tutorial.md)
 
-## Support
+## Support & Community
 
 - **Documentation**: You're reading it!
 - **Issues**: [GitHub Issues](https://github.com/pgelephant/pgraft/issues)

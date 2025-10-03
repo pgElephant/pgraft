@@ -1,6 +1,7 @@
-# Installation
 
-This guide will walk you through installing pgraft on your system.
+# Installation (pgElephant Suite)
+
+This guide will walk you through installing **pgraft**, part of the unified [pgElephant](https://pgelephant.com) high-availability suite. All steps and troubleshooting are up to date for the latest release.
 
 ## Prerequisites
 
@@ -14,20 +15,17 @@ Before installing pgraft, ensure you have the following:
 ### System-Specific Prerequisites
 
 === "Ubuntu/Debian"
-
     ```bash
     sudo apt-get update
     sudo apt-get install postgresql-17 postgresql-server-dev-17 golang-go build-essential
     ```
 
 === "CentOS/RHEL"
-
     ```bash
     sudo yum install postgresql17 postgresql17-devel golang gcc make
     ```
 
 === "macOS"
-
     ```bash
     brew install postgresql@17 go
     ```
@@ -67,7 +65,6 @@ cp pgraft--1.0.sql /usr/local/pgsql.17/share/extension/
 
 !!! warning "Path Configuration"
     Adjust the paths above based on your PostgreSQL installation location. Common paths:
-    
     - macOS (Homebrew): `/usr/local/opt/postgresql@17/`
     - Linux: `/usr/lib/postgresql/17/`
     - Custom: Use `pg_config --libdir` and `pg_config --sharedir`

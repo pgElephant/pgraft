@@ -1,6 +1,7 @@
-# Cluster Operations
 
-This guide covers common cluster operations and management tasks.
+# Cluster Operations (pgElephant Suite)
+
+This guide covers common cluster operations and management tasks for **pgraft**, part of the unified [pgElephant](https://pgelephant.com) high-availability suite. All steps and best practices are up to date and consistent with the latest release.
 
 ## Adding Nodes
 

@@ -1,6 +1,7 @@
-# Quick Start
 
-Get your first pgraft cluster up and running in minutes!
+# Quick Start (pgElephant Suite)
+
+Get your first **pgraft** cluster up and running in minutes! All steps and health checks are up to date for the latest release and unified with the [pgElephant](https://pgelephant.com) suite.
 
 ## Step 1: Configure PostgreSQL
 
