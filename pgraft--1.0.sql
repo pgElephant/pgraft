@@ -528,5 +528,27 @@ RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_replicate_entry_func';
 
+-- Local KV operations (used by apply callback, no Raft replication)
+CREATE OR REPLACE FUNCTION pgraft_kv_put_local(key text, value text)
+RETURNS boolean
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_put_local_func';
+
+CREATE OR REPLACE FUNCTION pgraft_kv_delete_local(key text)
+RETURNS boolean
+LANGUAGE C
+AS 'pgraft', 'pgraft_kv_delete_local_func';
+
+-- Applied index tracking functions
+CREATE OR REPLACE FUNCTION pgraft_get_applied_index()
+RETURNS bigint
+LANGUAGE C
+AS 'pgraft', 'pgraft_get_applied_index_func';
+
+CREATE OR REPLACE FUNCTION pgraft_record_applied_index(index bigint)
+RETURNS void
+LANGUAGE C
+AS 'pgraft', 'pgraft_record_applied_index_func';
+
 -- Reset search path
 SET search_path = public;

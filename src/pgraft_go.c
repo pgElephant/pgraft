@@ -42,6 +42,7 @@ static pgraft_go_is_initialized_func pgraft_go_is_initialized_ptr = NULL;
 static pgraft_go_is_leader_func pgraft_go_is_leader_ptr = NULL;
 static pgraft_go_append_log_func pgraft_go_append_log_ptr = NULL;
 static pgraft_go_get_nodes_func pgraft_go_get_nodes_ptr = NULL;
+static pgraft_go_log_replicate_func pgraft_go_log_replicate_ptr = NULL;
 static pgraft_go_version_func pgraft_go_version_ptr = NULL;
 static pgraft_go_test_func pgraft_go_test_ptr = NULL;
 static pgraft_go_set_debug_func pgraft_go_set_debug_ptr = NULL;
@@ -236,6 +237,12 @@ pgraft_go_get_nodes_func
 pgraft_go_get_get_nodes_func(void)
 {
 	return pgraft_go_get_nodes_ptr;
+}
+
+pgraft_go_log_replicate_func
+pgraft_go_get_log_replicate_func(void)
+{
+	return pgraft_go_log_replicate_ptr;
 }
 
 pgraft_go_version_func
@@ -562,6 +569,12 @@ pgraft_go_load_symbols(void)
 	
 	dlerror(); /* Clear error */
 	pgraft_go_get_nodes_ptr = (pgraft_go_get_nodes_func) dlsym(go_lib_handle, "pgraft_go_get_nodes");
+	
+	dlerror(); /* Clear error */
+	pgraft_go_log_replicate_ptr = (pgraft_go_log_replicate_func) dlsym(go_lib_handle, "pgraft_go_log_replicate");
+	if (pgraft_go_log_replicate_ptr == NULL) {
+		elog(DEBUG1, "pgraft: log_replicate function not found (optional)");
+	}
 	
 	dlerror(); /* Clear error */
 	pgraft_go_test_ptr = (pgraft_go_test_func) dlsym(go_lib_handle, "pgraft_go_test");

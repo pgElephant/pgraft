@@ -2,7 +2,7 @@
 # PostgreSQL extension using etcd-io/raft for distributed consensus
 
 MODULE_big = pgraft
-OBJS = src/pgraft.o src/pgraft_core.o src/pgraft_go.o src/pgraft_state.o src/pgraft_log.o src/pgraft_kv.o src/pgraft_kv_sql.o src/pgraft_sql.o src/pgraft_guc.o src/pgraft_util.o src/pgraft_apply.o src/pgraft_go_callbacks.o
+OBJS = src/pgraft.o src/pgraft_core.o src/pgraft_go.o src/pgraft_state.o src/pgraft_log.o src/pgraft_kv.o src/pgraft_kv_sql.o src/pgraft_sql.o src/pgraft_guc.o src/pgraft_util.o src/pgraft_apply.o src/pgraft_go_callbacks.o src/pgraft_json.o
 
 EXTENSION = pgraft
 DATA = pgraft--1.0.sql

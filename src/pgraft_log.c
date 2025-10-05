@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "../include/pgraft_log.h"
+#include "../include/pgraft_go.h"
 
 /* Global shared memory pointer */
 static pgraft_log_state_t *g_log_state = NULL;
@@ -336,10 +337,26 @@ pgraft_log_replicate_from_leader(int32_t leader_id, int64_t from_index)
 {
     elog(DEBUG1, "pgraft: Replicating from leader %d from index %lld", leader_id, from_index);
     
-    /* This would typically involve network communication with the leader */
-    /* For now, we'll just log the operation */
+    /* This function is called when a follower needs to catch up with the leader */
+    /* The actual replication is handled by the Go Raft layer through network communication */
+    /* We just need to ensure the Go layer is aware of the replication request */
     
-    return 0;
+    /* Check if Go layer is available */
+    pgraft_go_log_replicate_func log_replicate_func = pgraft_go_get_log_replicate_func();
+    if (log_replicate_func) {
+        /* Call the Go layer to initiate replication */
+        int result = log_replicate_func((unsigned long long)leader_id, (unsigned long long)from_index);
+        if (result == 0) {
+            elog(LOG, "pgraft: Successfully initiated log replication from leader %d", leader_id);
+            return 0;
+        } else {
+            elog(WARNING, "pgraft: Failed to initiate log replication from leader %d", leader_id);
+            return -1;
+        }
+    } else {
+        elog(WARNING, "pgraft: Go layer log replication function not available");
+        return -1;
+    }
 }
 
 /*

@@ -8,15 +8,17 @@
  *-------------------------------------------------------------------------
  */
 
+/* Use separate JSON parsing module to avoid naming conflicts */
+
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "storage/shmem.h"
 #include "storage/ipc.h"
 #include "utils/elog.h"
+#include "utils/builtins.h"
 #include "postmaster/bgworker.h"
 #include "utils/ps_status.h"
-#include "/opt/homebrew/Cellar/json-c/0.18/include/json-c/json.h"
 
 #include "../include/pgraft_core.h"
 #include "../include/pgraft_go.h"
@@ -25,6 +27,8 @@
 #include "../include/pgraft_kv.h"
 #include "../include/pgraft_guc.h"
 #include "../include/pgraft_sql.h"
+#include "../include/pgraft_json.h"
+#include "../include/pgraft_apply.h"
 
 /* Function declarations */
 /* Forward declarations */
@@ -642,79 +646,33 @@ pgraft_update_shared_memory_from_go(void)
 			elog(LOG, "pgraft: DEBUG - Got nodes JSON from Go: '%s'", nodes_json ? nodes_json : "NULL");
 			if (nodes_json && strcmp(nodes_json, "[]") != 0)
 			{
-				/* Parse JSON using json-c library */
-				json_object *root = json_tokener_parse(nodes_json);
-				if (root && json_object_is_type(root, json_type_array))
+				/* Parse JSON using separate module */
+				int node_count;
+				int32_t node_ids[16];
+				char *addresses[16];
+				char address_buf[16][256];
+				int i;
+				
+				/* Initialize */
+				for (i = 0; i < 16; i++) {
+					addresses[i] = address_buf[i];
+					address_buf[i][0] = '\0';
+				}
+				
+				node_count = pgraft_parse_nodes_json(nodes_json, node_ids, addresses, 16);
+				
+				if (node_count > 0)
 				{
-					int array_len = json_object_array_length(root);
-					int node_count = 0;
-					int32_t node_ids[16];
-					char *addresses[16];
-					char address_buf[16][256];
-					int i;
-					
-					/* Initialize */
-					for (i = 0; i < 16; i++) {
-						addresses[i] = address_buf[i];
-						address_buf[i][0] = '\0';
-					}
-					
-					/* Parse each node in the array */
-					for (i = 0; i < array_len && node_count < 16; i++)
-					{
-						json_object *node_obj = json_object_array_get_idx(root, i);
-						if (node_obj && json_object_is_type(node_obj, json_type_object))
-						{
-							uint64_t node_id = 0;
-							
-							/* Get id field */
-							json_object *id_obj;
-							if (json_object_object_get_ex(node_obj, "id", &id_obj) && 
-								json_object_is_type(id_obj, json_type_int))
-							{
-								node_id = json_object_get_int64(id_obj);
-							}
-							
-							/* Get address field */
-							json_object *addr_obj;
-							if (json_object_object_get_ex(node_obj, "address", &addr_obj) && 
-								json_object_is_type(addr_obj, json_type_string))
-							{
-								const char *address = json_object_get_string(addr_obj);
-								if (address && strlen(address) < 255)
-								{
-									strncpy(address_buf[node_count], address, sizeof(address_buf[node_count]) - 1);
-									address_buf[node_count][sizeof(address_buf[node_count]) - 1] = '\0';
-								}
-							}
-							
-							if (node_id > 0 && address_buf[node_count][0] != '\0')
-							{
-								node_ids[node_count] = (int32_t)node_id;
-								node_count++;
-								elog(LOG, "pgraft: DEBUG - Parsed node %d: id=%llu, address='%s'", 
-									 node_count, (unsigned long long)node_id, address_buf[node_count-1]);
-							}
-						}
-					}
-					
-					/* Update shared memory with parsed nodes */
-					if (node_count > 0)
-					{
-						elog(LOG, "pgraft: DEBUG - Parsed %d nodes, calling pgraft_core_update_nodes", node_count);
-						pgraft_core_update_nodes(node_count, node_ids, addresses);
-					}
-					else
-					{
-						elog(LOG, "pgraft: DEBUG - No valid nodes parsed from JSON");
-					}
-					
-					json_object_put(root);
+					elog(LOG, "pgraft: DEBUG - Parsed %d nodes, calling pgraft_core_update_nodes", node_count);
+					pgraft_core_update_nodes(node_count, node_ids, addresses);
+				}
+				else if (node_count == -1)
+				{
+					elog(LOG, "pgraft: DEBUG - Failed to parse JSON");
 				}
 				else
 				{
-					elog(LOG, "pgraft: DEBUG - Failed to parse JSON or not an array");
-					if (root) json_object_put(root);
+					elog(LOG, "pgraft: DEBUG - No valid nodes parsed from JSON");
 				}
 				
 				pgraft_go_free_string(nodes_json);
@@ -876,6 +834,73 @@ pgraft_log_apply_system(int log_index)
 	}
 	elog(INFO, "pgraft: log entry at index %d applied", log_index);
 	return 0;
+}
+
+/*
+ * SQL function wrapper for pgraft_kv_put_local
+ */
+PG_FUNCTION_INFO_V1(pgraft_kv_put_local_func);
+Datum
+pgraft_kv_put_local_func(PG_FUNCTION_ARGS)
+{
+	text	   *key_text = PG_GETARG_TEXT_PP(0);
+	text	   *value_text = PG_GETARG_TEXT_PP(1);
+	char	   *key;
+	char	   *value;
+	int			result;
+	
+	key = text_to_cstring(key_text);
+	value = text_to_cstring(value_text);
+	
+	result = pgraft_kv_put_local(key, value);
+	
+	PG_RETURN_BOOL(result == 0);
+}
+
+/*
+ * SQL function wrapper for pgraft_kv_delete_local
+ */
+PG_FUNCTION_INFO_V1(pgraft_kv_delete_local_func);
+Datum
+pgraft_kv_delete_local_func(PG_FUNCTION_ARGS)
+{
+	text	   *key_text = PG_GETARG_TEXT_PP(0);
+	char	   *key;
+	int			result;
+	
+	key = text_to_cstring(key_text);
+	
+	result = pgraft_kv_delete_local(key);
+	
+	PG_RETURN_BOOL(result == 0);
+}
+
+/*
+ * Get last applied index
+ */
+PG_FUNCTION_INFO_V1(pgraft_get_applied_index_func);
+Datum
+pgraft_get_applied_index_func(PG_FUNCTION_ARGS)
+{
+	uint64		last_applied;
+	
+	last_applied = pgraft_get_applied_index();
+	
+	PG_RETURN_INT64((int64) last_applied);
+}
+
+/*
+ * Record applied index
+ */
+PG_FUNCTION_INFO_V1(pgraft_record_applied_index_func);
+Datum
+pgraft_record_applied_index_func(PG_FUNCTION_ARGS)
+{
+	int64		index = PG_GETARG_INT64(0);
+	
+	pgraft_record_applied_index((uint64) index);
+	
+	PG_RETURN_VOID();
 }
 
 /*

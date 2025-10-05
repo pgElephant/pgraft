@@ -106,6 +106,7 @@ typedef char *(*pgraft_go_version_func) (void);
 typedef int (*pgraft_go_test_func) (void);
 typedef void (*pgraft_go_cleanup_func) (void);
 typedef int (*pgraft_go_replicate_log_entry_func) (char *data, int data_len);
+typedef int (*pgraft_go_log_replicate_func) (unsigned long long leader_id, unsigned long long from_index);
 
 
 /* C wrappers for Go functions */
@@ -161,5 +162,6 @@ extern pgraft_go_trigger_heartbeat_func pgraft_go_get_trigger_heartbeat_func(voi
 extern pgraft_go_free_string_func pgraft_go_get_free_string_func(void);
 extern pgraft_go_update_cluster_state_func pgraft_go_get_update_cluster_state_func(void);
 extern pgraft_go_replicate_log_entry_func pgraft_go_get_replicate_log_entry_func(void);
+extern pgraft_go_log_replicate_func pgraft_go_get_log_replicate_func(void);
 
 #endif

@@ -3190,6 +3190,37 @@ func applyKeyValueLogEntry(data []byte, logIndex uint64) {
 	logInfo("Applying KV operation to store: %s=%s (log_index=%d)", key, value, logIndex)
 }
 
+//export pgraft_go_log_replicate
+func pgraft_go_log_replicate(leaderID C.ulonglong, fromIndex C.ulonglong) C.int {
+	logInfo("pgraft_go_log_replicate called with leaderID=%d, fromIndex=%d", leaderID, fromIndex)
+
+	// This function is called when a follower needs to catch up with the leader
+	// The actual replication is handled by the Raft library through the message processing loop
+	// We just need to ensure the Raft node is properly configured and running
+
+	if raftNode == nil {
+		logError("pgraft_go_log_replicate: raft node is not initialized")
+		return -1
+	}
+
+	// Check if we're a follower and the leader ID matches
+	status := raftNode.Status()
+	if status.RaftState != raft.StateFollower {
+		logInfo("pgraft_go_log_replicate: not a follower (state=%d), ignoring replication request", status.RaftState)
+		return 0
+	}
+
+	if status.Lead != uint64(leaderID) {
+		logInfo("pgraft_go_log_replicate: leader ID mismatch (expected=%d, actual=%d)", leaderID, status.Lead)
+		return 0
+	}
+
+	// The Raft library will handle the actual log replication through its internal mechanisms
+	// We just need to ensure the node is properly connected and processing messages
+	logInfo("pgraft_go_log_replicate: replication request acknowledged, Raft will handle it")
+	return 0
+}
+
 func main() {
 	// This is required for building as a shared library
 }

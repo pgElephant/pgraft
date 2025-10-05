@@ -87,4 +87,8 @@ int			pgraft_kv_replicate_put(const char *key, const char *value, const char *cl
 int			pgraft_kv_replicate_delete(const char *key, const char *client_id);
 int			pgraft_kv_queue_operation(pgraft_kv_op_type_t op_type, const char *key, const char *value, const char *client_id);
 
+/* Local KV operations (for apply callback) */
+int			pgraft_kv_put_local(const char *key, const char *value);
+int			pgraft_kv_delete_local(const char *key);
+
 #endif

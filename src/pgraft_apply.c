@@ -15,6 +15,7 @@
 #include "postgres.h"
 #include "pgraft_apply.h"
 #include "pgraft_core.h"
+#include "../include/pgraft_json.h"
 
 #include "executor/spi.h"
 #include "utils/snapmgr.h"
@@ -27,6 +28,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+/* Use separate JSON parsing module to avoid naming conflicts */
 
 /* Simple JSON-like parsing for log entries */
 static PgRaftLogEntry *parse_json_entry(const char *data, size_t len);
@@ -193,17 +195,14 @@ pgraft_parse_log_entry(const char *data, size_t len)
 }
 
 /*
- * Simple JSON parser for log entries
- * Format: {"index":1,"term":1,"op":1,"db":"postgres","schema":"public","sql":"..."}
+ * JSON parser for log entries using json-c library
+ * Format: {"type": "kv_put", "key": "test", "value": "data", "timestamp": 123, "client_id": "pg_123"}
  */
 static PgRaftLogEntry *
 parse_json_entry(const char *data, size_t len)
 {
-	/* Very simple JSON parsing (for now, we'll use pipe-separated format) */
-	/* TODO: Use proper JSON parsing library */
-
-	elog(WARNING, "pgraft: JSON parsing not yet implemented, use pipe-separated format");
-	return NULL;
+	/* Use the separate JSON parsing module */
+	return pgraft_parse_kv_json_entry(data, len);
 }
 
 /*
@@ -247,8 +246,28 @@ pgraft_serialize_log_entry(PgRaftLogEntry *entry, size_t *out_len)
 void
 pgraft_record_applied_index(uint64 index)
 {
-	/* For now, just log it - we'll add proper shared memory tracking later */
-	elog(DEBUG2, "pgraft: recorded applied index %lu", index);
+	pgraft_worker_state_t *worker_state;
+	pgraft_cluster_t *shm_cluster;
+	
+	/* Get shared memory references */
+	shm_cluster = pgraft_core_get_shared_memory();
+	if (!shm_cluster) {
+		elog(WARNING, "pgraft: failed to get cluster state for recording applied index");
+		return;
+	}
+	
+	worker_state = pgraft_worker_get_state();
+	if (!worker_state) {
+		elog(WARNING, "pgraft: failed to get worker state for recording applied index");
+		return;
+	}
+	
+	/* Update the last applied index in shared memory */
+	SpinLockAcquire(&shm_cluster->mutex);
+	worker_state->last_applied_index = index;
+	SpinLockRelease(&shm_cluster->mutex);
+	
+	elog(DEBUG2, "pgraft: recorded applied index %lu in shared memory", index);
 }
 
 /*
@@ -257,8 +276,29 @@ pgraft_record_applied_index(uint64 index)
 uint64
 pgraft_get_applied_index(void)
 {
-	/* For now, return 0 - we'll add proper shared memory tracking later */
-	return 0;
+	pgraft_worker_state_t *worker_state;
+	pgraft_cluster_t *shm_cluster;
+	uint64 last_applied;
+	
+	/* Get shared memory references */
+	shm_cluster = pgraft_core_get_shared_memory();
+	if (!shm_cluster) {
+		elog(WARNING, "pgraft: failed to get cluster state for getting applied index");
+		return 0;
+	}
+	
+	worker_state = pgraft_worker_get_state();
+	if (!worker_state) {
+		elog(WARNING, "pgraft: failed to get worker state for getting applied index");
+		return 0;
+	}
+	
+	/* Get the last applied index from shared memory */
+	SpinLockAcquire(&shm_cluster->mutex);
+	last_applied = worker_state->last_applied_index;
+	SpinLockRelease(&shm_cluster->mutex);
+	
+	return last_applied;
 }
 
 /*

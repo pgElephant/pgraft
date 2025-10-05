@@ -675,3 +675,19 @@ pgraft_kv_queue_operation(pgraft_kv_op_type_t op_type, const char *key, const ch
 	elog(INFO, "pgraft_kv: operation queued for Raft replication (type=%d, key=%s)", op_type, key);
 	return 0;
 }
+
+/*
+ * Local KV operations (called directly without Raft replication)
+ * These are used by the apply callback to apply replicated operations
+ */
+int
+pgraft_kv_put_local(const char *key, const char *value)
+{
+	return pgraft_kv_put(key, value, 0); /* Skip replication flag */
+}
+
+int
+pgraft_kv_delete_local(const char *key)
+{
+	return pgraft_kv_delete(key, 0); /* Skip replication flag */
+}
