@@ -9,7 +9,7 @@ DATA = pgraft--1.0.sql
 PGFILEDESC = "pgraft - PostgreSQL extension with etcd-io/raft integration"
 
 # PostgreSQL configuration - use PostgreSQL 17
-PG_CONFIG = /usr/pgsql-18/bin/pg_config
+PG_CONFIG = /usr/local/pgsql.17/bin/pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 

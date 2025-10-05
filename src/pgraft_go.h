@@ -12,8 +12,6 @@
 
 #ifndef GO_CGO_GOSTRING_TYPEDEF
 typedef struct { const char *p; ptrdiff_t n; } _GoString_;
-extern size_t _GoStringLen(_GoString_ s);
-extern const char *_GoStringPtr(_GoString_ s);
 #endif
 
 #endif
@@ -124,15 +122,9 @@ typedef size_t GoUintptr;
 typedef float GoFloat32;
 typedef double GoFloat64;
 #ifdef _MSC_VER
-#if !defined(__cplusplus) || _MSVC_LANG <= 201402L
 #include <complex.h>
 typedef _Fcomplex GoComplex64;
 typedef _Dcomplex GoComplex128;
-#else
-#include <complex>
-typedef std::complex<float> GoComplex64;
-typedef std::complex<double> GoComplex128;
-#endif
 #else
 typedef float _Complex GoComplex64;
 typedef double _Complex GoComplex128;
@@ -168,51 +160,51 @@ extern void pgraft_go_set_debug(int enabled);
 // Set log output to a file
 //
 extern int pgraft_go_set_log_file(char* logFilePath);
-extern int pgraft_go_start(void);
+extern int pgraft_go_start();
 extern int pgraft_go_propose(char* data, size_t len);
-extern int pgraft_go_stop(void);
-extern char* pgraft_go_get_nodes(void);
-extern void cleanup_pgraft(void);
-extern char* pgraft_go_version(void);
-extern int pgraft_go_test(void);
+extern int pgraft_go_stop();
+extern char* pgraft_go_get_nodes();
+extern void cleanup_pgraft();
+extern char* pgraft_go_version();
+extern int pgraft_go_test();
 extern int pgraft_go_init_config(struct pgraft_go_config* config);
 
 // Helper function to establish initial connections to all peers
 // This should be called AFTER pgraft_go_start() from the background worker
 //
-extern int pgraft_go_connect_to_peers(void);
+extern int pgraft_go_connect_to_peers();
 extern int pgraft_go_init(int nodeID, char* address, int port);
-extern int pgraft_go_start_background(void);
+extern int pgraft_go_start_background();
 extern int pgraft_go_add_peer(int nodeID, char* address, int port);
 extern int pgraft_go_remove_peer(int nodeID);
-extern char* pgraft_go_get_state(void);
-extern int64_t pgraft_go_get_leader(void);
-extern int32_t pgraft_go_get_term(void);
-extern int pgraft_go_is_initialized(void);
-extern int pgraft_go_is_leader(void);
+extern char* pgraft_go_get_state();
+extern int64_t pgraft_go_get_leader();
+extern int32_t pgraft_go_get_term();
+extern int pgraft_go_is_initialized();
+extern int pgraft_go_is_leader();
 extern int pgraft_go_append_log(char* data, int length);
-extern char* pgraft_go_get_stats(void);
-extern char* pgraft_go_get_logs(void);
-extern int pgraft_go_commit_log(long index);
+extern char* pgraft_go_get_stats();
+extern char* pgraft_go_get_logs();
+extern int pgraft_go_commit_log(long int index);
 extern int pgraft_go_step_message(char* data, int length);
-extern char* pgraft_go_get_network_status(void);
+extern char* pgraft_go_get_network_status();
 extern void pgraft_go_free_string(char* str);
 
 // Main processing loop following etcd-io/raft patterns
 // pgraft_go_tick is called by the PostgreSQL background worker on each iteration
 // This is a non-blocking function that processes one tick of Raft work
 //
-extern int pgraft_go_tick(void);
+extern int pgraft_go_tick();
 extern int pgraft_go_replicate_log_entry(char* data, int dataLen);
-extern char* pgraft_go_get_replication_status(void);
-extern char* pgraft_go_create_snapshot(void);
+extern char* pgraft_go_get_replication_status();
+extern char* pgraft_go_create_snapshot();
 extern int pgraft_go_apply_snapshot(char* snapshotData);
 extern int pgraft_go_replicate_to_node(uint64_t nodeID, char* data, int dataLen);
-extern double pgraft_go_get_replication_lag(void);
-extern int pgraft_go_sync_replication(void);
-extern int pgraft_go_update_cluster_state(long long leaderID, long long currentTerm, char* state);
+extern double pgraft_go_get_replication_lag();
+extern int pgraft_go_sync_replication();
+extern int pgraft_go_update_cluster_state(long long int leaderID, long long int currentTerm, char* state);
 extern int pgraft_go_start_network_server(int port);
-extern int pgraft_go_trigger_heartbeat(void);
+extern int pgraft_go_trigger_heartbeat();
 
 #ifdef __cplusplus
 }
