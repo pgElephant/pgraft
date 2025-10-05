@@ -258,6 +258,45 @@ pgraft_core_update_cluster_state(int64_t leader_id, int64_t current_term, const 
 }
 
 /*
+ * Update nodes array in shared memory
+ */
+int
+pgraft_core_update_nodes(int32_t num_nodes, int32_t *node_ids, char **addresses)
+{
+	pgraft_cluster_t *cluster;
+	int i;
+	
+	/* Get shared memory */
+	cluster = pgraft_core_get_shared_memory();
+	if (!cluster)
+		return -1;
+	
+	SpinLockAcquire(&cluster->mutex);
+	if (!cluster->initialized)
+	{
+		SpinLockRelease(&cluster->mutex);
+		return -1;
+	}
+	
+	/* Clear existing nodes */
+	memset(cluster->nodes, 0, sizeof(cluster->nodes));
+	cluster->num_nodes = 0;
+	
+	/* Copy up to 16 nodes */
+	for (i = 0; i < num_nodes && i < 16; i++)
+	{
+		cluster->nodes[i].id = node_ids[i];
+		strncpy(cluster->nodes[i].address, addresses[i], sizeof(cluster->nodes[i].address) - 1);
+		cluster->nodes[i].address[sizeof(cluster->nodes[i].address) - 1] = '\0';
+		cluster->num_nodes++;
+	}
+	
+	SpinLockRelease(&cluster->mutex);
+	
+	return 0;
+}
+
+/*
  * Get current leader ID
  */
 int64_t

@@ -16,7 +16,7 @@
 #include "utils/elog.h"
 #include "postmaster/bgworker.h"
 #include "utils/ps_status.h"
-
+#include "/opt/homebrew/Cellar/json-c/0.18/include/json-c/json.h"
 
 #include "../include/pgraft_core.h"
 #include "../include/pgraft_go.h"
@@ -221,6 +221,15 @@ pgraft_main(Datum main_arg)
 	}
 	elog(LOG, "pgraft: background worker raft initialization successful");
 	
+	/* Start the Go Raft goroutines */
+	elog(LOG, "pgraft: background worker starting Go Raft goroutines");
+	if (pgraft_go_start() != 0)
+	{
+		elog(ERROR, "pgraft: background worker failed to start Go Raft goroutines");
+		return;
+	}
+	elog(LOG, "pgraft: background worker Go Raft goroutines started successfully");
+	
 	/* Establish initial connections to all cluster peers */
 	elog(LOG, "pgraft: background worker connecting to cluster peers");
 	if (pgraft_go_connect_to_peers() != 0)
@@ -240,6 +249,11 @@ pgraft_main(Datum main_arg)
 	}
 	elog(LOG, "pgraft: worker state obtained successfully");
 
+	/* Populate worker state with node information from GUC settings */
+	state->node_id = 0; /* Will be set by pgraft_update_shared_memory_from_go */
+	strncpy(state->address, name ? name : "unknown", sizeof(state->address) - 1);
+	state->address[sizeof(state->address) - 1] = '\0';
+	state->port = 0; /* Will be populated from configuration */
 	state->status = WORKER_STATUS_RUNNING;
 	elog(LOG, "pgraft: worker status set to RUNNING");
 	elog(LOG, "pgraft: background worker started and running");
@@ -497,16 +511,20 @@ pgraft_update_shared_memory_from_go(void)
 	pgraft_cluster_t *shm_cluster;
 	pgraft_go_get_leader_func get_leader_func;
 	pgraft_go_get_term_func get_term_func;
+	pgraft_go_get_node_id_func get_node_id_func;
+	pgraft_worker_state_t *worker_state;
 	int64_t current_leader;
 	int32_t current_term;
+	int64_t go_node_id;
 
 	if (!pgraft_go_is_loaded())
 		return;
 	
 	get_leader_func = pgraft_go_get_get_leader_func();
 	get_term_func = pgraft_go_get_get_term_func();
+	get_node_id_func = pgraft_go_get_get_node_id_func();
 	
-	if (!get_leader_func || !get_term_func)
+	if (!get_leader_func || !get_term_func || !get_node_id_func)
 		return;
 	
 	/* Get shared memory */
@@ -519,15 +537,119 @@ pgraft_update_shared_memory_from_go(void)
 	current_leader = get_leader_func();
 	current_term = get_term_func();
 	
+	/* Get worker state to populate node_id */
+	worker_state = pgraft_worker_get_state();
+	
+	/* Get node_id from Go layer (auto-generated from name hash) */
+	go_node_id = get_node_id_func();
+	
+		/* Get nodes list from Go library using json-c */
+	{
+		pgraft_go_get_nodes_func get_nodes_func = pgraft_go_get_get_nodes_func();
+		if (get_nodes_func)
+		{
+			char *nodes_json = get_nodes_func();
+			elog(LOG, "pgraft: DEBUG - Got nodes JSON from Go: '%s'", nodes_json ? nodes_json : "NULL");
+			if (nodes_json && strcmp(nodes_json, "[]") != 0)
+			{
+				/* Parse JSON using json-c library */
+				json_object *root = json_tokener_parse(nodes_json);
+				if (root && json_object_is_type(root, json_type_array))
+				{
+					int array_len = json_object_array_length(root);
+					int node_count = 0;
+					int32_t node_ids[16];
+					char *addresses[16];
+					char address_buf[16][256];
+					int i;
+					
+					/* Initialize */
+					for (i = 0; i < 16; i++) {
+						addresses[i] = address_buf[i];
+						address_buf[i][0] = '\0';
+					}
+					
+					/* Parse each node in the array */
+					for (i = 0; i < array_len && node_count < 16; i++)
+					{
+						json_object *node_obj = json_object_array_get_idx(root, i);
+						if (node_obj && json_object_is_type(node_obj, json_type_object))
+						{
+							uint64_t node_id = 0;
+							
+							/* Get id field */
+							json_object *id_obj;
+							if (json_object_object_get_ex(node_obj, "id", &id_obj) && 
+								json_object_is_type(id_obj, json_type_int))
+							{
+								node_id = json_object_get_int64(id_obj);
+							}
+							
+							/* Get address field */
+							json_object *addr_obj;
+							if (json_object_object_get_ex(node_obj, "address", &addr_obj) && 
+								json_object_is_type(addr_obj, json_type_string))
+							{
+								const char *address = json_object_get_string(addr_obj);
+								if (address && strlen(address) < 255)
+								{
+									strncpy(address_buf[node_count], address, sizeof(address_buf[node_count]) - 1);
+									address_buf[node_count][sizeof(address_buf[node_count]) - 1] = '\0';
+								}
+							}
+							
+							if (node_id > 0 && address_buf[node_count][0] != '\0')
+							{
+								node_ids[node_count] = (int32_t)node_id;
+								node_count++;
+								elog(LOG, "pgraft: DEBUG - Parsed node %d: id=%llu, address='%s'", 
+									 node_count, (unsigned long long)node_id, address_buf[node_count-1]);
+							}
+						}
+					}
+					
+					/* Update shared memory with parsed nodes */
+					if (node_count > 0)
+					{
+						elog(LOG, "pgraft: DEBUG - Parsed %d nodes, calling pgraft_core_update_nodes", node_count);
+						pgraft_core_update_nodes(node_count, node_ids, addresses);
+					}
+					else
+					{
+						elog(LOG, "pgraft: DEBUG - No valid nodes parsed from JSON");
+					}
+					
+					json_object_put(root);
+				}
+				else
+				{
+					elog(LOG, "pgraft: DEBUG - Failed to parse JSON or not an array");
+					if (root) json_object_put(root);
+				}
+				
+				pgraft_go_free_string(nodes_json);
+			}
+		}
+	}
+	
 	/* Update shared memory with current Go state */
 	SpinLockAcquire(&shm_cluster->mutex);
 	shm_cluster->leader_id = current_leader;
 	shm_cluster->current_term = current_term;
+	shm_cluster->initialized = true;  /* Mark as initialized */
+	
+	/* Update node_id from Go layer */
+	if (go_node_id > 0) {
+		shm_cluster->node_id = go_node_id;
+		/* Also update worker state for consistency */
+		if (worker_state) {
+			worker_state->node_id = go_node_id;
+		}
+	}
 	
 	/* Update state based on leader status */
 	if (current_leader > 0) {
 		/* Check if current node is the leader */
-		pgraft_worker_state_t *worker_state = pgraft_worker_get_state();
 		if (worker_state && current_leader == (int64_t)worker_state->node_id) {
 			strncpy(shm_cluster->state, "leader", sizeof(shm_cluster->state) - 1);
 			shm_cluster->state[sizeof(shm_cluster->state) - 1] = '\0';

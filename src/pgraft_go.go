@@ -290,13 +290,29 @@ func (ps *PersistentStorage) loadFromDisk() error {
 		return fmt.Errorf("failed to unmarshal state: %v", err)
 	}
 
-	// Restore HardState
+	// Restore HardState with validation
 	if !raft.IsEmptyHardState(state.HardState) {
-		if err := ps.MemoryStorage.SetHardState(state.HardState); err != nil {
+		// Validate commit index before restoring
+		validatedHardState := state.HardState
+		if len(state.Entries) > 0 {
+			maxEntryIndex := state.Entries[len(state.Entries)-1].Index
+			if validatedHardState.Commit > maxEntryIndex {
+				logWarning("WARNING: HardState.Commit (%d) exceeds max entry index (%d), clamping to %d",
+					validatedHardState.Commit, maxEntryIndex, maxEntryIndex)
+				validatedHardState.Commit = maxEntryIndex
+			}
+		} else if validatedHardState.Commit > 0 {
+			// No entries but commit > 0, reset to 0
+			logWarning("WARNING: HardState.Commit (%d) but no entries, resetting to 0",
+				validatedHardState.Commit)
+			validatedHardState.Commit = 0
+		}
+
+		if err := ps.MemoryStorage.SetHardState(validatedHardState); err != nil {
 			return fmt.Errorf("failed to set hard state: %v", err)
 		}
 		logInfo("restored hardstate for node %d: term=%d, vote=%d, commit=%d",
-			ps.nodeID, state.HardState.Term, state.HardState.Vote, state.HardState.Commit)
+			ps.nodeID, validatedHardState.Term, validatedHardState.Vote, validatedHardState.Commit)
 	}
 
 	// Restore Snapshot if present
@@ -505,8 +521,9 @@ var (
 	electionsTriggered  int64
 
 	// Node and connection management
-	nodes     map[uint64]string
-	connMutex sync.RWMutex
+	nodes         map[uint64]string
+	connMutex     sync.RWMutex
+	currentNodeID uint64 // Current node's ID (set during init)
 
 	// Cluster state
 	clusterState ClusterState
@@ -696,20 +713,24 @@ func pgraft_go_stop() C.int {
 	return 0
 }
 
+//export pgraft_go_get_node_id
+func pgraft_go_get_node_id() C.int64_t {
+	/* Return the current node's ID from the global variable */
+	return C.int64_t(currentNodeID)
+}
+
 //export pgraft_go_get_nodes
 func pgraft_go_get_nodes() *C.char {
-	raftMutex.RLock()
-	defer raftMutex.RUnlock()
-
-	if atomic.LoadInt32(&running) == 0 {
-		return C.CString("[]")
-	}
-
+	// Read from clusterState.Nodes which is populated by the Raft processing loop
+	// Use nodesMutex for thread safety since clusterState doesn't have its own mutex
 	nodesMutex.RLock()
 	defer nodesMutex.RUnlock()
 
+	logInfo("pgraft_go_get_nodes called - clusterState.Nodes size: %d", len(clusterState.Nodes))
+
 	nodesList := make([]map[string]interface{}, 0)
-	for nodeID, address := range nodes {
+	for nodeID, address := range clusterState.Nodes {
+		logInfo("adding node to list: id=%d, address=%s", nodeID, address)
 		nodeInfo := map[string]interface{}{
 			"id":      nodeID,
 			"address": address,
@@ -719,9 +740,11 @@ func pgraft_go_get_nodes() *C.char {
 
 	jsonData, err := json.Marshal(nodesList)
 	if err != nil {
+		logError("failed to marshal nodes: %v", err)
 		return C.CString("{\"error\": \"failed to marshal nodes\"}")
 	}
 
+	logInfo("pgraft_go_get_nodes returning: %s", string(jsonData))
 	return C.CString(string(jsonData))
 }
 
@@ -777,13 +800,28 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	port := int(config.port)
 	clusterID := C.GoString(config.cluster_id)
 	dataDir := C.GoString(config.data_dir)
+	nodeName := C.GoString(config.name)
 	electionTimeout := int(config.election_timeout)
 	heartbeatInterval := int(config.heartbeat_interval)
 	snapshotInterval := int(config.snapshot_interval)
 	memberCount := int(config.cluster_member_count)
 
-	logInfo("initializing node %d (cluster: %s) at %s:%d",
-		nodeID, clusterID, address, port)
+	// Auto-generate node ID from name hash if not provided
+	if nodeID == 0 && nodeName != "" {
+		// Generate a simple hash from the node name for consistent node IDs
+		hash := 0
+		for _, c := range nodeName {
+			hash = hash*31 + int(c)
+		}
+		// Ensure positive and reasonable range (1-65535)
+		nodeID = (hash&0x7FFFFFFF)%65535 + 1
+		logInfo("auto-generated node_id %d from name '%s'", nodeID, nodeName)
+	}
+
+	// Note: currentNodeID will be set later to the Raft ID for consistency
+
+	logInfo("initializing node %d (name: %s, cluster: %s) at %s:%d",
+		nodeID, nodeName, clusterID, address, port)
 	logInfo("using etcd-style configuration: election_timeout=%dms, heartbeat_interval=%dms, snapshot_interval=%d, data_dir=%s",
 		electionTimeout, heartbeatInterval, snapshotInterval, dataDir)
 
@@ -797,6 +835,7 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	clusterMembers := make(map[string]string)
 	membersSlice := (*[1 << 30]C.struct_pgraft_go_cluster_member)(unsafe.Pointer(config.cluster_members))[:memberCount:memberCount]
 
+	logInfo("==== PARSING CLUSTER MEMBERS: memberCount=%d ====", memberCount)
 	for i := 0; i < memberCount; i++ {
 		memberName := C.GoString(membersSlice[i].name)
 		peerHost := C.GoString(membersSlice[i].peer_host)
@@ -804,10 +843,10 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 		peerAddr := fmt.Sprintf("%s:%d", peerHost, peerPort)
 
 		clusterMembers[memberName] = peerAddr
-		logInfo("cluster member %d: %s -> %s", i+1, memberName, peerAddr)
+		logInfo("cluster member %d: %s -> %s (host=%s, port=%d)", i+1, memberName, peerAddr, peerHost, peerPort)
 	}
 
-	logInfo("loaded %d cluster members from parsed configuration", len(clusterMembers))
+	logInfo("==== LOADED %d cluster members from parsed configuration ====", len(clusterMembers))
 
 	raftMutex.Lock()
 	defer raftMutex.Unlock()
@@ -817,6 +856,9 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 		return 0 // Already initialized
 	}
 
+	// IMPORTANT: Determine Raft ID FIRST before creating storage
+	// This ensures persistent storage uses the correct Raft ID
+
 	// Use configured data directory (etcd-style)
 	if dataDir == "" || dataDir == "(null)" {
 		// Fallback to default if not specified
@@ -824,13 +866,7 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 		logWarning("pgraft.data_dir not set, using default: %s", dataDir)
 	}
 
-	persistentStorage, err := NewPersistentStorage(uint64(nodeID), dataDir)
-	if err != nil {
-		logError("failed to create persistent storage for node %d: %v", nodeID, err)
-		return -1
-	}
-	raftStorage = persistentStorage
-	logInfo("Persistent storage initialized at %s (etcd-style data-dir)", dataDir)
+	// NOTE: Storage creation moved after Raft ID determination
 
 	// Calculate ticks from millisecond values (etcd-style)
 	// Tick interval is 100ms, so we convert timeouts to ticks
@@ -851,17 +887,10 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	logInfo("raft timing: electiontick=%d, heartbeatTick=%d (tick interval=%dms)",
 		electionTick, heartbeatTick, tickIntervalMs)
 
-	raftConfig = &raft.Config{
-		ID:              uint64(nodeID),
-		ElectionTick:    electionTick,
-		HeartbeatTick:   heartbeatTick,
-		Storage:         raftStorage,
-		MaxInflightMsgs: 256,
-		MaxSizePerMsg:   1024 * 1024, // 1MB
-		PreVote:         true,        // Enable PreVote for better elections (etcd best practice)
-	}
-	logInfo("DEBUG - Raft configuration created (etcd-style)")
-	logInfo("Go library version: %s", pgraft_go_version())
+	// NOTE: raftConfig will be fully initialized after we determine the Raft ID
+	// For now, just set the timing parameters
+	logInfo("raft timing prepared: electionTick=%d, heartbeatTick=%d (tick interval=%dms)",
+		electionTick, heartbeatTick, tickIntervalMs)
 
 	messageChan = make(chan raftpb.Message, 4096)
 	stopChan = make(chan struct{})
@@ -869,12 +898,12 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	connections = make(map[uint64]*ManagedConnection)
 	logInfo("DEBUG - Communication channels initialized")
 
-	// Get node name from config
-	nodeName := C.GoString(config.name)
+	// Use node name from config (already extracted above)
 
 	nodesMutex.Lock()
 	if nodes == nil {
 		nodes = make(map[uint64]string)
+		logInfo("initialized global nodes map")
 	}
 
 	// Register all cluster members in the nodes map using sequential IDs
@@ -883,19 +912,22 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	foundThisNode := false
 	peerNodeID := uint64(1)
 
+	logInfo("populating nodes map from %d cluster members", len(clusterMembers))
 	for memberName, peerAddr := range clusterMembers {
 		nodes[peerNodeID] = peerAddr
+		logInfo("added to nodes map: nodes[%d] = '%s' (member: %s)", peerNodeID, peerAddr, memberName)
 
 		if memberName == nodeName {
 			thisNodeRaftID = peerNodeID
 			foundThisNode = true
-			logInfo("this node '%s' has Raft ID %d -> %s", nodeName, peerNodeID, peerAddr)
+			logInfo("*** this node '%s' has Raft ID %d -> %s", nodeName, peerNodeID, peerAddr)
 		} else {
 			logInfo("cluster member %d: %s -> %s", peerNodeID, memberName, peerAddr)
 		}
 
 		peerNodeID++
 	}
+	logInfo("nodes map population complete - map now has %d entries", len(nodes))
 	nodesMutex.Unlock()
 
 	if !foundThisNode {
@@ -903,9 +935,31 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 		return -1
 	}
 
-	// Update raftConfig to use the matched Raft ID
-	raftConfig.ID = thisNodeRaftID
-	logInfo("using Raft ID %d for node '%s' (PostgreSQL node_id=%d)", thisNodeRaftID, nodeName, nodeID)
+	// IMPORTANT: Use the Raft ID as the canonical node ID
+	// This ensures node_id, leader_id, and raft_id are all in the same ID space
+	currentNodeID = thisNodeRaftID
+	logInfo("using Raft ID %d for node '%s' (PostgreSQL node_id=%d, now using Raft ID)", thisNodeRaftID, nodeName, nodeID)
+
+	// NOW create persistent storage using the correct Raft ID
+	persistentStorage, err := NewPersistentStorage(thisNodeRaftID, dataDir)
+	if err != nil {
+		logError("failed to create persistent storage for Raft node %d: %v", thisNodeRaftID, err)
+		return -1
+	}
+	raftStorage = persistentStorage
+	logInfo("Persistent storage initialized at %s with Raft ID %d", dataDir, thisNodeRaftID)
+
+	// NOW create the Raft configuration with the correct ID and storage
+	raftConfig = &raft.Config{
+		ID:              thisNodeRaftID,
+		ElectionTick:    electionTick,
+		HeartbeatTick:   heartbeatTick,
+		Storage:         raftStorage,
+		MaxInflightMsgs: 256,
+		MaxSizePerMsg:   1024 * 1024, // 1MB
+		PreVote:         true,        // Enable PreVote for better elections (etcd best practice)
+	}
+	logInfo("Raft configuration created with ID=%d", thisNodeRaftID)
 
 	// Check if this is a restart by looking at persistent state
 	hardState, confState, err := raftStorage.InitialState()
@@ -1043,7 +1097,7 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 		PreVote:         true,        // Enable PreVote for better elections
 	}
 	logInfo("DEBUG - Raft configuration created")
-	logInfo("Go library version: %s", pgraft_go_version())
+	logInfo("Go library version: %s", C.GoString(pgraft_go_version()))
 
 	messageChan = make(chan raftpb.Message, 4096)
 	stopChan = make(chan struct{})

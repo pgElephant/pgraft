@@ -479,37 +479,41 @@ pgraft_get_nodes_table(PG_FUNCTION_ARGS)
 	
 	MemoryContextSwitchTo(oldcontext);
 	
-	if (pgraft_core_get_cluster_state(&cluster_state))
+	if (pgraft_core_get_cluster_state(&cluster_state) != 0)
 	{
-		worker_state = pgraft_worker_get_state();
+		PG_RETURN_NULL();
+	}
+	
+	/* Return all nodes from shared memory */
+	for (int i = 0; i < cluster_state.num_nodes && i < 16; i++)
+	{
+		pgraft_node_t *node = &cluster_state.nodes[i];
+		Datum		values[4];
+		bool		nulls[4];
+		HeapTuple	tuple;
 		
-		if (worker_state && pgraft_go_is_loaded())
+		/* Extract host and port from address "host:port" */
+		char *address_copy = pstrdup(node->address);
+		char *colon = strchr(address_copy, ':');
+		int port = 0;
+		if (colon)
 		{
-			pgraft_go_get_nodes_func get_nodes_func = pgraft_go_get_get_nodes_func();
-			if (get_nodes_func)
-			{
-				char *nodes_json = get_nodes_func();
-				if (nodes_json && strcmp(nodes_json, "[]") != 0)
-				{
-					Datum		values[4];
-					bool		nulls[4];
-					HeapTuple	tuple;
-					
-					values[0] = Int32GetDatum(worker_state->node_id);
-					values[1] = CStringGetTextDatum(worker_state->address);
-					values[2] = Int32GetDatum(worker_state->port);
-					values[3] = BoolGetDatum(cluster_state.leader_id == (int64_t)worker_state->node_id);
-					
-					memset(nulls, 0, sizeof(nulls));
-					
-					tuple = heap_form_tuple(tupdesc, values, nulls);
-					tuplestore_puttuple(tupstore, tuple);
-					heap_freetuple(tuple);
-					
-					pgraft_go_free_string(nodes_json);
-				}
-			}
+			*colon = '\0';
+			port = atoi(colon + 1);
 		}
+		
+		values[0] = Int32GetDatum(node->id);
+		values[1] = CStringGetTextDatum(address_copy);
+		values[2] = Int32GetDatum(port);
+		values[3] = BoolGetDatum(cluster_state.leader_id == (int64_t)node->id);
+		
+		memset(nulls, 0, sizeof(nulls));
+		
+		tuple = heap_form_tuple(tupdesc, values, nulls);
+		tuplestore_puttuple(tupstore, tuple);
+		heap_freetuple(tuple);
+		
+		pfree(address_copy);
 	}
 	
 	/* clean up and return the tuplestore */

@@ -9,7 +9,7 @@ DATA = pgraft--1.0.sql
 PGFILEDESC = "pgraft - PostgreSQL extension with etcd-io/raft integration"
 
 # PostgreSQL configuration - use PostgreSQL 17
-PG_CONFIG = /usr/pgsql-18/bin/pg_config
+PG_CONFIG = /usr/local/pgsql.17/bin/pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
@@ -21,7 +21,7 @@ CFLAGS += -I./include
 override CFLAGS += -I./include
 
 # Extension-specific linker flags
-SHLIB_LINK += -lpthread -lm -ldl -L/usr/local/pgsql.17/lib
+SHLIB_LINK += -lpthread -lm -ldl -L/usr/local/pgsql.17/lib -L/opt/homebrew/lib -ljson-c
 
 # Go Raft library
 GO_RAFT_LIB = src/pgraft_go.dylib

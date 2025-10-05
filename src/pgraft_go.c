@@ -37,6 +37,7 @@ static pgraft_go_add_peer_func pgraft_go_add_peer_ptr = NULL;
 static pgraft_go_remove_peer_func pgraft_go_remove_peer_ptr = NULL;
 static pgraft_go_get_leader_func pgraft_go_get_leader_ptr = NULL;
 static pgraft_go_get_term_func pgraft_go_get_term_ptr = NULL;
+static pgraft_go_get_node_id_func pgraft_go_get_node_id_ptr = NULL;
 static pgraft_go_is_initialized_func pgraft_go_is_initialized_ptr = NULL;
 static pgraft_go_is_leader_func pgraft_go_is_leader_ptr = NULL;
 static pgraft_go_append_log_func pgraft_go_append_log_ptr = NULL;
@@ -150,6 +151,7 @@ pgraft_go_unload_library(void)
 	pgraft_go_remove_peer_ptr = NULL;
 	pgraft_go_get_leader_ptr = NULL;
 	pgraft_go_get_term_ptr = NULL;
+	pgraft_go_get_node_id_ptr = NULL;
 	pgraft_go_is_leader_ptr = NULL;
 	pgraft_go_get_nodes_ptr = NULL;
 	pgraft_go_version_ptr = NULL;
@@ -216,6 +218,12 @@ pgraft_go_get_term_func
 pgraft_go_get_get_term_func(void)
 {
 	return pgraft_go_get_term_ptr;
+}
+
+pgraft_go_get_node_id_func
+pgraft_go_get_get_node_id_func(void)
+{
+	return pgraft_go_get_node_id_ptr;
 }
 
 pgraft_go_is_leader_func
@@ -509,6 +517,13 @@ pgraft_go_load_symbols(void)
 	if ((error = dlerror()) != NULL)
 	{
 		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_get_term': %s", error);
+		return -1;
+	}
+	
+	pgraft_go_get_node_id_ptr = (pgraft_go_get_node_id_func) dlsym(go_lib_handle, "pgraft_go_get_node_id");
+	if ((error = dlerror()) != NULL)
+	{
+		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_get_node_id': %s", error);
 		return -1;
 	}
 	

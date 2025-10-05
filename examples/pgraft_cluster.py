@@ -56,7 +56,7 @@ class PgraftClusterManager:
         self.nodes = {
             'primary1': NodeConfig(
                 name='primary1',
-                port=5432,
+                port=5440,
                 pgraft_port=7001,
                 data_dir=str(self.base_dir / 'primary1'),
                 config_file='primary1.conf',
@@ -65,7 +65,7 @@ class PgraftClusterManager:
             ),
             'replica1': NodeConfig(
                 name='replica1',
-                port=5433,
+                port=5441,
                 pgraft_port=7002,
                 data_dir=str(self.base_dir / 'replica1'),
                 config_file='replica1.conf',
@@ -74,11 +74,29 @@ class PgraftClusterManager:
             ),
             'replica2': NodeConfig(
                 name='replica2',
-                port=5434,
+                port=5442,
                 pgraft_port=7003,
                 data_dir=str(self.base_dir / 'replica2'),
                 config_file='replica2.conf',
                 metrics_port=9093,
+                go_library_path='/usr/local/pgsql.17/lib/pgraft_go.dylib'
+            ),
+            'replica3': NodeConfig(
+                name='replica3',
+                port=5443,
+                pgraft_port=7004,
+                data_dir=str(self.base_dir / 'replica3'),
+                config_file='replica3.conf',
+                metrics_port=9094,
+                go_library_path='/usr/local/pgsql.17/lib/pgraft_go.dylib'
+            ),
+            'replica4': NodeConfig(
+                name='replica4',
+                port=5444,
+                pgraft_port=7005,
+                data_dir=str(self.base_dir / 'replica4'),
+                config_file='replica4.conf',
+                metrics_port=9095,
                 go_library_path='/usr/local/pgsql.17/lib/pgraft_go.dylib'
             )
         }
@@ -445,7 +463,7 @@ class PgraftClusterManager:
             cursor = conn.cursor()
             
             # Create replication slots for replicas
-            for replica_name in ['replica1', 'replica2']:
+            for replica_name in ['replica1', 'replica2', 'replica3', 'replica4']:
                 slot_name = f"{replica_name}_slot"
                 cursor.execute(f"SELECT pg_create_physical_replication_slot('{slot_name}')")
                 self.log(f"[primary1] - Created replication slot: {slot_name}")
@@ -538,19 +556,37 @@ class PgraftClusterManager:
         """Configure cluster peers by adding nodes to each other"""
         self.log("Configuring cluster peers...")
         
-        # Define peer relationships based on configuration files
+        # Define peer relationships for 5-node cluster
         peer_configs = {
             'primary1': [
                 {'node_id': 2, 'address': '127.0.0.1', 'port': 7002},  # replica1
-                {'node_id': 3, 'address': '127.0.0.1', 'port': 7003}   # replica2
+                {'node_id': 3, 'address': '127.0.0.1', 'port': 7003},  # replica2
+                {'node_id': 4, 'address': '127.0.0.1', 'port': 7004},  # replica3
+                {'node_id': 5, 'address': '127.0.0.1', 'port': 7005}   # replica4
             ],
             'replica1': [
                 {'node_id': 1, 'address': '127.0.0.1', 'port': 7001},  # primary1
-                {'node_id': 3, 'address': '127.0.0.1', 'port': 7003}   # replica2
+                {'node_id': 3, 'address': '127.0.0.1', 'port': 7003},  # replica2
+                {'node_id': 4, 'address': '127.0.0.1', 'port': 7004},  # replica3
+                {'node_id': 5, 'address': '127.0.0.1', 'port': 7005}   # replica4
             ],
             'replica2': [
                 {'node_id': 1, 'address': '127.0.0.1', 'port': 7001},  # primary1
-                {'node_id': 2, 'address': '127.0.0.1', 'port': 7002}   # replica1
+                {'node_id': 2, 'address': '127.0.0.1', 'port': 7002},  # replica1
+                {'node_id': 4, 'address': '127.0.0.1', 'port': 7004},  # replica3
+                {'node_id': 5, 'address': '127.0.0.1', 'port': 7005}   # replica4
+            ],
+            'replica3': [
+                {'node_id': 1, 'address': '127.0.0.1', 'port': 7001},  # primary1
+                {'node_id': 2, 'address': '127.0.0.1', 'port': 7002},  # replica1
+                {'node_id': 3, 'address': '127.0.0.1', 'port': 7003},  # replica2
+                {'node_id': 5, 'address': '127.0.0.1', 'port': 7005}   # replica4
+            ],
+            'replica4': [
+                {'node_id': 1, 'address': '127.0.0.1', 'port': 7001},  # primary1
+                {'node_id': 2, 'address': '127.0.0.1', 'port': 7002},  # replica1
+                {'node_id': 3, 'address': '127.0.0.1', 'port': 7003},  # replica2
+                {'node_id': 4, 'address': '127.0.0.1', 'port': 7004}   # replica3
             ]
         }
         
@@ -788,7 +824,7 @@ class PgraftClusterManager:
         self.setup_replication()
         
         # Start replicas
-        for replica_name in ['replica1', 'replica2']:
+        for replica_name in ['replica1', 'replica2', 'replica3', 'replica4']:
             self.start_node(self.nodes[replica_name])
         
         # Wait a moment for cluster to stabilize
