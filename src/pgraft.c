@@ -386,6 +386,96 @@ pgraft_main(Datum main_arg)
 					pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
 					break;
 					
+				case COMMAND_KV_PUT:
+					{
+						char json_data[2048];
+						int result;
+						
+						elog(LOG, "pgraft: processing COMMAND_KV_PUT for key=%s", cmd.kv_key);
+						
+						if (pgraft_go_is_loaded())
+						{
+							/* Create JSON data for Raft replication */
+							snprintf(json_data, sizeof(json_data),
+								"{\"type\": \"kv_put\", \"key\": \"%s\", \"value\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
+								cmd.kv_key, cmd.kv_value, (long long)cmd.timestamp, cmd.kv_client_id);
+							
+							elog(LOG, "pgraft: calling pgraft_go_append_log with data=%s", json_data);
+							
+							/* Replicate through Raft */
+							result = pgraft_go_append_log(json_data, strlen(json_data));
+							
+							elog(LOG, "pgraft: pgraft_go_append_log returned result=%d", result);
+							
+							if (result < 0)
+							{
+								cmd.status = COMMAND_STATUS_FAILED;
+								snprintf(cmd.error_message, sizeof(cmd.error_message), 
+										"Failed to replicate KV PUT operation through Raft (result=%d)", result);
+								elog(WARNING, "pgraft: %s", cmd.error_message);
+							}
+							else
+							{
+								cmd.status = COMMAND_STATUS_COMPLETED;
+								elog(LOG, "pgraft: KV PUT operation successfully replicated");
+							}
+						}
+						else
+						{
+							cmd.status = COMMAND_STATUS_FAILED;
+							snprintf(cmd.error_message, sizeof(cmd.error_message), 
+									"Go layer not loaded, cannot replicate KV operation");
+							elog(WARNING, "pgraft: %s", cmd.error_message);
+						}
+						pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
+					}
+					break;
+					
+				case COMMAND_KV_DELETE:
+					{
+						char json_data[2048];
+						int result;
+						
+						elog(LOG, "pgraft: processing COMMAND_KV_DELETE for key=%s", cmd.kv_key);
+						
+						if (pgraft_go_is_loaded())
+						{
+							/* Create JSON data for Raft replication */
+							snprintf(json_data, sizeof(json_data),
+								"{\"type\": \"kv_delete\", \"key\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
+								cmd.kv_key, (long long)cmd.timestamp, cmd.kv_client_id);
+							
+							elog(LOG, "pgraft: calling pgraft_go_append_log with data=%s", json_data);
+							
+							/* Replicate through Raft */
+							result = pgraft_go_append_log(json_data, strlen(json_data));
+							
+							elog(LOG, "pgraft: pgraft_go_append_log returned result=%d", result);
+							
+							if (result < 0)
+							{
+								cmd.status = COMMAND_STATUS_FAILED;
+								snprintf(cmd.error_message, sizeof(cmd.error_message), 
+										"Failed to replicate KV DELETE operation through Raft (result=%d)", result);
+								elog(WARNING, "pgraft: %s", cmd.error_message);
+							}
+							else
+							{
+								cmd.status = COMMAND_STATUS_COMPLETED;
+								elog(LOG, "pgraft: KV DELETE operation successfully replicated");
+							}
+						}
+						else
+						{
+							cmd.status = COMMAND_STATUS_FAILED;
+							snprintf(cmd.error_message, sizeof(cmd.error_message), 
+									"Go layer not loaded, cannot replicate KV operation");
+							elog(WARNING, "pgraft: %s", cmd.error_message);
+						}
+						pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
+					}
+					break;
+					
 				case COMMAND_SHUTDOWN:
 					elog(LOG, "pgraft: shutdown command received");
 					state->status = WORKER_STATUS_STOPPED;

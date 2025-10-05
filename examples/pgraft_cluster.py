@@ -163,39 +163,42 @@ class PgraftClusterManager:
         except Exception as e:
             self.log(f"Warning: Could not get PostgreSQL version: {e}", "WARN")
     
-    def check_port_availability(self) -> None:
+    def check_port_availability(self, num_nodes: int = 2) -> None:
         """Check if required ports are available"""
         self.log("Checking port availability...")
         
-        # Check all primary ports first
-        primary_node = self.nodes['primary1']
-        if self.is_port_in_use(primary_node.port):
-            self.log(f"✗ [primary1] - Port {primary_node.port} is already in use (PostgreSQL)", "ERROR")
-            self.log(f"Please stop any PostgreSQL instance running on port {primary_node.port}", "ERROR")
-            sys.exit(1)
+        # Determine which nodes to check based on num_nodes
+        if num_nodes == 1:
+            nodes_to_check = ['primary1']
+        elif num_nodes == 2:
+            nodes_to_check = ['primary1', 'replica1']
+        elif num_nodes == 3:
+            nodes_to_check = ['primary1', 'replica1', 'replica2']
+        elif num_nodes == 4:
+            nodes_to_check = ['primary1', 'replica1', 'replica2', 'replica3']
+        elif num_nodes == 5:
+            nodes_to_check = ['primary1', 'replica1', 'replica2', 'replica3', 'replica4']
         else:
-            self.log(f"[primary1] - Port {primary_node.port} available PostgreSQL")
+            nodes_to_check = ['primary1', 'replica1']  # Default to 2 nodes
         
-        if self.is_port_in_use(primary_node.pgraft_port):
-            self.log(f"✗ [primary1] - Port {primary_node.pgraft_port} is already in use (pgraft)", "ERROR")
-            sys.exit(1)
-        else:
-            self.log(f"[primary1] - Port {primary_node.pgraft_port} available pgraft")
-        
-        # Check all replica ports
-        for node_name, node in self.nodes.items():
-            if "replica" in node_name:
-                if self.is_port_in_use(node.port):
-                    self.log(f"✗ [{node_name}] - Port {node.port} is already in use (PostgreSQL)", "ERROR")
-                    sys.exit(1)
-                else:
-                    self.log(f"[{node_name}] - Port {node.port} available PostgreSQL")
-                
-                if self.is_port_in_use(node.pgraft_port):
-                    self.log(f"✗ [{node_name}] - Port {node.pgraft_port} is already in use (pgraft)", "ERROR")
-                    sys.exit(1)
-                else:
-                    self.log(f"[{node_name}] - Port {node.pgraft_port} available pgraft")
+        # Check ports for all selected nodes
+        for node_name in nodes_to_check:
+            node = self.nodes[node_name]
+            
+            # Check PostgreSQL port
+            if self.is_port_in_use(node.port):
+                self.log(f"✗ [{node_name}] - Port {node.port} is already in use (PostgreSQL)", "ERROR")
+                self.log(f"Please stop any PostgreSQL instance running on port {node.port}", "ERROR")
+                sys.exit(1)
+            else:
+                self.log(f"[{node_name}] - Port {node.port} available PostgreSQL")
+            
+            # Check pgraft port
+            if self.is_port_in_use(node.pgraft_port):
+                self.log(f"✗ [{node_name}] - Port {node.pgraft_port} is already in use (pgraft)", "ERROR")
+                sys.exit(1)
+            else:
+                self.log(f"[{node_name}] - Port {node.pgraft_port} available pgraft")
     
     def is_port_in_use(self, port: int) -> bool:
         """Check if a port is in use"""
@@ -233,7 +236,7 @@ class PgraftClusterManager:
                 self.log(f"STDERR: {e.stderr}", "ERROR", verbose_level=1)
             raise
     
-    def create_directories(self) -> None:
+    def create_directories(self, num_nodes: int = 2) -> None:
         """Create necessary directories for cluster"""
         # Remove existing log directory if it exists and create fresh
         if self.log_dir.exists():
@@ -241,7 +244,22 @@ class PgraftClusterManager:
             shutil.rmtree(self.log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
-        for node in self.nodes.values():
+        # Determine which nodes to create directories for based on num_nodes
+        if num_nodes == 1:
+            nodes_to_create = ['primary1']
+        elif num_nodes == 2:
+            nodes_to_create = ['primary1', 'replica1']
+        elif num_nodes == 3:
+            nodes_to_create = ['primary1', 'replica1', 'replica2']
+        elif num_nodes == 4:
+            nodes_to_create = ['primary1', 'replica1', 'replica2', 'replica3']
+        elif num_nodes == 5:
+            nodes_to_create = ['primary1', 'replica1', 'replica2', 'replica3', 'replica4']
+        else:
+            nodes_to_create = ['primary1', 'replica1']  # Default to 2 nodes
+        
+        for node_name in nodes_to_create:
+            node = self.nodes[node_name]
             # Create data directory
             Path(node.data_dir).mkdir(parents=True, exist_ok=True)
             
@@ -475,11 +493,26 @@ class PgraftClusterManager:
             self.log(f"Failed to setup replication slots: {e}", "ERROR")
             raise
     
-    def setup_pgraft_extension(self) -> None:
+    def setup_pgraft_extension(self, num_nodes: int = 2) -> None:
         """Create and load pgraft extension on all nodes"""
-        self.log("Setting up pgraft extension on all nodes...")
+        self.log(f"Setting up pgraft extension on {num_nodes} nodes...")
         
-        for node_name, node in self.nodes.items():
+        # Determine which nodes to setup based on num_nodes
+        if num_nodes == 1:
+            nodes_to_setup = ['primary1']
+        elif num_nodes == 2:
+            nodes_to_setup = ['primary1', 'replica1']
+        elif num_nodes == 3:
+            nodes_to_setup = ['primary1', 'replica1', 'replica2']
+        elif num_nodes == 4:
+            nodes_to_setup = ['primary1', 'replica1', 'replica2', 'replica3']
+        elif num_nodes == 5:
+            nodes_to_setup = ['primary1', 'replica1', 'replica2', 'replica3', 'replica4']
+        else:
+            nodes_to_setup = ['primary1', 'replica1']  # Default to 2 nodes
+        
+        for node_name in nodes_to_setup:
+            node = self.nodes[node_name]
             try:
                 conn = psycopg2.connect(
                     host='localhost',
@@ -622,11 +655,26 @@ class PgraftClusterManager:
                 self.log(f"[{node_name}] - Failed to configure peers: {e}", "ERROR")
                 # Don't exit on error - this is expected behavior if Raft isn't ready
 
-    def verify_cluster(self) -> bool:
+    def verify_cluster(self, num_nodes: int = 2) -> bool:
         """Verify cluster health and connectivity"""
-        self.log("Verifying cluster health on all nodes...")
+        self.log(f"Verifying cluster health on {num_nodes} nodes...")
         
-        for node_name, node in self.nodes.items():
+        # Determine which nodes to verify based on num_nodes
+        if num_nodes == 1:
+            nodes_to_verify = ['primary1']
+        elif num_nodes == 2:
+            nodes_to_verify = ['primary1', 'replica1']
+        elif num_nodes == 3:
+            nodes_to_verify = ['primary1', 'replica1', 'replica2']
+        elif num_nodes == 4:
+            nodes_to_verify = ['primary1', 'replica1', 'replica2', 'replica3']
+        elif num_nodes == 5:
+            nodes_to_verify = ['primary1', 'replica1', 'replica2', 'replica3', 'replica4']
+        else:
+            nodes_to_verify = ['primary1', 'replica1']  # Default to 2 nodes
+        
+        for node_name in nodes_to_verify:
+            node = self.nodes[node_name]
             try:
                 conn = psycopg2.connect(
                     host='localhost',
@@ -682,7 +730,9 @@ class PgraftClusterManager:
             'timestamp': time.time()
         }
         
-        for node_name, node in self.nodes.items():
+        # Only check primary1 and replica1 for 2-node cluster
+        for node_name in ['primary1', 'replica1']:
+            node = self.nodes[node_name]
             node_status = {
                 'name': node_name,
                 'port': node.port,
@@ -784,8 +834,9 @@ class PgraftClusterManager:
         """Clean up cluster resources"""
         self.log("Cleaning up cluster...")
         
-        # Stop all nodes (gracefully handle failures)
-        for node in self.nodes.values():
+        # Stop primary1 and replica1 only (gracefully handle failures)
+        for node_name in ['primary1', 'replica1']:
+            node = self.nodes[node_name]
             try:
                 self.stop_node(node)
             except Exception as e:
@@ -799,42 +850,105 @@ class PgraftClusterManager:
             except Exception as e:
                 self.log(f"Failed to remove directories: {str(e)}", "WARN")
     
-    def init_cluster(self) -> None:
+    def update_config_files(self, num_nodes: int) -> None:
+        """Update configuration files based on number of nodes"""
+        self.log(f"Updating configuration files for {num_nodes} nodes...")
+        
+        # Define node configurations
+        node_configs = {
+            'primary1': {'name': 'primary1', 'port': 5440, 'pgraft_port': 7001, 'raft_port': 2380},
+            'replica1': {'name': 'replica1', 'port': 5441, 'pgraft_port': 7002, 'raft_port': 2381},
+            'replica2': {'name': 'replica2', 'port': 5442, 'pgraft_port': 7003, 'raft_port': 2382},
+            'replica3': {'name': 'replica3', 'port': 5443, 'pgraft_port': 7004, 'raft_port': 2383},
+            'replica4': {'name': 'replica4', 'port': 5444, 'pgraft_port': 7005, 'raft_port': 2384}
+        }
+        
+        # Build initial_cluster string based on num_nodes
+        cluster_nodes = []
+        for i in range(num_nodes):
+            if i == 0:
+                node_name = 'primary1'
+            else:
+                node_name = f'replica{i}'
+            
+            config = node_configs[node_name]
+            cluster_nodes.append(f"{node_name}=http://127.0.0.1:{config['raft_port']}")
+        
+        initial_cluster_str = ','.join(cluster_nodes)
+        
+        # Update each node's configuration file
+        for i in range(num_nodes):
+            if i == 0:
+                node_name = 'primary1'
+            else:
+                node_name = f'replica{i}'
+            
+            config_file = Path(f'{node_name}.conf')
+            if config_file.exists():
+                # Read current config
+                with open(config_file, 'r') as f:
+                    content = f.read()
+                
+                # Update initial_cluster line
+                import re
+                pattern = r'pgraft\.initial_cluster\s*=\s*.*'
+                replacement = f"pgraft.initial_cluster = '{initial_cluster_str}'"
+                content = re.sub(pattern, replacement, content)
+                
+                # Write updated config
+                with open(config_file, 'w') as f:
+                    f.write(content)
+                
+                self.log(f"Updated {node_name}.conf with initial_cluster: {initial_cluster_str}")
+    
+    def init_cluster(self, num_nodes: int = 2) -> None:
         """Initialize the entire cluster"""
-        self.log("Initializing PostgreSQL pgraft cluster...")
+        self.log(f"Initializing PostgreSQL pgraft cluster with {num_nodes} nodes...")
         
         # Check prerequisites first
         self.check_prerequisites()
         
+        # Update configuration files based on number of nodes
+        self.update_config_files(num_nodes)
+        
         # Create directories
-        self.create_directories()
+        self.create_directories(num_nodes)
         
         # Check port availability
-        self.check_port_availability()
+        self.check_port_availability(num_nodes)
         
-        # Initialize all databases
-        for node in self.nodes.values():
-            self.init_database(node)
+        # Determine which nodes to initialize based on num_nodes
+        if num_nodes == 1:
+            nodes_to_init = ['primary1']
+        elif num_nodes == 2:
+            nodes_to_init = ['primary1', 'replica1']
+        elif num_nodes == 3:
+            nodes_to_init = ['primary1', 'replica1', 'replica2']
+        elif num_nodes == 4:
+            nodes_to_init = ['primary1', 'replica1', 'replica2', 'replica3']
+        elif num_nodes == 5:
+            nodes_to_init = ['primary1', 'replica1', 'replica2', 'replica3', 'replica4']
+        else:
+            self.log(f"Unsupported number of nodes: {num_nodes}. Supported: 1-5", "ERROR")
+            sys.exit(1)
         
-        # Start all nodes
-        # Start primary first
+        # Initialize databases for selected nodes
+        for node_name in nodes_to_init:
+            self.init_database(self.nodes[node_name])
+        
+        # Start nodes
         self.start_node(self.nodes['primary1'])
-        
-        # Setup replication
-        self.setup_replication()
-        
-        # Start replicas
-        for replica_name in ['replica1', 'replica2', 'replica3', 'replica4']:
-            self.start_node(self.nodes[replica_name])
+        for node_name in nodes_to_init[1:]:  # Start remaining nodes
+            self.start_node(self.nodes[node_name])
         
         # Wait a moment for cluster to stabilize
         time.sleep(5)
         
-        # Setup pgraft extension on all nodes
-        self.setup_pgraft_extension()
+        # Setup pgraft extension on all initialized nodes
+        self.setup_pgraft_extension(num_nodes)
         
         # Verify cluster
-        self.verify_cluster()
+        self.verify_cluster(num_nodes)
         self.log("✓ Cluster initialization completed successfully")
         self.print_status()
     
@@ -940,7 +1054,9 @@ def main():
         epilog="""
 Examples:
   python pgraft_cluster.py --install  # Install pgraft extension
-  python pgraft_cluster.py --init     # Initialize cluster
+  python pgraft_cluster.py --init -n 2  # Initialize 2-node cluster (default)
+  python pgraft_cluster.py --init -n 3  # Initialize 3-node cluster
+  python pgraft_cluster.py --init -n 5  # Initialize 5-node cluster
   python pgraft_cluster.py --verify   # Verify cluster health
   python pgraft_cluster.py --status   # Show cluster status
   python pgraft_cluster.py --destroy  # Destroy cluster
@@ -949,6 +1065,7 @@ Examples:
     
     parser.add_argument('--install', action='store_true', help='Install pgraft extension (compile, make install, copy Go lib)')
     parser.add_argument('--init', action='store_true', help='Initialize cluster')
+    parser.add_argument('-n', '--nodes', type=int, default=2, help='Number of nodes to initialize (default: 2)')
     parser.add_argument('--verify', action='store_true', help='Verify cluster health')
     parser.add_argument('--destroy', action='store_true', help='Destroy cluster')
     parser.add_argument('--status', action='store_true', help='Show cluster status')
@@ -968,7 +1085,7 @@ Examples:
         if args.install:
             manager.install_extension()
         elif args.init:
-            manager.init_cluster()
+            manager.init_cluster(args.nodes)
         elif args.verify:
             success = manager.verify_cluster()
             sys.exit(0 if success else 1)

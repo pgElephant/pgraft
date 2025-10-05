@@ -24,7 +24,9 @@ typedef enum
 	COMMAND_LOG_APPEND = 4,
 	COMMAND_LOG_COMMIT = 5,
 	COMMAND_LOG_APPLY = 6,
-	COMMAND_SHUTDOWN = 7
+	COMMAND_SHUTDOWN = 7,
+	COMMAND_KV_PUT = 8,
+	COMMAND_KV_DELETE = 9
 }			COMMAND_TYPE;
 
 /* Command status enum */
@@ -47,6 +49,10 @@ typedef struct
 	/* Log operation fields */
 	char		log_data[1024];		/* For log append/commit data */
 	int			log_index;			/* For log operations */
+	/* KV operation fields */
+	char		kv_key[256];		/* For KV operations */
+	char		kv_value[1024];		/* For KV operations */
+	char		kv_client_id[64];	/* For KV operations */
 	/* Status tracking */
 	COMMAND_STATUS status;
 	char		error_message[512]; /* Error message if failed */
@@ -149,6 +155,7 @@ pgraft_worker_state_t *pgraft_worker_get_state(void);
 /* Command queue functions */
 bool		pgraft_queue_command(COMMAND_TYPE type, int node_id, const char *address, int port, const char *cluster_id);
 bool		pgraft_queue_log_command(COMMAND_TYPE type, const char *log_data, int log_index);
+bool		pgraft_queue_kv_command(COMMAND_TYPE type, const char *key, const char *value, const char *client_id);
 bool		pgraft_dequeue_command(pgraft_command_t *cmd);
 bool		pgraft_queue_is_empty(void);
 

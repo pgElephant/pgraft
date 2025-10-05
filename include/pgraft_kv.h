@@ -82,4 +82,9 @@ void		pgraft_kv_list_keys(char *keys_json, size_t json_size);
 void		pgraft_kv_compact(void);
 void		pgraft_kv_reset(void);
 
+/* Key/Value replication operations */
+int			pgraft_kv_replicate_put(const char *key, const char *value, const char *client_id);
+int			pgraft_kv_replicate_delete(const char *key, const char *client_id);
+int			pgraft_kv_queue_operation(pgraft_kv_op_type_t op_type, const char *key, const char *value, const char *client_id);
+
 #endif

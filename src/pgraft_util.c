@@ -169,6 +169,71 @@ pgraft_queue_log_command(COMMAND_TYPE type, const char *log_data, int log_index)
 }
 
 /*
+ * Add KV command to queue (called by SQL KV functions)
+ */
+bool
+pgraft_queue_kv_command(COMMAND_TYPE type, const char *key, const char *value, const char *client_id)
+{
+	pgraft_worker_state_t *state;
+	pgraft_command_t *cmd;
+	
+	state = pgraft_worker_get_state();
+	if (state == NULL) {
+		return false;
+	}
+	
+	/* Check if queue is full */
+	if (state->command_count >= MAX_COMMANDS) {
+		elog(WARNING, "pgraft: command queue is full, cannot queue KV command");
+		return false;
+	}
+	
+	/* Get pointer to next slot in circular buffer */
+	cmd = &state->commands[state->command_tail];
+	
+	/* Initialize command */
+	cmd->type = type;
+	cmd->node_id = 0;  /* Not applicable for KV commands */
+	cmd->address[0] = '\0';  /* Not applicable for KV commands */
+	cmd->port = 0;  /* Not applicable for KV commands */
+	cmd->cluster_id[0] = '\0';  /* Not applicable for KV commands */
+	
+	/* Set KV-specific fields */
+	if (key) {
+		strncpy(cmd->kv_key, key, sizeof(cmd->kv_key) - 1);
+		cmd->kv_key[sizeof(cmd->kv_key) - 1] = '\0';
+	} else {
+		cmd->kv_key[0] = '\0';
+	}
+	
+	if (value) {
+		strncpy(cmd->kv_value, value, sizeof(cmd->kv_value) - 1);
+		cmd->kv_value[sizeof(cmd->kv_value) - 1] = '\0';
+	} else {
+		cmd->kv_value[0] = '\0';
+	}
+	
+	if (client_id) {
+		strncpy(cmd->kv_client_id, client_id, sizeof(cmd->kv_client_id) - 1);
+		cmd->kv_client_id[sizeof(cmd->kv_client_id) - 1] = '\0';
+	} else {
+		cmd->kv_client_id[0] = '\0';
+	}
+	
+	/* Initialize status tracking */
+	cmd->status = COMMAND_STATUS_PENDING;
+	cmd->error_message[0] = '\0';
+	cmd->timestamp = time(NULL);
+	
+	/* Update circular buffer pointers */
+	state->command_tail = (state->command_tail + 1) % MAX_COMMANDS;
+	state->command_count++;
+	
+	elog(LOG, "pgraft: KV command %d queued (key=%s, count=%d)", type, key ? key : "NULL", state->command_count);
+	return true;
+}
+
+/*
  * Add command to status tracking buffer
  */
 bool

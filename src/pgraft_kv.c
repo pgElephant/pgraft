@@ -26,6 +26,7 @@
 #include "port/pg_crc32c.h"
 
 #include "../include/pgraft_kv.h"
+#include "../include/pgraft_core.h"
 
 /*
  * Replicate PUT operation through Raft
@@ -51,18 +52,12 @@ pgraft_kv_replicate_put(const char *key, const char *value, const char *client_i
 	
 	elog(INFO, "pgraft_kv: replicating PUT operation: %s", json_data);
 	
-	if (pgraft_go_is_loaded())
+	/* Queue the operation for the background worker to process through Raft */
+	result = pgraft_kv_queue_operation(PGRAFT_KV_PUT, key, value, client_id);
+	if (result < 0)
 	{
-		result = pgraft_go_append_log(json_data, strlen(json_data));
-		if (result < 0)
-		{
-			elog(WARNING, "pgraft_kv: failed to replicate through Raft, applying directly");
-			result = pgraft_kv_put(key, value, 0);
-		}
-	}
-	else
-	{
-		result = pgraft_kv_put(key, value, 0);
+		elog(ERROR, "pgraft_kv: failed to queue operation for replication. Operation rejected to prevent split-brain.");
+		return -1;
 	}
 	
 	return result;
@@ -91,18 +86,12 @@ pgraft_kv_replicate_delete(const char *key, const char *client_id)
 	
 	elog(INFO, "pgraft_kv: replicating DELETE operation: %s", json_data);
 	
-	if (pgraft_go_is_loaded())
+	/* Queue the operation for the background worker to process through Raft */
+	result = pgraft_kv_queue_operation(PGRAFT_KV_DELETE, key, NULL, client_id);
+	if (result < 0)
 	{
-		result = pgraft_go_append_log(json_data, strlen(json_data));
-		if (result < 0)
-		{
-			elog(WARNING, "pgraft_kv: failed to replicate through Raft, applying directly");
-			result = pgraft_kv_delete(key, 0);
-		}
-	}
-	else
-	{
-		result = pgraft_kv_delete(key, 0);
+		elog(ERROR, "pgraft_kv: failed to queue DELETE operation for replication. Operation rejected to prevent split-brain.");
+		return -1;
 	}
 	
 	return result;
@@ -638,4 +627,51 @@ pgraft_kv_reset(void)
 	unlink(PGRAFT_KV_PERSIST_FILE);
 	
 	elog(INFO, "pgraft_kv: store reset");
+}
+
+/*
+ * Queue KV operation for background worker to process through Raft
+ */
+int
+pgraft_kv_queue_operation(pgraft_kv_op_type_t op_type, const char *key, const char *value, const char *client_id)
+{
+	pgraft_cluster_t *cluster_state;
+	bool is_leader = false;
+	COMMAND_TYPE cmd_type;
+	bool queued = false;
+	
+	/* Get cluster state from shared memory */
+	cluster_state = pgraft_core_get_shared_memory();
+	if (!cluster_state) {
+		elog(ERROR, "pgraft_kv: cannot access cluster state");
+		return -1;
+	}
+	
+	/* Check if current node is leader */
+	is_leader = (cluster_state->node_id == cluster_state->leader_id);
+	
+	if (!is_leader) {
+		elog(ERROR, "pgraft_kv: write operations only allowed on leader node (current leader: %d)", cluster_state->leader_id);
+		return -1;
+	}
+	
+	/* Convert operation type to command type */
+	if (op_type == PGRAFT_KV_PUT) {
+		cmd_type = COMMAND_KV_PUT;
+	} else if (op_type == PGRAFT_KV_DELETE) {
+		cmd_type = COMMAND_KV_DELETE;
+	} else {
+		elog(ERROR, "pgraft_kv: unsupported operation type: %d", op_type);
+		return -1;
+	}
+	
+	/* Queue the operation for the background worker to process through Raft */
+	queued = pgraft_queue_kv_command(cmd_type, key, value, client_id);
+	if (!queued) {
+		elog(ERROR, "pgraft_kv: failed to queue operation for Raft replication");
+		return -1;
+	}
+	
+	elog(INFO, "pgraft_kv: operation queued for Raft replication (type=%d, key=%s)", op_type, key);
+	return 0;
 }
