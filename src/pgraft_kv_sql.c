@@ -8,6 +8,7 @@
 #include "funcapi.h"
 #include "../include/pgraft_kv.h"
 #include "../include/pgraft_core.h"
+#include "../include/pgraft_json.h"
 
 /* Prototypes for PostgreSQL functions */
 
@@ -26,40 +27,37 @@ PG_FUNCTION_INFO_V1(pgraft_kv_reset_sql);
 static int
 replicate_kv_operation(pgraft_kv_op_type_t op_type, const char *key, const char *value)
 {
-	pgraft_kv_log_entry_t log_entry;
 	char json_data[2048];
 	int result;
+	char *client_id;
 	
-	/* Initialize log entry */
-	memset(&log_entry, 0, sizeof(log_entry));
-	log_entry.op_type = op_type;
-	strncpy(log_entry.key, key, sizeof(log_entry.key) - 1);
-	if (value) {
-		strncpy(log_entry.value, value, sizeof(log_entry.value) - 1);
+	/* Create client ID */
+	client_id = psprintf("pg_%d", MyProcPid);
+	
+	/* Create JSON using json-c library */
+	if (pgraft_json_create_kv_operation(op_type, key, value, client_id, json_data, sizeof(json_data)) != 0) {
+		elog(ERROR, "pgraft_kv: failed to create JSON for KV operation");
+		pfree(client_id);
+		return -1;
 	}
-	log_entry.timestamp = GetCurrentTimestamp();
-	snprintf(log_entry.client_id, sizeof(log_entry.client_id), "pg_%d", MyProcPid);
-	
-	/* Convert to JSON for replication */
-	snprintf(json_data, sizeof(json_data),
-		"{\"type\": \"kv_operation\", \"op\": %d, \"key\": \"%s\", \"value\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
-		log_entry.op_type, log_entry.key, value ? value : "", 
-		(long long)log_entry.timestamp, log_entry.client_id);
 	
 	/* Replicate through Raft using the correct function */
 	if (op_type == PGRAFT_KV_PUT) {
-		result = pgraft_kv_replicate_put(key, value, log_entry.client_id);
+		result = pgraft_kv_replicate_put(key, value, client_id);
 	} else if (op_type == PGRAFT_KV_DELETE) {
-		result = pgraft_kv_replicate_delete(key, log_entry.client_id);
+		result = pgraft_kv_replicate_delete(key, client_id);
 	} else {
 		elog(ERROR, "pgraft_kv: unsupported operation type: %d", op_type);
+		pfree(client_id);
 		return -1;
 	}
 	if (result != 0) {
 		elog(WARNING, "pgraft_kv: failed to replicate operation (error: %d)", result);
+		pfree(client_id);
 		return -1;
 	}
 	
+	pfree(client_id);
 	return 0;
 }
 
@@ -70,27 +68,51 @@ replicate_kv_operation(pgraft_kv_op_type_t op_type, const char *key, const char 
 Datum
 pgraft_kv_put_sql(PG_FUNCTION_ARGS)
 {
-	text *key_text = PG_GETARG_TEXT_PP(0);
-	text *value_text = PG_GETARG_TEXT_PP(1);
-	char *key = text_to_cstring(key_text);
-	char *value = text_to_cstring(value_text);
+	text *key_text;
+	text *value_text;
+	char *key;
+	char *value;
 	int result;
+	
+	/* Handle NULL values properly - check before getting arguments */
+	if (PG_ARGISNULL(0)) {
+		elog(WARNING, "pgraft_kv: key cannot be NULL");
+		PG_RETURN_BOOL(false);
+	}
+	
+	if (PG_ARGISNULL(1)) {
+		elog(WARNING, "pgraft_kv: value cannot be NULL");
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Now safe to get the arguments */
+	key_text = PG_GETARG_TEXT_PP(0);
+	value_text = PG_GETARG_TEXT_PP(1);
+	
+	key = text_to_cstring(key_text);
+	value = text_to_cstring(value_text);
 	
 	elog(INFO, "pgraft_kv: PUT operation: key='%s', value='%s'", key, value);
 	
-	/* Validate inputs */
+	/* Validate inputs with comprehensive error checking */
 	if (strlen(key) == 0) {
-		elog(ERROR, "pgraft_kv: key cannot be empty");
+		elog(WARNING, "pgraft_kv: key cannot be empty");
 		PG_RETURN_BOOL(false);
 	}
 	
 	if (strlen(key) >= 256) {
-		elog(ERROR, "pgraft_kv: key too long (max 255 characters)");
+		elog(WARNING, "pgraft_kv: key too long (max 255 characters, got %zu)", strlen(key));
 		PG_RETURN_BOOL(false);
 	}
 	
 	if (strlen(value) >= 1024) {
-		elog(ERROR, "pgraft_kv: value too long (max 1023 characters)");
+		elog(WARNING, "pgraft_kv: value too long (max 1023 characters, got %zu)", strlen(value));
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Check for invalid characters in key */
+	if (strpbrk(key, "\0\r\n\t")) {
+		elog(WARNING, "pgraft_kv: key contains invalid characters (null, newline, tab, or carriage return)");
 		PG_RETURN_BOOL(false);
 	}
 	
@@ -110,17 +132,27 @@ pgraft_kv_put_sql(PG_FUNCTION_ARGS)
 Datum
 pgraft_kv_get_sql(PG_FUNCTION_ARGS)
 {
-	text *key_text = PG_GETARG_TEXT_PP(0);
-	char *key = text_to_cstring(key_text);
+	text *key_text;
+	char *key;
 	char value[1024];
 	int64_t version;
 	int result;
+	
+	/* Handle NULL values properly - check before getting arguments */
+	if (PG_ARGISNULL(0)) {
+		elog(WARNING, "pgraft_kv: key cannot be NULL");
+		PG_RETURN_NULL();
+	}
+	
+	/* Now safe to get the argument */
+	key_text = PG_GETARG_TEXT_PP(0);
+	key = text_to_cstring(key_text);
 	
 	elog(INFO, "pgraft_kv: GET operation: key='%s'", key);
 	
 	/* Validate inputs */
 	if (strlen(key) == 0) {
-		elog(ERROR, "pgraft_kv: key cannot be empty");
+		elog(WARNING, "pgraft_kv: key cannot be empty");
 		PG_RETURN_NULL();
 	}
 	
@@ -143,15 +175,36 @@ pgraft_kv_get_sql(PG_FUNCTION_ARGS)
 Datum
 pgraft_kv_delete_sql(PG_FUNCTION_ARGS)
 {
-	text *key_text = PG_GETARG_TEXT_PP(0);
-	char *key = text_to_cstring(key_text);
+	text *key_text;
+	char *key;
 	int result;
+	
+	/* Handle NULL values properly - check before getting arguments */
+	if (PG_ARGISNULL(0)) {
+		elog(WARNING, "pgraft_kv: key cannot be NULL");
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Now safe to get the argument */
+	key_text = PG_GETARG_TEXT_PP(0);
+	key = text_to_cstring(key_text);
 	
 	elog(INFO, "pgraft_kv: DELETE operation: key='%s'", key);
 	
-	/* Validate inputs */
+	/* Validate inputs with comprehensive error checking */
 	if (strlen(key) == 0) {
-		elog(ERROR, "pgraft_kv: key cannot be empty");
+		elog(WARNING, "pgraft_kv: key cannot be empty");
+		PG_RETURN_BOOL(false);
+	}
+	
+	if (strlen(key) >= 256) {
+		elog(WARNING, "pgraft_kv: key too long (max 255 characters, got %zu)", strlen(key));
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Check for invalid characters in key */
+	if (strpbrk(key, "\0\r\n\t")) {
+		elog(WARNING, "pgraft_kv: key contains invalid characters (null, newline, tab, or carriage return)");
 		PG_RETURN_BOOL(false);
 	}
 	
@@ -170,15 +223,25 @@ pgraft_kv_delete_sql(PG_FUNCTION_ARGS)
 Datum
 pgraft_kv_exists_sql(PG_FUNCTION_ARGS)
 {
-	text *key_text = PG_GETARG_TEXT_PP(0);
-	char *key = text_to_cstring(key_text);
+	text *key_text;
+	char *key;
 	bool exists;
+	
+	/* Handle NULL values properly - check before getting arguments */
+	if (PG_ARGISNULL(0)) {
+		elog(WARNING, "pgraft_kv: key cannot be NULL");
+		PG_RETURN_BOOL(false);
+	}
+	
+	/* Now safe to get the argument */
+	key_text = PG_GETARG_TEXT_PP(0);
+	key = text_to_cstring(key_text);
 	
 	elog(INFO, "pgraft_kv: EXISTS operation: key='%s'", key);
 	
 	/* Validate inputs */
 	if (strlen(key) == 0) {
-		elog(ERROR, "pgraft_kv: key cannot be empty");
+		elog(WARNING, "pgraft_kv: key cannot be empty");
 		PG_RETURN_BOOL(false);
 	}
 	
@@ -227,12 +290,11 @@ pgraft_kv_stats_sql(PG_FUNCTION_ARGS)
 		PG_RETURN_NULL();
 	}
 	
-	/* Build JSON response */
-	snprintf(stats_json, sizeof(stats_json),
-		"{\"num_entries\": %d, \"total_operations\": %lld, \"last_applied_index\": %lld, "
-		"\"puts\": %lld, \"deletes\": %lld, \"gets\": %lld}",
-		stats.num_entries, (long long)stats.total_operations, (long long)stats.last_applied_index,
-		(long long)stats.puts, (long long)stats.deletes, (long long)stats.gets);
+	/* Build JSON response using json-c library */
+	if (pgraft_json_create_kv_stats(&stats, stats_json, sizeof(stats_json)) != 0) {
+		elog(ERROR, "pgraft_kv: failed to create JSON stats");
+		PG_RETURN_NULL();
+	}
 	
 	PG_RETURN_TEXT_P(cstring_to_text(stats_json));
 }

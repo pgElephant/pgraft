@@ -171,4 +171,7 @@ bool		pgraft_dequeue_apply_entry(pgraft_apply_entry_t *entry);
 bool		pgraft_apply_queue_is_empty(void);
 int			pgraft_get_apply_queue_count(void);
 
+/* Update cluster state from Go layer */
+void		pgraft_update_shared_memory_from_go(void);
+
 #endif

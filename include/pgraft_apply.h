@@ -82,6 +82,11 @@ extern void pgraft_apply_init(void);
 extern void pgraft_apply_shutdown(void);
 
 /*
+ * Apply KV operation from JSON data
+ */
+extern int pgraft_apply_kv_operation(uint64 raft_index, const char *json_data, size_t len);
+
+/*
  * Note: Key-value operations (put/get/delete) are declared in pgraft_kv.h
  */
 

@@ -27,6 +27,7 @@
 
 #include "../include/pgraft_kv.h"
 #include "../include/pgraft_core.h"
+#include "../include/pgraft_json.h"
 
 /*
  * Replicate PUT operation through Raft
@@ -34,21 +35,14 @@
 int
 pgraft_kv_replicate_put(const char *key, const char *value, const char *client_id)
 {
-	pgraft_kv_log_entry_t log_entry;
 	char json_data[2048];
 	int result;
 	
-	/* Initialize log entry */
-	memset(&log_entry, 0, sizeof(log_entry));
-	log_entry.op_type = PGRAFT_KV_PUT;
-	strncpy(log_entry.key, key, sizeof(log_entry.key) - 1);
-	strncpy(log_entry.value, value, sizeof(log_entry.value) - 1);
-	log_entry.timestamp = GetCurrentTimestamp();
-	strncpy(log_entry.client_id, client_id, sizeof(log_entry.client_id) - 1);
-	
-	snprintf(json_data, sizeof(json_data),
-		"{\"type\": \"kv_put\", \"key\": \"%s\", \"value\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
-		key, value, (long long)log_entry.timestamp, client_id);
+	/* Create JSON using json-c library */
+	if (pgraft_json_create_kv_operation(PGRAFT_KV_PUT, key, value, client_id, json_data, sizeof(json_data)) != 0) {
+		elog(ERROR, "pgraft_kv: failed to create JSON for PUT operation");
+		return -1;
+	}
 	
 	elog(INFO, "pgraft_kv: replicating PUT operation: %s", json_data);
 	
@@ -69,20 +63,14 @@ pgraft_kv_replicate_put(const char *key, const char *value, const char *client_i
 int
 pgraft_kv_replicate_delete(const char *key, const char *client_id)
 {
-	pgraft_kv_log_entry_t log_entry;
 	char json_data[2048];
 	int result;
 	
-	/* Initialize log entry */
-	memset(&log_entry, 0, sizeof(log_entry));
-	log_entry.op_type = PGRAFT_KV_DELETE;
-	strncpy(log_entry.key, key, sizeof(log_entry.key) - 1);
-	log_entry.timestamp = GetCurrentTimestamp();
-	strncpy(log_entry.client_id, client_id, sizeof(log_entry.client_id) - 1);
-	
-	snprintf(json_data, sizeof(json_data),
-		"{\"type\": \"kv_delete\", \"key\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
-		key, (long long)log_entry.timestamp, client_id);
+	/* Create JSON using json-c library */
+	if (pgraft_json_create_kv_operation(PGRAFT_KV_DELETE, key, NULL, client_id, json_data, sizeof(json_data)) != 0) {
+		elog(ERROR, "pgraft_kv: failed to create JSON for DELETE operation");
+		return -1;
+	}
 	
 	elog(INFO, "pgraft_kv: replicating DELETE operation: %s", json_data);
 	
@@ -232,19 +220,19 @@ pgraft_kv_put(const char *key, const char *value, int64_t log_index)
 	
 	if (!store || !key || !value)
 	{
-		elog(ERROR, "pgraft_kv: invalid parameters for PUT operation");
+		elog(ERROR, "pgraft_kv: invalid parameters for PUT operation (store=%p, key=%p, value=%p)", store, key, value);
 		return -1;
 	}
 	
 	if (strlen(key) >= 256)
 	{
-		elog(ERROR, "pgraft_kv: key too long (max 255 characters)");
+		elog(ERROR, "pgraft_kv: key too long (max 255 characters, got %zu)", strlen(key));
 		return -1;
 	}
 	
 	if (strlen(value) >= 1024)
 	{
-		elog(ERROR, "pgraft_kv: value too long (max 1023 characters)");
+		elog(ERROR, "pgraft_kv: value too long (max 1023 characters, got %zu)", strlen(value));
 		return -1;
 	}
 	
@@ -529,32 +517,15 @@ void
 pgraft_kv_list_keys(char *keys_json, size_t json_size)
 {
 	pgraft_kv_store_t *store = pgraft_kv_get_store();
-	int i, pos = 0;
-	bool first = true;
 	
 	if (!store || !keys_json || json_size < 3)
 		return;
 	
-	SpinLockAcquire(&store->mutex);
-	
-	pos += snprintf(keys_json + pos, json_size - pos, "[");
-	
-	for (i = 0; i < store->num_entries && pos < json_size - 10; i++)
-	{
-		if (!store->entries[i].deleted)
-		{
-			if (!first)
-				pos += snprintf(keys_json + pos, json_size - pos, ",");
-			
-			pos += snprintf(keys_json + pos, json_size - pos, "\"%s\"", 
-							store->entries[i].key);
-			first = false;
-		}
+	/* Use json-c library to create JSON array of keys */
+	if (pgraft_json_create_key_list(store, keys_json, json_size) != 0) {
+		elog(WARNING, "pgraft_kv: failed to create JSON key list");
+		strcpy(keys_json, "[]"); /* Fallback to empty array */
 	}
-	
-	pos += snprintf(keys_json + pos, json_size - pos, "]");
-	
-	SpinLockRelease(&store->mutex);
 }
 
 /*
@@ -647,11 +618,14 @@ pgraft_kv_queue_operation(pgraft_kv_op_type_t op_type, const char *key, const ch
 		return -1;
 	}
 	
+	/* Refresh cluster state from Go layer before checking leader status */
+	pgraft_update_shared_memory_from_go();
+	
 	/* Check if current node is leader */
 	is_leader = (cluster_state->node_id == cluster_state->leader_id);
 	
 	if (!is_leader) {
-		elog(ERROR, "pgraft_kv: write operations only allowed on leader node (current leader: %d)", cluster_state->leader_id);
+		elog(ERROR, "pgraft_kv: write operations only allowed on leader node (current leader: %lld)", (long long)cluster_state->leader_id);
 		return -1;
 	}
 	

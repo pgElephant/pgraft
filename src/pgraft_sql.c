@@ -86,6 +86,9 @@ pgraft_init_from_gucs(void)
 	config.name = name;
 	config.initial_cluster_state = (strcmp(initial_cluster_state, "new") == 0) ? 1 : 0;
 	
+	/* Set node_id to 1 as default - the Go layer will assign proper Raft IDs based on initial_cluster order */
+	config.node_id = 1;
+	
 	/* Parse initial_cluster into structured array */
 	elog(INFO, "pgraft_init: parsing initial_cluster='%s', name='%s'", 
 		 initial_cluster ? initial_cluster : "(null)", 

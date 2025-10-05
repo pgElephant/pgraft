@@ -38,7 +38,7 @@ static int pgraft_remove_node_system(int node_id);
 static int pgraft_log_append_system(const char *log_data, int log_index);
 static int pgraft_log_commit_system(int log_index);
 static int pgraft_log_apply_system(int log_index);
-static void pgraft_update_shared_memory_from_go(void);
+/* Function declaration moved to header */
 
 /* Extension cleanup function */
 void _PG_fini(void);
@@ -399,10 +399,11 @@ pgraft_main(Datum main_arg)
 						
 						if (pgraft_go_is_loaded())
 						{
-							/* Create JSON data for Raft replication */
-							snprintf(json_data, sizeof(json_data),
-								"{\"type\": \"kv_put\", \"key\": \"%s\", \"value\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
-								cmd.kv_key, cmd.kv_value, (long long)cmd.timestamp, cmd.kv_client_id);
+							/* Create JSON data for Raft replication using json-c */
+							if (pgraft_json_create_kv_operation(PGRAFT_KV_PUT, cmd.kv_key, cmd.kv_value, cmd.kv_client_id, json_data, sizeof(json_data)) != 0) {
+								elog(ERROR, "pgraft: failed to create JSON for KV PUT operation");
+								continue;
+							}
 							
 							elog(LOG, "pgraft: calling pgraft_go_append_log with data=%s", json_data);
 							
@@ -444,10 +445,11 @@ pgraft_main(Datum main_arg)
 						
 						if (pgraft_go_is_loaded())
 						{
-							/* Create JSON data for Raft replication */
-							snprintf(json_data, sizeof(json_data),
-								"{\"type\": \"kv_delete\", \"key\": \"%s\", \"timestamp\": %lld, \"client_id\": \"%s\"}",
-								cmd.kv_key, (long long)cmd.timestamp, cmd.kv_client_id);
+							/* Create JSON data for Raft replication using json-c */
+							if (pgraft_json_create_kv_operation(PGRAFT_KV_DELETE, cmd.kv_key, NULL, cmd.kv_client_id, json_data, sizeof(json_data)) != 0) {
+								elog(ERROR, "pgraft: failed to create JSON for KV DELETE operation");
+								continue;
+							}
 							
 							elog(LOG, "pgraft: calling pgraft_go_append_log with data=%s", json_data);
 							
@@ -599,7 +601,7 @@ pgraft_init_system(int node_id, const char *address, int port)
 /*
  * Update shared memory with current state from Go library
  */
-static void
+void
 pgraft_update_shared_memory_from_go(void)
 {
 	pgraft_cluster_t *shm_cluster;

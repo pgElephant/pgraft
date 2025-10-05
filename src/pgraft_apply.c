@@ -16,6 +16,7 @@
 #include "pgraft_apply.h"
 #include "pgraft_core.h"
 #include "../include/pgraft_json.h"
+#include "../include/pgraft_kv.h"
 
 #include "executor/spi.h"
 #include "utils/snapmgr.h"
@@ -30,9 +31,7 @@
 #include <stdlib.h>
 /* Use separate JSON parsing module to avoid naming conflicts */
 
-/* Simple JSON-like parsing for log entries */
-static PgRaftLogEntry *parse_json_entry(const char *data, size_t len);
-static char *serialize_json_entry(PgRaftLogEntry *entry, size_t *out_len);
+/* JSON parsing functions are now in pgraft_json.c */
 
 /*
  * Apply a committed Raft entry to local PostgreSQL
@@ -55,7 +54,23 @@ pgraft_apply_entry_to_postgres(uint64 raft_index, const char *data, size_t len)
 										  ALLOCSET_DEFAULT_SIZES);
 	oldcontext = MemoryContextSwitchTo(apply_context);
 
-	/* Parse Raft entry */
+	/* Check if this is a KV operation (JSON format) */
+	if (data[0] == '{')
+	{
+		ret = pgraft_apply_kv_operation(raft_index, data, len);
+		if (ret == 0)
+		{
+			/* Record that we applied this entry */
+			pgraft_record_applied_index(raft_index);
+		}
+		
+		/* Clean up memory context */
+		MemoryContextSwitchTo(oldcontext);
+		MemoryContextDelete(apply_context);
+		return ret;
+	}
+
+	/* Parse Raft entry for SQL operations */
 	entry = pgraft_parse_log_entry(data, len);
 	if (entry == NULL)
 	{
@@ -139,10 +154,10 @@ pgraft_parse_log_entry(const char *data, size_t len)
 		return NULL;
 	}
 
-	/* Try JSON format first */
+	/* Try JSON format first - use json-c library */
 	if (data[0] == '{')
 	{
-		return parse_json_entry(data, len);
+		return pgraft_json_parse_log_entry(data, len);
 	}
 
 	/* Allocate entry structure */
@@ -198,12 +213,7 @@ pgraft_parse_log_entry(const char *data, size_t len)
  * JSON parser for log entries using json-c library
  * Format: {"type": "kv_put", "key": "test", "value": "data", "timestamp": 123, "client_id": "pg_123"}
  */
-static PgRaftLogEntry *
-parse_json_entry(const char *data, size_t len)
-{
-	/* Use the separate JSON parsing module */
-	return pgraft_parse_kv_json_entry(data, len);
-}
+/* Manual JSON parsing removed - using json-c library functions */
 
 /*
  * Serialize Raft log entry for transmission
@@ -319,6 +329,66 @@ pgraft_apply_shutdown(void)
 {
 	elog(LOG, "pgraft: shutting down application layer");
 	/* Nothing to do for now */
+}
+
+/*
+ * Apply KV operation from JSON data
+ */
+int
+pgraft_apply_kv_operation(uint64 raft_index, const char *json_data, size_t len)
+{
+	char *key = NULL;
+	char *value = NULL;
+	int op_type = -1;
+	int result = 0;
+	
+	elog(LOG, "pgraft: applying KV operation from JSON at index %lu", raft_index);
+	
+	/* Parse JSON to extract operation details using json-c */
+	if (pgraft_json_parse_kv_operation(json_data, len, &op_type, &key, &value) != 0) {
+		elog(WARNING, "pgraft: failed to parse KV operation JSON");
+		return -1;
+	}
+	
+	/* Apply the operation to the local KV store with error handling */
+	switch (op_type) {
+		case PGRAFT_KV_PUT:
+			if (!key || !value) {
+				elog(ERROR, "pgraft: invalid PUT operation parameters (key=%p, value=%p)", key, value);
+				result = -1;
+				break;
+			}
+			result = pgraft_kv_put_local(key, value);
+			if (result == 0) {
+				elog(LOG, "pgraft: applied KV PUT operation: key='%s', value='%s'", key, value);
+			} else {
+				elog(ERROR, "pgraft: failed to apply KV PUT operation: key='%s', value='%s', error=%d", key, value, result);
+			}
+			break;
+		case PGRAFT_KV_DELETE:
+			if (!key) {
+				elog(ERROR, "pgraft: invalid DELETE operation parameters (key=%p)", key);
+				result = -1;
+				break;
+			}
+			result = pgraft_kv_delete_local(key);
+			if (result == 0) {
+				elog(LOG, "pgraft: applied KV DELETE operation: key='%s'", key);
+			} else {
+				elog(ERROR, "pgraft: failed to apply KV DELETE operation: key='%s', error=%d", key, result);
+			}
+			break;
+		default:
+			elog(ERROR, "pgraft: unsupported KV operation type: %d", op_type);
+			result = -1;
+			break;
+	}
+	
+	/* Clean up allocated strings */
+	if (key) pfree(key);
+	if (value) pfree(value);
+	
+	return result;
 }
 
 /*

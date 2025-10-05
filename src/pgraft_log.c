@@ -342,10 +342,13 @@ pgraft_log_replicate_from_leader(int32_t leader_id, int64_t from_index)
     /* We just need to ensure the Go layer is aware of the replication request */
     
     /* Check if Go layer is available */
-    pgraft_go_log_replicate_func log_replicate_func = pgraft_go_get_log_replicate_func();
+    pgraft_go_log_replicate_func log_replicate_func;
+    int result;
+    
+    log_replicate_func = pgraft_go_get_log_replicate_func();
     if (log_replicate_func) {
         /* Call the Go layer to initiate replication */
-        int result = log_replicate_func((unsigned long long)leader_id, (unsigned long long)from_index);
+        result = log_replicate_func((unsigned long long)leader_id, (unsigned long long)from_index);
         if (result == 0) {
             elog(LOG, "pgraft: Successfully initiated log replication from leader %d", leader_id);
             return 0;
