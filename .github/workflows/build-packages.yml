@@ -100,7 +100,7 @@ jobs:
       - name: Test DEB
         if: matrix.type == 'deb'
         run: |
-          docker run --rm -v $PWD/pkg:/pkg ubuntu:22.04 bash -c "
+          docker run --rm -v $PWD/pkg:/pkg -e DEBIAN_FRONTEND=noninteractive ubuntu:22.04 bash -c "
             # Install PostgreSQL repository
             apt-get update
             apt-get install -y wget gnupg2 lsb-release
