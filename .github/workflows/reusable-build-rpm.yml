@@ -60,7 +60,7 @@ jobs:
           tar --exclude='.git' --exclude='packaging' --exclude='*.o' --exclude='logs' \
               --transform "s,^,pgraft-${{ inputs.package_version }}/," \
               -czf ~/rpmbuild/SOURCES/pgraft-${{ inputs.package_version }}.tar.gz \
-              src/ include/ Makefile *.control *.sql README.md LICENSE
+              src/ include/ Makefile *.control *.sql go.mod go.sum README.md LICENSE
           
           ls -lh ~/rpmbuild/SOURCES/
       

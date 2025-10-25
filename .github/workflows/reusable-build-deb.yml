@@ -29,13 +29,7 @@ jobs:
       - name: Setup build environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential devscripts debhelper
-      
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-          cache: false
+          sudo apt-get install -y build-essential devscripts debhelper golang-go
       
       - name: Install PostgreSQL ${{ inputs.pg_version }}
         run: |
@@ -55,7 +49,7 @@ jobs:
         run: |
           BUILD_DIR="/tmp/pgraft-postgresql-${{ inputs.pg_version }}-${{ inputs.package_version }}"
           mkdir -p ${BUILD_DIR}/debian/source
-          cp -r src include Makefile *.control *.sql README.md LICENSE ${BUILD_DIR}/
+          cp -r src include Makefile *.control *.sql go.mod go.sum README.md LICENSE ${BUILD_DIR}/
           echo ${BUILD_DIR} > /tmp/build_dir.txt
       
       - name: Generate debian files
