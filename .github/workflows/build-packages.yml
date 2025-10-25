@@ -83,39 +83,39 @@ jobs:
       - name: Test RPM
         if: matrix.type == 'rpm'
         run: |
-          docker run --rm -v $PWD/pkg:/pkg rockylinux:9 bash -c '
+          docker run --rm -v $PWD/pkg:/pkg rockylinux:9 bash -c "
             # Install PostgreSQL repository
-            ARCH=$(uname -m) &&
-            dnf install -y --nogpgcheck https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-${ARCH}/pgdg-redhat-repo-latest.noarch.rpm &&
-            dnf -qy module disable postgresql &&
-            dnf install -y --nogpgcheck postgresql${{ matrix.pg_version }}-server json-c &&
+            ARCH=\$(uname -m)
+            dnf install -y --nogpgcheck https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-\${ARCH}/pgdg-redhat-repo-latest.noarch.rpm
+            dnf -qy module disable postgresql
+            dnf install -y --nogpgcheck postgresql${{ matrix.pg_version }}-server json-c
             # Install pgraft package
-            dnf install -y --nogpgcheck /pkg/pgraft_${{ matrix.pg_version }}-*.rpm &&
+            dnf install -y --nogpgcheck /pkg/pgraft_${{ matrix.pg_version }}-*.rpm
             # Verify installation
-            rpm -q pgraft_${{ matrix.pg_version }} &&
-            ls -l /usr/pgsql-${{ matrix.pg_version }}/lib/pgraft*.so &&
-            echo "✅ RPM test passed"
-          '
+            rpm -q pgraft_${{ matrix.pg_version }}
+            ls -l /usr/pgsql-${{ matrix.pg_version }}/lib/pgraft*.so
+            echo '✅ RPM test passed'
+          "
       
       - name: Test DEB
         if: matrix.type == 'deb'
         run: |
-          docker run --rm -v $PWD/pkg:/pkg ubuntu:22.04 bash -c '
+          docker run --rm -v $PWD/pkg:/pkg ubuntu:22.04 bash -c "
             # Install PostgreSQL repository
-            apt-get update &&
-            apt-get install -y wget gnupg2 &&
-            wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg &&
-            echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list &&
-            apt-get update &&
+            apt-get update
+            apt-get install -y wget gnupg2 lsb-release
+            wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+            echo 'deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' > /etc/apt/sources.list.d/pgdg.list
+            apt-get update
             # Install dependencies
-            apt-get install -y postgresql-${{ matrix.pg_version }} libjson-c5 &&
+            apt-get install -y postgresql-${{ matrix.pg_version }} libjson-c5
             # Install pgraft package
-            dpkg -i /pkg/*.deb &&
+            dpkg -i /pkg/postgresql-${{ matrix.pg_version }}-pgraft*.deb
             # Verify installation
-            dpkg -l | grep pgraft &&
-            ls -l /usr/lib/postgresql/${{ matrix.pg_version }}/lib/pgraft*.so &&
-            echo "✅ DEB test passed"
-          '
+            dpkg -l | grep pgraft
+            ls -l /usr/lib/postgresql/${{ matrix.pg_version }}/lib/pgraft*.so
+            echo '✅ DEB test passed'
+          "
 
   release:
     name: Release
