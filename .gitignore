@@ -1,0 +1,32 @@
+# Build artifacts
+*.o
+*.a
+*.dylib
+*.so
+*.pch
+build.log
+Makefile.original
+
+# Documentation build
+site/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test artifacts
+examples/data/
+examples/logs/
+examples/*.log
