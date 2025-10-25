@@ -14,8 +14,8 @@ Packages are built automatically on:
 1. Go to [Actions tab](../../actions)
 2. Select latest successful build
 3. Download artifacts:
-   - `rpm-pg14`, `rpm-pg15`, `rpm-pg16`, `rpm-pg17`
-   - `deb-pg14`, `deb-pg15`, `deb-pg16`, `deb-pg17`
+   - `rpm-pg16`, `rpm-pg17`, `rpm-pg18`
+   - `deb-pg16`, `deb-pg17`, `deb-pg18`
 
 ## Package Details
 
@@ -60,10 +60,9 @@ packaging/
 
 | Version | RPM | DEB | Status |
 |---------|-----|-----|--------|
-| PG 14   | ✅  | ✅  | Tested |
-| PG 15   | ✅  | ✅  | Tested |
 | PG 16   | ✅  | ✅  | Tested |
 | PG 17   | ✅  | ✅  | Tested |
+| PG 18   | ✅  | ✅  | Tested |
 
 ## Trigger Manual Build
 

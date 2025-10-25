@@ -11,6 +11,7 @@
 #include "postgres.h"
 #include "miscadmin.h"
 #include "utils/elog.h"
+#include "utils/guc.h"
 
 #include <dlfcn.h>
 #include <unistd.h>
@@ -19,7 +20,12 @@
 #include "../include/pgraft_state.h"
 #include "../include/pgraft_guc.h"
 
-#define DEFAULT_GO_LIB_PATH "/usr/local/pgsql.17/lib/pgraft_go.dylib"
+/* Platform-specific library extension */
+#ifdef __APPLE__
+#define GO_LIB_NAME "pgraft_go.dylib"
+#else
+#define GO_LIB_NAME "pgraft_go.so"
+#endif
 
 /* Function declarations */
 static int pgraft_go_load_symbols(void);
@@ -84,8 +90,10 @@ pgraft_go_load_library(void)
 	lib_path_to_load = go_library_path;
 	if (lib_path_to_load == NULL || strlen(lib_path_to_load) == 0)
 	{
-		/* Fallback to default path if GUC is not set */
-		lib_path_to_load = DEFAULT_GO_LIB_PATH;
+		/* Fallback to pkglibdir if GUC is not set */
+		static char default_path[MAXPGPATH];
+		snprintf(default_path, sizeof(default_path), "%s/%s", PKGLIBDIR, GO_LIB_NAME);
+		lib_path_to_load = default_path;
 		elog(LOG, "pgraft: pgraft.go_library_path GUC is empty, using default path: %s", lib_path_to_load);
 	}
 

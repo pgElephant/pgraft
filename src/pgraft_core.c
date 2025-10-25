@@ -62,7 +62,7 @@ pgraft_core_init(int32_t node_id, const char *address, int32_t port)
 	
 	elog(INFO, "pgraft: core initialized node %d at %s:%d", node_id, address, port);
 	elog(INFO, "pgraft: cluster state: term=%d, leader=%lld, state=%s",
-		 cluster->current_term, cluster->leader_id, cluster->state);
+		 cluster->current_term, (long long)cluster->leader_id, cluster->state);
 	
 	return 0;
 }

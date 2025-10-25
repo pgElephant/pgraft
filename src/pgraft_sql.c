@@ -743,13 +743,13 @@ pgraft_log_get_entry_sql(PG_FUNCTION_ARGS)
     StringInfoData result;
     
     if (pgraft_log_get_entry(index, &entry) != 0) {
-        elog(ERROR, "pgraft: failed to get log entry %lld", index);
+        elog(ERROR, "pgraft: failed to get log entry %lld", (long long)index);
         PG_RETURN_NULL();
     }
     initStringInfo(&result);
     
     appendStringInfo(&result, "Index: %lld, Term: %lld, Timestamp: %lld, Data: %s, Committed: %s, Applied: %s",
-                    entry.index, entry.term, entry.timestamp, entry.data,
+                    (long long)entry.index, (long long)entry.term, (long long)entry.timestamp, entry.data,
                     entry.committed ? "yes" : "no", entry.applied ? "yes" : "no");
     
     PG_RETURN_TEXT_P(cstring_to_text(result.data));

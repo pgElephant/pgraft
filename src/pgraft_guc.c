@@ -560,7 +560,7 @@ pgraft_register_guc_variables(void)
 
 	DefineCustomStringVariable("pgraft.go_library_path",
 							   "Path to the Go library",
-							   "Path to the pgraft_go.dylib file",
+							   "Path to the pgraft Go library file (.so on Linux, .dylib on macOS)",
 							   &go_library_path,
 							   "",
 							   PGC_POSTMASTER,

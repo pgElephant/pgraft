@@ -17,15 +17,28 @@ include $(PGXS)
 
 # Compiler flags
 CFLAGS += -std=c99 -Wall -Wextra -Werror
-CFLAGS += -I./include
 
 # Override the default CFLAGS to ensure our include path is used
 override CFLAGS += -I./include
 
+# Define pkglibdir as a C macro so the code can use it
+override CFLAGS += -DPKGLIBDIR='"$(pkglibdir)"'
+
+# Add json-c include path if available (must be after PGXS include)
+ifneq ($(shell pkg-config --exists json-c && echo yes),)
+    override CFLAGS += $(shell pkg-config --cflags json-c)
+endif
+
 # Extension-specific linker flags
 # Add PostgreSQL lib directory dynamically
 PG_LIB_DIR := $(shell $(PG_CONFIG) --libdir)
-SHLIB_LINK += -lpthread -lm -ldl -L$(PG_LIB_DIR) -ljson-c -L./src
+SHLIB_LINK += -lpthread -lm -ldl -L$(PG_LIB_DIR) -L./src
+# Add json-c library if available
+ifneq ($(shell pkg-config --exists json-c && echo yes),)
+    SHLIB_LINK += $(shell pkg-config --libs json-c)
+else
+    SHLIB_LINK += -ljson-c
+endif
 # Add rpath for macOS (loader_path) and Linux ($ORIGIN)
 ifeq ($(shell uname -s),Darwin)
     SHLIB_LINK += -Wl,-rpath,@loader_path

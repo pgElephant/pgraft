@@ -128,7 +128,7 @@ pgraft_log_append_entry(int64_t term, const char *data, int32_t data_size)
 	
 	SpinLockRelease(&state->mutex);
 	
-	elog(DEBUG1, "pgraft: Appended entry %lld with term %lld", entry->index, term);
+	elog(DEBUG1, "pgraft: Appended entry %lld with term %lld", (long long)entry->index, (long long)term);
 	return 0;
 }
 
@@ -160,13 +160,13 @@ pgraft_log_commit_entry(int64_t index)
 				state->commit_index = index;
 			state->entries_committed++;
 			SpinLockRelease(&state->mutex);
-			elog(DEBUG1, "pgraft: Committed entry %lld", index);
+			elog(DEBUG1, "pgraft: Committed entry %lld", (long long)index);
 			return 0;
 		}
 	}
 	
 	SpinLockRelease(&state->mutex);
-	elog(WARNING, "pgraft: entry %lld not found", index);
+	elog(WARNING, "pgraft: entry %lld not found", (long long)index);
 	return -1;
 }
 
@@ -189,7 +189,7 @@ pgraft_log_apply_entry(int64_t index)
         if (state->entries[i].index == index) {
             if (!state->entries[i].committed) {
                 SpinLockRelease(&state->mutex);
-			elog(WARNING, "pgraft: cannot apply uncommitted entry %lld", index);
+			elog(WARNING, "pgraft: cannot apply uncommitted entry %lld", (long long)index);
                 return -1;
             }
             
@@ -199,13 +199,13 @@ pgraft_log_apply_entry(int64_t index)
             }
             state->entries_applied++;
             SpinLockRelease(&state->mutex);
-			elog(DEBUG1, "pgraft: Applied entry %lld", index);
+			elog(DEBUG1, "pgraft: Applied entry %lld", (long long)index);
             return 0;
         }
     }
     
     SpinLockRelease(&state->mutex);
-    elog(WARNING, "pgraft: entry %lld not found", index);
+    elog(WARNING, "pgraft: entry %lld not found", (long long)index);
     return -1;
 }
 
@@ -309,7 +309,7 @@ pgraft_log_replicate_to_node(int32_t node_id, int64_t from_index)
         return -1;
     }
     
-    elog(DEBUG1, "pgraft: Replicating to node %d from index %lld", node_id, from_index);
+    elog(DEBUG1, "pgraft: Replicating to node %d from index %lld", node_id, (long long)from_index);
     
     SpinLockAcquire(&state->mutex);
     
@@ -338,7 +338,7 @@ pgraft_log_replicate_from_leader(int32_t leader_id, int64_t from_index)
     pgraft_go_log_replicate_func log_replicate_func;
     int result;
     
-    elog(DEBUG1, "pgraft: Replicating from leader %d from index %lld", leader_id, from_index);
+    elog(DEBUG1, "pgraft: Replicating from leader %d from index %lld", leader_id, (long long)from_index);
     
     /* This function is called when a follower needs to catch up with the leader */
     /* The actual replication is handled by the Go Raft layer through network communication */
@@ -458,7 +458,7 @@ pgraft_log_cleanup_old_entries(int64_t before_index)
     SpinLockRelease(&state->mutex);
     
     if (removed > 0) {
-		elog(INFO, "pgraft: removed %d old entries before index %lld", removed, before_index);
+		elog(INFO, "pgraft: removed %d old entries before index %lld", removed, (long long)before_index);
     }
 }
 

@@ -5,7 +5,7 @@
  */
 
 #include "postgres.h"
-#include "/opt/homebrew/Cellar/json-c/0.18/include/json-c/json.h"
+#include <json-c/json.h>
 #include "utils/timestamp.h"
 
 #include "../include/pgraft_core.h"
