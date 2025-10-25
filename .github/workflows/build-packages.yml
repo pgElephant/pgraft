@@ -12,6 +12,10 @@ on:
         required: false
         type: boolean
         default: false
+      release_tag:
+        description: 'Release tag (e.g., REL_1_0, v1.0.0)'
+        required: false
+        default: 'REL_1_0'
 
 env:
   PACKAGE_VERSION: '1.0.0'
@@ -142,6 +146,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: pgraft ${{ needs.prepare.outputs.version }}
           files: release/**/*
           body: |
             ## pgraft ${{ needs.prepare.outputs.version }}
@@ -151,7 +157,15 @@ jobs:
             ### Installation
             
             **RPM:** `sudo dnf install pgraft_17-*.rpm`  
-            **DEB:** `sudo dpkg -i postgresql-17-pgraft_*.deb`
+            **DEB:** `sudo dpkg -i postgresql-17-pgraft_*.deb && sudo apt-get install -f`
+            
+            ### Packages Included
+            
+            - PostgreSQL 16, 17, 18
+            - RPM (RHEL/CentOS/Rocky Linux)
+            - DEB (Ubuntu/Debian)
+            - Includes etcd-io/raft consensus library
+            - Bitcode files for JIT compilation
             
             **Enable:** `CREATE EXTENSION pgraft;`
           generate_release_notes: true
