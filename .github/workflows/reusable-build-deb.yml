@@ -31,6 +31,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential devscripts debhelper golang-go
       
+      - name: Install Go 1.21
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: false
+      
       - name: Install PostgreSQL ${{ inputs.pg_version }}
         run: |
           wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
