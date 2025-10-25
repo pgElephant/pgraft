@@ -137,18 +137,18 @@ jobs:
       
       - name: Organize packages
         run: |
-          mkdir -p release/{rpm,deb}
-          find artifacts -name '*.rpm' -exec cp {} release/rpm/ \;
-          find artifacts -name '*.deb' -exec cp {} release/deb/ \;
-          cd release/rpm && sha256sum *.rpm > SHA256SUMS
-          cd ../deb && sha256sum *.deb > SHA256SUMS
+          mkdir -p release
+          find artifacts -name '*.rpm' -exec cp {} release/ \;
+          find artifacts -name '*.deb' -exec cp {} release/ \;
+          cd release && sha256sum *.rpm *.deb > SHA256SUMS
+          ls -lh
       
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.release_tag }}
           name: pgraft ${{ needs.prepare.outputs.version }}
-          files: release/**/*
+          files: release/*
           body: |
             ## pgraft ${{ needs.prepare.outputs.version }}
             
