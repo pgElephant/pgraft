@@ -66,6 +66,8 @@ echo "Enable with: psql -c 'CREATE EXTENSION pgraft;'"
 %{pginstdir}/lib/pgraft_go.so
 %{pginstdir}/share/extension/pgraft.control
 %{pginstdir}/share/extension/pgraft--*.sql
+%{pginstdir}/lib/bitcode/pgraft.index.bc
+%{pginstdir}/lib/bitcode/pgraft/
 %dir %attr(700,postgres,postgres) %{_sharedstatedir}/pgraft
 
 %changelog
