@@ -22,11 +22,12 @@ CFLAGS += -std=c99 -Wall -Wextra -Werror
 override CFLAGS += -I./include
 
 # Define pkglibdir as a C macro so the code can use it
-override CFLAGS += -DPKGLIBDIR='"$(pkglibdir)"'
+# Use CPPFLAGS to ensure it works for both gcc and bitcode compilation
+override CPPFLAGS += -DPKGLIBDIR='"$(pkglibdir)"'
 
 # Add json-c include path if available (must be after PGXS include)
 ifneq ($(shell pkg-config --exists json-c && echo yes),)
-    override CFLAGS += $(shell pkg-config --cflags json-c)
+    override CPPFLAGS += $(shell pkg-config --cflags json-c)
 endif
 
 # Extension-specific linker flags

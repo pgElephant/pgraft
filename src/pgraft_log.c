@@ -416,9 +416,9 @@ pgraft_log_get_replication_status(char* status, size_t status_size)
     snprintf(status, status_size, 
              "Log Size: %d, Last Index: %lld, Commit Index: %lld, Last Applied: %lld, "
              "Replicated: %lld, Committed: %lld, Applied: %lld, Errors: %lld",
-             state->log_size, state->last_index, state->commit_index, state->last_applied,
-             state->entries_replicated, state->entries_committed, 
-             state->entries_applied, state->replication_errors);
+             state->log_size, (long long)state->last_index, (long long)state->commit_index, (long long)state->last_applied,
+             (long long)state->entries_replicated, (long long)state->entries_committed, 
+             (long long)state->entries_applied, (long long)state->replication_errors);
     
     SpinLockRelease(&state->mutex);
     
