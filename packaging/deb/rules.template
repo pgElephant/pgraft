@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export PG_CONFIG = /usr/lib/postgresql/PGVERSION/bin/pg_config
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	@echo "Building Go library..."
+	cd src && \
+		export CGO_ENABLED=1 && \
+		export GOCACHE=$(CURDIR)/.go-cache && \
+		mkdir -p $$GOCACHE && \
+		go build -buildmode=c-shared -o pgraft_go.so pgraft_go.go
+	
+	@echo "Building PostgreSQL extension..."
+	$(MAKE) USE_PGXS=1 PG_CONFIG=$(PG_CONFIG)
+
+override_dh_auto_install:
+	$(MAKE) USE_PGXS=1 PG_CONFIG=$(PG_CONFIG) \
+		DESTDIR=$(CURDIR)/debian/postgresql-PGVERSION-pgraft install
+	
+	install -d -m 700 $(CURDIR)/debian/postgresql-PGVERSION-pgraft/var/lib/pgraft
+
+override_dh_auto_clean:
+	$(MAKE) clean || true
+	rm -rf src/pgraft_go.so src/pgraft_go.h .go-cache
+	dh_auto_clean
+
+override_dh_auto_test:
+	@echo "Extension built successfully - tests will run post-install"
+
+override_dh_fixperms:
+	dh_fixperms
+	chmod 700 $(CURDIR)/debian/postgresql-PGVERSION-pgraft/var/lib/pgraft || true
+

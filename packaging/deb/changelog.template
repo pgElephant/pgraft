@@ -1,0 +1,9 @@
+pgraft-postgresql-PGVERSION (1.0.0-1) unstable; urgency=medium
+
+  * Initial release for PostgreSQL PGVERSION
+  * Raft consensus with automatic leader election
+  * Fast failover detection (2-second timeout)
+  * Integration with pgbalancer
+
+ -- pgElephant Team <team@pgelephant.org>  Thu, 24 Oct 2024 12:00:00 +0000
+

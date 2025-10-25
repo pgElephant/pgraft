@@ -1,0 +1,103 @@
+name: Reusable RPM Build
+
+on:
+  workflow_call:
+    inputs:
+      pg_version:
+        required: true
+        type: string
+      package_version:
+        required: true
+        type: string
+    outputs:
+      artifact_name:
+        description: 'Name of uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact_name }}
+
+jobs:
+  build:
+    name: Build RPM PG${{ inputs.pg_version }}
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:9
+      options: --privileged
+    
+    outputs:
+      artifact_name: rpm-pg${{ inputs.pg_version }}
+    
+    steps:
+      - name: Install core tools
+        run: |
+          dnf install -y epel-release
+          dnf config-manager --set-enabled crb
+          dnf install -y rpm-build rpmdevtools gcc make git tar gzip wget
+      
+      - name: Install Go
+        run: |
+          dnf install -y golang
+          go version
+      
+      - name: Install PostgreSQL ${{ inputs.pg_version }}
+        run: |
+          ARCH=$(uname -m)
+          dnf install -y --nogpgcheck \
+            https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-${ARCH}/pgdg-redhat-repo-latest.noarch.rpm
+          dnf -qy module disable postgresql
+          dnf install -y --nogpgcheck postgresql${{ inputs.pg_version }}-devel
+          /usr/pgsql-${{ inputs.pg_version }}/bin/pg_config --version
+      
+      - name: Install optional dependencies
+        run: dnf install -y json-c-devel || echo "json-c-devel not available"
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup RPM workspace
+        run: rpmdev-setuptree
+      
+      - name: Create source tarball
+        run: |
+          tar --exclude='.git' --exclude='packaging' --exclude='*.o' --exclude='logs' \
+              --transform "s,^,pgraft-${{ inputs.package_version }}/," \
+              -czf ~/rpmbuild/SOURCES/pgraft-${{ inputs.package_version }}.tar.gz \
+              src/ include/ Makefile *.control *.sql README.md LICENSE
+          
+          ls -lh ~/rpmbuild/SOURCES/
+      
+      - name: Generate spec file
+        run: |
+          sed "s/%global pgmajorversion 17/%global pgmajorversion ${{ inputs.pg_version }}/" \
+              packaging/rpm/pgraft.spec > ~/rpmbuild/SPECS/pgraft.spec
+          
+          sed -i "s/Version:.*/Version:        ${{ inputs.package_version }}/" \
+              ~/rpmbuild/SPECS/pgraft.spec
+      
+      - name: Build RPM package
+        run: |
+          rpmbuild -ba ~/rpmbuild/SPECS/pgraft.spec
+          
+          echo "Built packages:"
+          ls -lh ~/rpmbuild/RPMS/*/
+          ls -lh ~/rpmbuild/SRPMS/
+      
+      - name: Verify package
+        run: |
+          echo "=== Package Info ==="
+          rpm -qilp ~/rpmbuild/RPMS/*/pgraft_${{ inputs.pg_version }}-*.rpm
+          
+          echo "=== Dependencies ==="
+          rpm -qp --requires ~/rpmbuild/RPMS/*/pgraft_${{ inputs.pg_version }}-*.rpm
+          
+          echo "=== Files ==="
+          rpm -qpl ~/rpmbuild/RPMS/*/pgraft_${{ inputs.pg_version }}-*.rpm | grep pgraft
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-pg${{ inputs.pg_version }}
+          path: |
+            ~/rpmbuild/RPMS/*/pgraft*.rpm
+            ~/rpmbuild/SRPMS/pgraft*.rpm
+          if-no-files-found: error
+          retention-days: 30
+

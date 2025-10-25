@@ -1,0 +1,109 @@
+name: Reusable DEB Build
+
+on:
+  workflow_call:
+    inputs:
+      pg_version:
+        required: true
+        type: string
+      package_version:
+        required: true
+        type: string
+    outputs:
+      artifact_name:
+        description: 'Name of uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact_name }}
+
+jobs:
+  build:
+    name: Build DEB PG${{ inputs.pg_version }}
+    runs-on: ubuntu-22.04
+    
+    outputs:
+      artifact_name: deb-pg${{ inputs.pg_version }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential devscripts debhelper
+      
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: false
+      
+      - name: Install PostgreSQL ${{ inputs.pg_version }}
+        run: |
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+            sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] \
+            http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-${{ inputs.pg_version }}
+          /usr/lib/postgresql/${{ inputs.pg_version }}/bin/pg_config --version
+      
+      - name: Install optional dependencies
+        run: sudo apt-get install -y libjson-c-dev || echo "libjson-c-dev not available"
+      
+      - name: Prepare build directory
+        run: |
+          BUILD_DIR="/tmp/pgraft-postgresql-${{ inputs.pg_version }}-${{ inputs.package_version }}"
+          mkdir -p ${BUILD_DIR}/debian/source
+          cp -r src include Makefile *.control *.sql README.md LICENSE ${BUILD_DIR}/
+          echo ${BUILD_DIR} > /tmp/build_dir.txt
+      
+      - name: Generate debian files
+        run: |
+          BUILD_DIR=$(cat /tmp/build_dir.txt)
+          cd ${BUILD_DIR}
+          
+          sed "s/PGVERSION/${{ inputs.pg_version }}/g" \
+            ${GITHUB_WORKSPACE}/packaging/deb/control.template > debian/control
+          
+          sed "s/PGVERSION/${{ inputs.pg_version }}/g" \
+            ${GITHUB_WORKSPACE}/packaging/deb/rules.template > debian/rules
+          chmod +x debian/rules
+          
+          sed "s/PGVERSION/${{ inputs.pg_version }}/g" \
+            ${GITHUB_WORKSPACE}/packaging/deb/changelog.template > debian/changelog
+          sed -i "s/1.0.0/${{ inputs.package_version }}/" debian/changelog
+          
+          cp ${GITHUB_WORKSPACE}/packaging/deb/compat debian/
+          echo "3.0 (native)" > debian/source/format
+          
+          echo "Debian files created:"
+          ls -la debian/
+      
+      - name: Build DEB package
+        run: |
+          cd $(cat /tmp/build_dir.txt)
+          dpkg-buildpackage -us -uc -b
+          
+          echo "Built packages:"
+          ls -lh /tmp/*.deb
+      
+      - name: Verify package
+        run: |
+          echo "=== Package Info ==="
+          dpkg -I /tmp/postgresql-${{ inputs.pg_version }}-pgraft_*.deb
+          
+          echo "=== Package Contents ==="
+          dpkg -c /tmp/postgresql-${{ inputs.pg_version }}-pgraft_*.deb | grep pgraft
+          
+          echo "=== Dependencies ==="
+          dpkg -I /tmp/postgresql-${{ inputs.pg_version }}-pgraft_*.deb | grep Depends
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-pg${{ inputs.pg_version }}
+          path: /tmp/postgresql-${{ inputs.pg_version }}-pgraft*.deb
+          if-no-files-found: error
+          retention-days: 30
+
