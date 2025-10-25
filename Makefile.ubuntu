@@ -1,0 +1,70 @@
+# pgraft Makefile for Ubuntu/Debian
+# PostgreSQL extension using etcd-io/raft for distributed consensus
+
+MODULE_big = pgraft
+OBJS = src/pgraft.o src/pgraft_core.o src/pgraft_go.o src/pgraft_state.o src/pgraft_log.o src/pgraft_kv.o src/pgraft_kv_sql.o src/pgraft_sql.o src/pgraft_guc.o src/pgraft_util.o
+
+EXTENSION = pgraft
+DATA = pgraft--1.0.sql
+PGFILEDESC = "pgraft - PostgreSQL extension with etcd-io/raft integration"
+
+# PostgreSQL configuration - auto-detect or use default
+PG_CONFIG ?= pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)
+
+# Compiler flags
+CFLAGS += -std=c99 -Wall -Wextra -Werror
+CFLAGS += -I./include
+
+# Override the default CFLAGS to ensure our include path is used
+override CFLAGS += -I./include
+
+# Extension-specific linker flags
+SHLIB_LINK += -lpthread -lm -ldl
+
+# Go Raft library (Linux uses .so)
+GO_RAFT_LIB = src/pgraft_go.so
+
+# Get PostgreSQL include paths for CGO
+PG_INCLUDEDIR := $(shell $(PG_CONFIG) --includedir)
+PG_INCLUDEDIR_SERVER := $(shell $(PG_CONFIG) --includedir-server)
+
+# Build Go Raft library with CGO flags
+$(GO_RAFT_LIB): src/pgraft_go.go src/go.mod
+	cd src && go mod tidy
+	cd src && CGO_ENABLED=1 CGO_CFLAGS="-I$(PG_INCLUDEDIR) -I$(PG_INCLUDEDIR_SERVER) -I/usr/include" CGO_LDFLAGS="-L$(shell $(PG_CONFIG) --libdir)" go build -buildmode=c-shared -o pgraft_go.so pgraft_go.go
+
+# Dependencies
+$(OBJS): $(GO_RAFT_LIB)
+
+# Clean target
+clean: clean-extra
+
+clean-extra:
+	rm -f src/*.o
+	rm -f src/pgraft_go.so
+	rm -f src/pgraft_go.h
+
+# Installation
+DESTDIR ?= 
+
+install: install-data install-go-lib
+
+install-go-lib: $(GO_RAFT_LIB)
+	$(INSTALL_SHLIB) src/pgraft_go.so '$(DESTDIR)$(pkglibdir)/pgraft_go.so'
+
+# Development flags
+ifeq ($(DEBUG),1)
+    CFLAGS += -g -O0 -DDEBUG
+else
+    CFLAGS += -O2 -DNDEBUG
+endif
+
+# Test target
+test: all
+	@echo "Running pgraft tests..."
+	@echo "Tests would go here"
+
+.PHONY: clean install test
+

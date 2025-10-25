@@ -1,0 +1,538 @@
+name: Build RPM and DEB Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+      pg_version:
+        description: 'PostgreSQL version (e.g., 17, 16, 15)'
+        required: true
+        default: '17'
+        type: choice
+        options:
+          - '17'
+          - '16'
+          - '15'
+          - '14'
+      release:
+        description: 'Release number (e.g., 1)'
+        required: true
+        default: '1'
+
+jobs:
+  build-rpm:
+    name: Build RPM Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        os:
+          - quay.io/centos/centos:stream9
+          - rockylinux:9
+          - almalinux:9
+    
+    container:
+      image: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install build dependencies
+        run: |
+          # Speed up dnf/yum operations
+          export LANG=C
+          export LC_ALL=C
+          
+          # All matrix entries are RHEL 9 based (CentOS Stream 9, Rocky 9, AlmaLinux 9)
+          echo "Installing for RHEL 9 based distribution"
+          
+          # Install EPEL repository
+          dnf install -y epel-release
+          
+          # Enable CRB/PowerTools repository (required for json-c-devel)
+          if command -v crb &> /dev/null; then
+            crb enable || /usr/bin/crb enable || true
+          else
+            dnf config-manager --set-enabled crb || \
+            dnf config-manager --set-enabled powertools || true
+          fi
+          
+          # Add PostgreSQL PGDG repository for RHEL 9
+          dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+          
+          # Disable built-in PostgreSQL module to avoid conflicts
+          dnf -qy module disable postgresql 2>/dev/null || true
+          
+          # Install build dependencies (optimized)
+          dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
+            rpm-build rpmdevtools gcc make \
+            postgresql${{ github.event.inputs.pg_version }}-devel \
+            postgresql${{ github.event.inputs.pg_version }}-server \
+            golang json-c-devel
+      
+      - name: Setup RPM build environment
+        run: |
+          rpmdev-setuptree
+          
+      - name: Create RPM spec file
+        run: |
+          cat > ~/rpmbuild/SPECS/pgraft.spec << 'EOF'
+          Name:           pgraft
+          Version:        ${{ github.event.inputs.version }}
+          Release:        ${{ github.event.inputs.release }}%{?dist}
+          Summary:        PostgreSQL extension with Raft consensus protocol
+          License:        PostgreSQL
+          URL:            https://github.com/pgElephant/pgraft
+          Source0:        %{name}-%{version}.tar.gz
+          
+          BuildRequires:  postgresql${{ github.event.inputs.pg_version }}-devel
+          BuildRequires:  golang >= 1.21
+          BuildRequires:  json-c-devel
+          BuildRequires:  gcc
+          BuildRequires:  make
+          
+          Requires:       postgresql${{ github.event.inputs.pg_version }}-server
+          Requires:       json-c
+          
+          %description
+          pgraft is a PostgreSQL extension that implements the Raft consensus protocol
+          for distributed PostgreSQL clusters. It provides strong consistency guarantees
+          and automatic failover capabilities.
+          
+          Features:
+          - Raft consensus protocol integration
+          - Distributed key-value store (etcd-compatible)
+          - Automatic leader election
+          - Log replication
+          - Integration with etcd-io/raft Go library
+          
+          %prep
+          %setup -q
+          
+          %build
+          export PATH=/usr/pgsql-${{ github.event.inputs.pg_version }}/bin:$PATH
+          export PG_CONFIG=/usr/pgsql-${{ github.event.inputs.pg_version }}/bin/pg_config
+          make clean
+          make
+          
+          %install
+          export PATH=/usr/pgsql-${{ github.event.inputs.pg_version }}/bin:$PATH
+          export PG_CONFIG=/usr/pgsql-${{ github.event.inputs.pg_version }}/bin/pg_config
+          make install DESTDIR=%{buildroot}
+          
+          %files
+          %license LICENSE
+          %doc README.md
+          %{_libdir}/postgresql/pgraft.so
+          %{_libdir}/postgresql/pgraft_go.so
+          %{_datadir}/postgresql/extension/pgraft.control
+          %{_datadir}/postgresql/extension/pgraft--1.0.sql
+          
+          %changelog
+          * $(date "+%a %b %d %Y") GitHub Actions <noreply@github.com> - ${{ github.event.inputs.version }}-${{ github.event.inputs.release }}
+          - Automated build for PostgreSQL ${{ github.event.inputs.pg_version }}
+          EOF
+      
+      - name: Create source tarball
+        run: |
+          mkdir -p pgraft-${{ github.event.inputs.version }}
+          cp -r * pgraft-${{ github.event.inputs.version }}/ 2>/dev/null || true
+          tar czf ~/rpmbuild/SOURCES/pgraft-${{ github.event.inputs.version }}.tar.gz pgraft-${{ github.event.inputs.version }}
+      
+      - name: Build RPM
+        run: |
+          rpmbuild -ba ~/rpmbuild/SPECS/pgraft.spec
+      
+      - name: List built RPMs
+        run: |
+          ls -lh ~/rpmbuild/RPMS/*/*.rpm
+          ls -lh ~/rpmbuild/SRPMS/*.rpm
+      
+      - name: Set artifact name
+        id: artifact_name
+        run: |
+          # Convert image name to safe artifact name
+          OS_NAME=$(echo "${{ matrix.os }}" | sed 's|/|-|g' | sed 's|:|-|g' | sed 's|quay.io-||')
+          echo "name=rpm-${OS_NAME}-pg${{ github.event.inputs.pg_version }}" >> $GITHUB_OUTPUT
+      
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}
+          path: |
+            ~/rpmbuild/RPMS/*/*.rpm
+            ~/rpmbuild/SRPMS/*.rpm
+          retention-days: 30
+
+  build-deb:
+    name: Build DEB Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        os:
+          - ubuntu:22.04
+          - ubuntu:24.04
+          - debian:11
+          - debian:12
+    
+    container:
+      image: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          export DEBCONF_NONINTERACTIVE_SEEN=true
+          
+          # Completely disable man-db triggers (this is what causes the timeout)
+          mkdir -p /etc/dpkg/dpkg.cfg.d/
+          cat > /etc/dpkg/dpkg.cfg.d/01_nodoc << 'DPKG_EOF'
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/doc/*
+path-exclude=/usr/share/locale/*
+path-exclude=/usr/share/info/*
+DPKG_EOF
+          
+          # Disable man-db triggers completely
+          rm -f /var/lib/man-db/auto-update
+          
+          # Install basic tools (minimal, no recommendations)
+          apt-get update
+          apt-get install -y --no-install-recommends wget gnupg2 lsb-release ca-certificates
+          
+          # Add PostgreSQL APT repository
+          echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+          
+          # Update and install PostgreSQL and build dependencies (no recommendations, no man pages)
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential debhelper devscripts \
+            postgresql-server-dev-${{ github.event.inputs.pg_version }} \
+            postgresql-${{ github.event.inputs.pg_version }} \
+            golang-go libjson-c-dev pkg-config
+      
+      - name: Create Debian package structure
+        run: |
+          mkdir -p debian
+          
+      - name: Create debian/control
+        run: |
+          cat > debian/control << 'EOF'
+          Source: pgraft
+          Section: database
+          Priority: optional
+          Maintainer: pgElephant <noreply@pgelephant.com>
+          Build-Depends: debhelper (>= 10),
+                         postgresql-server-dev-${{ github.event.inputs.pg_version }},
+                         golang-go (>= 2:1.21~),
+                         libjson-c-dev,
+                         pkg-config
+          Standards-Version: 4.5.0
+          Homepage: https://www.pgelephant.com
+          
+          Package: postgresql-${{ github.event.inputs.pg_version }}-pgraft
+          Architecture: any
+          Depends: ${shlibs:Depends}, ${misc:Depends},
+                   postgresql-${{ github.event.inputs.pg_version }},
+                   libjson-c5 | libjson-c4 | libjson-c3
+          Description: PostgreSQL extension with Raft consensus protocol
+           pgraft is a PostgreSQL extension that implements the Raft consensus
+           protocol for distributed PostgreSQL clusters.
+           .
+           Features:
+            - Raft consensus protocol integration
+            - Distributed key-value store (etcd-compatible)
+            - Automatic leader election
+            - Log replication
+            - Integration with etcd-io/raft Go library
+          EOF
+      
+      - name: Create debian/rules
+        run: |
+          cat > debian/rules << 'EOF'
+          #!/usr/bin/make -f
+          
+          export DH_VERBOSE=1
+          export PG_CONFIG=/usr/lib/postgresql/${{ github.event.inputs.pg_version }}/bin/pg_config
+          
+          %:
+          	dh $@
+          
+          override_dh_auto_build:
+          	$(MAKE) PG_CONFIG=$(PG_CONFIG)
+          
+          override_dh_auto_install:
+          	$(MAKE) install DESTDIR=$(CURDIR)/debian/postgresql-${{ github.event.inputs.pg_version }}-pgraft PG_CONFIG=$(PG_CONFIG)
+          
+          override_dh_auto_clean:
+          	$(MAKE) clean || true
+          	dh_clean
+          EOF
+          chmod +x debian/rules
+      
+      - name: Create debian/changelog
+        run: |
+          cat > debian/changelog << EOF
+          pgraft (${{ github.event.inputs.version }}-${{ github.event.inputs.release }}) unstable; urgency=medium
+          
+            * Automated build for PostgreSQL ${{ github.event.inputs.pg_version }}
+            * Built from GitHub Actions
+          
+           -- GitHub Actions <noreply@github.com>  $(date -R)
+          EOF
+      
+      - name: Create debian/compat
+        run: |
+          echo "10" > debian/compat
+      
+      - name: Create debian/source/format
+        run: |
+          mkdir -p debian/source
+          echo "3.0 (native)" > debian/source/format
+      
+      - name: Create debian/copyright
+        run: |
+          cat > debian/copyright << 'EOF'
+          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+          Upstream-Name: pgraft
+          Upstream-Contact: pgElephant <noreply@pgelephant.com>
+          Source: https://github.com/pgElephant/pgraft
+          
+          Files: *
+          Copyright: 2024-2025 pgElephant, Inc.
+          License: PostgreSQL
+          
+          License: PostgreSQL
+           Permission to use, copy, modify, and distribute this software and
+           its documentation for any purpose, without fee, and without a
+           written agreement is hereby granted, provided that the above
+           copyright notice and this paragraph and the following two
+           paragraphs appear in all copies.
+          EOF
+      
+      - name: Build DEB package
+        run: |
+          dpkg-buildpackage -us -uc -b
+      
+      - name: List built DEBs
+        run: |
+          ls -lh ../*.deb || true
+      
+      - name: Set artifact name
+        id: artifact_name
+        run: |
+          # Convert image name to safe artifact name
+          OS_NAME=$(echo "${{ matrix.os }}" | sed 's|/|-|g' | sed 's|:|-|g')
+          echo "name=deb-${OS_NAME}-pg${{ github.event.inputs.pg_version }}" >> $GITHUB_OUTPUT
+      
+      - name: Upload DEB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}
+          path: ../*.deb
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-rpm, build-deb]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages
+      
+      - name: Display structure of downloaded files
+        run: ls -R packages
+      
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.event.inputs.version }}-pg${{ github.event.inputs.pg_version }}
+          release_name: pgraft ${{ github.event.inputs.version }} for PostgreSQL ${{ github.event.inputs.pg_version }}
+          body: |
+            # pgraft ${{ github.event.inputs.version }} for PostgreSQL ${{ github.event.inputs.pg_version }}
+            
+            ## Packages
+            
+            This release includes RPM and DEB packages for multiple distributions.
+            
+            ### RPM Packages (Red Hat, CentOS, Rocky Linux, AlmaLinux, Fedora)
+            - CentOS 9
+            - Rocky Linux 9
+            - AlmaLinux 9
+            - Fedora Latest
+            
+            ### DEB Packages (Debian, Ubuntu)
+            - Ubuntu 22.04
+            - Ubuntu 24.04
+            - Debian 11
+            - Debian 12
+            
+            ## Installation
+            
+            ### RPM-based systems
+            ```bash
+            sudo rpm -ivh pgraft-${{ github.event.inputs.version }}-${{ github.event.inputs.release }}.*.rpm
+            ```
+            
+            ### DEB-based systems
+            ```bash
+            sudo dpkg -i postgresql-${{ github.event.inputs.pg_version }}-pgraft_${{ github.event.inputs.version }}-${{ github.event.inputs.release }}_*.deb
+            sudo apt-get install -f  # Install dependencies if needed
+            ```
+            
+            ## Usage
+            
+            ```sql
+            CREATE EXTENSION pgraft;
+            SELECT pgraft.cluster_health();
+            ```
+            
+            ## Documentation
+            
+            See [README.md](https://github.com/pgElephant/pgraft/blob/main/README.md) for complete documentation.
+          draft: false
+          prerelease: false
+      
+      - name: Upload Release Assets
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const fs = require('fs').promises;
+            const path = require('path');
+            
+            async function uploadReleaseAssets(dir, releaseId) {
+              const files = await fs.readdir(dir);
+              
+              for (const file of files) {
+                const filePath = path.join(dir, file);
+                const stat = await fs.stat(filePath);
+                
+                if (stat.isDirectory()) {
+                  await uploadReleaseAssets(filePath, releaseId);
+                } else if (file.endsWith('.rpm') || file.endsWith('.deb')) {
+                  const data = await fs.readFile(filePath);
+                  
+                  await github.rest.repos.uploadReleaseAsset({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    release_id: releaseId,
+                    name: file,
+                    data: data
+                  });
+                  
+                  console.log(`Uploaded ${file}`);
+                }
+              }
+            }
+            
+            await uploadReleaseAssets('packages', ${{ steps.create_release.outputs.id }});
+
+  test-installation:
+    name: Test Package Installation
+    needs: [build-rpm, build-deb]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - os: quay.io/centos/centos:stream9
+            type: rpm
+          - os: ubuntu:22.04
+            type: deb
+    
+    container:
+      image: ${{ matrix.os }}
+    
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ matrix.type }}-*
+          path: packages
+      
+      - name: Install PostgreSQL (RPM)
+        if: matrix.type == 'rpm'
+        run: |
+          # Add PostgreSQL repository
+          dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+          dnf -qy module disable postgresql 2>/dev/null || true
+          dnf install -y postgresql${{ github.event.inputs.pg_version }}-server
+      
+      - name: Install PostgreSQL (DEB)
+        if: matrix.type == 'deb'
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          export DEBCONF_NONINTERACTIVE_SEEN=true
+          
+          # Completely disable man-db triggers
+          mkdir -p /etc/dpkg/dpkg.cfg.d/
+          cat > /etc/dpkg/dpkg.cfg.d/01_nodoc << 'DPKG_EOF'
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/doc/*
+path-exclude=/usr/share/locale/*
+path-exclude=/usr/share/info/*
+DPKG_EOF
+          
+          rm -f /var/lib/man-db/auto-update
+          
+          # Add PostgreSQL repository
+          apt-get update
+          apt-get install -y --no-install-recommends wget gnupg2 lsb-release
+          echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+          
+          # Install PostgreSQL (minimal)
+          apt-get update
+          apt-get install -y --no-install-recommends postgresql-${{ github.event.inputs.pg_version }}
+      
+      - name: Install pgraft package (RPM)
+        if: matrix.type == 'rpm'
+        run: |
+          rpm -ivh packages/*/*.rpm
+      
+      - name: Install pgraft package (DEB)
+        if: matrix.type == 'deb'
+        run: |
+          dpkg -i packages/*/*.deb || apt-get install -f -y
+      
+      - name: Verify installation
+        run: |
+          if [ "${{ matrix.type }}" = "rpm" ]; then
+            rpm -ql pgraft
+          else
+            dpkg -L postgresql-${{ github.event.inputs.pg_version }}-pgraft
+          fi
+      
+      - name: Test extension creation
+        run: |
+          # Initialize PostgreSQL
+          if [ "${{ matrix.type }}" = "rpm" ]; then
+            /usr/pgsql-${{ github.event.inputs.pg_version }}/bin/postgresql-${{ github.event.inputs.pg_version }}-setup initdb
+            systemctl start postgresql-${{ github.event.inputs.pg_version }}
+            sudo -u postgres /usr/pgsql-${{ github.event.inputs.pg_version }}/bin/psql -c "CREATE EXTENSION pgraft;"
+          else
+            sudo -u postgres /usr/lib/postgresql/${{ github.event.inputs.pg_version }}/bin/initdb -D /tmp/pgdata
+            sudo -u postgres /usr/lib/postgresql/${{ github.event.inputs.pg_version }}/bin/pg_ctl -D /tmp/pgdata start
+            sleep 5
+            sudo -u postgres /usr/lib/postgresql/${{ github.event.inputs.pg_version }}/bin/psql -c "CREATE EXTENSION pgraft;"
+          fi
+          
+          echo "✅ pgraft extension installed successfully!"
+

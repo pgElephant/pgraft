@@ -1,0 +1,114 @@
+name: pgraft-build-mac-pg-17
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL 17
+        run: |
+          brew install postgresql@17
+
+      - name: Detect PostgreSQL paths
+        run: |
+          # Get Homebrew prefix (handles both Intel and Apple Silicon)
+          BREW_PREFIX=$(brew --prefix)
+          PG_PREFIX=$(brew --prefix postgresql@17)
+          PG_BIN="${PG_PREFIX}/bin"
+          
+          echo "BREW_PREFIX=${BREW_PREFIX}" >> $GITHUB_ENV
+          echo "PG_PREFIX=${PG_PREFIX}" >> $GITHUB_ENV
+          echo "PG_CONFIG=${PG_PREFIX}/bin/pg_config" >> $GITHUB_ENV
+          
+          # Set PATH to use correct PostgreSQL first
+          echo "${PG_BIN}" >> $GITHUB_PATH
+          
+          echo "PostgreSQL 17 prefix: ${PG_PREFIX}"
+          echo "PostgreSQL 17 bin: ${PG_BIN}"
+
+      - name: Verify PostgreSQL installation
+        run: |
+          which pg_config
+          pg_config --version
+          pg_config --includedir-server
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Set up build environment
+        run: |
+          PG_INCLUDEDIR=$(${PG_CONFIG} --includedir)
+          PG_INCLUDEDIR_SERVER=$(${PG_CONFIG} --includedir-server)
+          PG_LIBDIR=$(${PG_CONFIG} --libdir)
+          
+          echo "CGO_CFLAGS=-I${PG_INCLUDEDIR} -I${PG_INCLUDEDIR_SERVER}" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L${PG_LIBDIR}" >> $GITHUB_ENV
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+          echo "${PG_PREFIX}/bin" >> $GITHUB_PATH
+
+      - name: Download Go dependencies
+        run: |
+          cd src
+          go mod download
+          go mod verify
+
+      - name: Show Makefile being used
+        run: |
+          echo "Using Makefile.macos with PG_CONFIG=${PG_CONFIG}"
+          head -20 Makefile.macos
+
+      - name: Build pgraft
+        run: |
+          # Ensure correct PostgreSQL is in PATH
+          export PATH="${PG_PREFIX}/bin:$PATH"
+          
+          # Verify we're using the right pg_config
+          which pg_config
+          pg_config --version
+          
+          # Use macOS-specific Makefile
+          make -f Makefile.macos PG_CONFIG=${PG_CONFIG} clean || true
+          make -f Makefile.macos PG_CONFIG=${PG_CONFIG} all 2>&1 | tee build.log
+
+      - name: Verify build output
+        run: |
+          if [ -f pgraft.dylib ]; then
+            echo "✓ Build successful: pgraft.dylib"
+            ls -lh pgraft.dylib
+            file pgraft.dylib
+          else
+            echo "✗ Build failed: pgraft.dylib not found"
+            exit 1
+          fi
+          
+          if [ -f src/pgraft_go.dylib ]; then
+            echo "✓ Go library built: pgraft_go.dylib"
+            ls -lh src/pgraft_go.dylib
+          fi
+
+      - name: Check for warnings
+        run: |
+          if grep -i "warning:" build.log; then
+            echo "⚠ Warnings found in build"
+          else
+            echo "✓ No warnings"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgraft-macos-pg17
+          path: |
+            pgraft.dylib
+            src/pgraft_go.dylib
+            pgraft.control
+            pgraft--1.0.sql
+
