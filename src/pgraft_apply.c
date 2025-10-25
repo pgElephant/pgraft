@@ -13,8 +13,8 @@
  */
 
 #include "postgres.h"
-#include "pgraft_apply.h"
-#include "pgraft_core.h"
+#include "../include/pgraft_apply.h"
+#include "../include/pgraft_core.h"
 #include "../include/pgraft_json.h"
 #include "../include/pgraft_kv.h"
 

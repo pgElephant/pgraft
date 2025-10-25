@@ -19,7 +19,9 @@ include $(PGXS)
 CFLAGS += -std=c99 -Wall -Wextra -Werror
 
 # Override the default CFLAGS to ensure our include path is used
+# Add include directory for both regular and bitcode compilation
 override CFLAGS += -I./include
+override CPPFLAGS += -I./include
 
 # Define pkglibdir as a C macro so the code can use it
 # Use CPPFLAGS to ensure it works for both gcc and bitcode compilation
