@@ -1,0 +1,14 @@
+pgraft - Raft-based PostgreSQL Extension for High Availability
+
+Contributors (alphabetical order):
+
+pgElephant Team
+- Ibrar Ahmed
+
+Special thanks to:
+- etcd-io project for the excellent Raft implementation
+- PostgreSQL Global Development Group for the powerful extension system
+- All contributors and users who provide feedback and report issues
+
+For a complete list of contributors, see:
+https://github.com/pgElephant/pgraft/graphs/contributors
