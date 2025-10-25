@@ -33,7 +33,7 @@ jobs:
         id: versions
         run: |
           if [ -n "${{ github.event.inputs.pg_versions }}" ]; then
-            VERSIONS=$(echo "${{ github.event.inputs.pg_versions }}" | jq -R 'split(",") | map(. | gsub(" ";""))')
+            VERSIONS=$(echo "${{ github.event.inputs.pg_versions }}" | jq -Rc 'split(",") | map(gsub(" "; ""))')
           else
             VERSIONS='["14","15","16","17"]'
           fi
