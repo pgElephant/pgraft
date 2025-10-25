@@ -12,8 +12,7 @@
 package main
 
 /*
-#cgo CFLAGS: -I/usr/local/pgsql.17/include/server -I../include
-#cgo LDFLAGS: -L/usr/local/pgsql.17/lib
+#cgo CFLAGS: -I../include
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>

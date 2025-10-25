@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persistent storage for Raft state and log entries
 - Split-brain prevention with mathematical guarantees
 - Comprehensive documentation and examples
-- GitHub Actions CI/CD workflows for multiple PostgreSQL versions (14, 15, 16, 17)
+- GitHub Actions CI/CD workflows for multiple PostgreSQL versions (16, 17, 18)
 - RPM and DEB packaging support
 - Prometheus metrics integration
 - PostgreSQL extension registration and control files

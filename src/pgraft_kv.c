@@ -252,7 +252,7 @@ pgraft_kv_put(const char *key, const char *value, int64_t log_index)
 		entry->log_index = log_index;
 		entry->deleted = false;
 		
-		elog(DEBUG1, "pgraft_kv: Updated key '%s' (version %lld)", key, entry->version);
+		elog(DEBUG1, "pgraft_kv: Updated key '%s' (version %lld)", key, (long long)entry->version);
 	}
 	else
 	{
@@ -333,7 +333,7 @@ pgraft_kv_get(const char *key, char *value, size_t value_size, int64_t *version)
 	
 	SpinLockRelease(&store->mutex);
 	
-	elog(DEBUG1, "pgraft_kv: Retrieved key '%s' (version %lld)", key, entry->version);
+	elog(DEBUG1, "pgraft_kv: Retrieved key '%s' (version %lld)", key, (long long)entry->version);
 	
 	return 0;  /* Success */
 }

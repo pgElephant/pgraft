@@ -14,7 +14,7 @@
  * Callback from Go when a Raft entry is committed
  * This enqueues the entry for application by the background worker
  * 
- * EXPORTED FOR GO: This function is called from pgraft_go.dylib
+ * EXPORTED FOR GO: This function is called from pgraft Go library
  */
 int
 pgraft_enqueue_for_apply_from_go(unsigned long long raft_index, const char *data, unsigned long data_len)

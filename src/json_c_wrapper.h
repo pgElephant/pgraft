@@ -7,7 +7,7 @@
 #define JSON_C_WRAPPER_H
 
 /* Include json-c headers */
-#include "/opt/homebrew/Cellar/json-c/0.18/include/json-c/json.h"
+#include <json-c/json.h>
 
 /* Define type alias to avoid conflict with PostgreSQL's json_object function */
 typedef struct json_object json_object_c;

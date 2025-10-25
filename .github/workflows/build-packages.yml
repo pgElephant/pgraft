@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       pg_versions:
-        description: 'PostgreSQL versions (comma-separated, e.g., "14,15,16,17")'
+        description: 'PostgreSQL versions (comma-separated, e.g., "16,17,18")'
         required: false
-        default: '14,15,16,17'
+        default: '16,17,18'
       create_release:
         description: 'Create GitHub release'
         required: false
@@ -35,7 +35,7 @@ jobs:
           if [ -n "${{ github.event.inputs.pg_versions }}" ]; then
             VERSIONS=$(echo "${{ github.event.inputs.pg_versions }}" | jq -Rc 'split(",") | map(gsub(" "; ""))')
           else
-            VERSIONS='["14","15","16","17"]'
+            VERSIONS='["16","17","18"]'
           fi
           echo "pg_versions=${VERSIONS}" >> $GITHUB_OUTPUT
 

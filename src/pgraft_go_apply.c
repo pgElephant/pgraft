@@ -10,7 +10,7 @@
 #include "../include/pgraft_apply.h"
 
 /*
- * This function is called from Go (pgraft_go.dylib) when a Raft entry is committed
+ * This function is called from Go (pgraft Go library) when a Raft entry is committed
  * It's exported so Go can find it via dlsym or direct linking
  */
 int
