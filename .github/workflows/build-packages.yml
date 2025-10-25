@@ -1,12 +1,17 @@
 name: Build Packages
 
 on:
-  push:
-    branches: [main, develop]
-    tags: ['v*']
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      pg_versions:
+        description: 'PostgreSQL versions (comma-separated, e.g., "14,15,16,17")'
+        required: false
+        default: '14,15,16,17'
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        type: boolean
+        default: false
 
 env:
   PACKAGE_VERSION: '1.0.0'
@@ -22,16 +27,17 @@ jobs:
     steps:
       - name: Determine version
         id: version
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${PACKAGE_VERSION}" >> $GITHUB_OUTPUT
-          fi
+        run: echo "version=${PACKAGE_VERSION}" >> $GITHUB_OUTPUT
       
       - name: Set PostgreSQL versions
         id: versions
-        run: echo 'pg_versions=["14","15","16","17"]' >> $GITHUB_OUTPUT
+        run: |
+          if [ -n "${{ github.event.inputs.pg_versions }}" ]; then
+            VERSIONS=$(echo "${{ github.event.inputs.pg_versions }}" | jq -R 'split(",") | map(. | gsub(" ";""))')
+          else
+            VERSIONS='["14","15","16","17"]'
+          fi
+          echo "pg_versions=${VERSIONS}" >> $GITHUB_OUTPUT
 
   build-rpm:
     name: RPM
@@ -98,7 +104,7 @@ jobs:
   release:
     name: Release
     needs: [prepare, test]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ github.event.inputs.create_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
