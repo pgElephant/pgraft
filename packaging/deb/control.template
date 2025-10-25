@@ -1,0 +1,36 @@
+Source: pgraft-postgresql-PGVERSION
+Section: database
+Priority: optional
+Maintainer: pgElephant Team <team@pgelephant.org>
+Build-Depends: debhelper (>= 10),
+               postgresql-server-dev-PGVERSION,
+               golang-go (>= 2:1.18~),
+               gcc,
+               make,
+               libjson-c-dev
+Standards-Version: 4.5.1
+Homepage: https://github.com/pgelephant/pgraft
+Vcs-Git: https://github.com/pgelephant/pgraft.git
+Vcs-Browser: https://github.com/pgelephant/pgraft
+
+Package: postgresql-PGVERSION-pgraft
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         postgresql-PGVERSION,
+         libjson-c5 | libjson-c4 | libjson-c3
+Suggests: pgbalancer
+Description: Raft consensus extension for PostgreSQL PGVERSION
+ pgraft implements the Raft consensus algorithm for automatic leader
+ election, log replication, and split-brain prevention in PostgreSQL.
+ .
+ Features:
+  * Automatic leader election using Raft consensus
+  * Fast failover detection (2-second timeout)
+  * Split-brain prevention via quorum
+  * Key-value store with strong consistency guarantees
+  * Background worker for Raft processing
+  * Integration ready for pgbalancer automatic failover
+ .
+ This package is built for PostgreSQL PGVERSION.
+
