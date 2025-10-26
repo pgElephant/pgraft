@@ -6,7 +6,6 @@
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Matrix](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml)
-[![Build Packages](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml)
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://pgelephant.github.io/pgraft/)
 
 pgraft embeds the Raft consensus protocol into PostgreSQL, providing automatic leader election, crash-safe log replication, and 100% split-brain prevention for distributed PostgreSQL clusters.

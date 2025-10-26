@@ -100,10 +100,11 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           export DEBCONF_NONINTERACTIVE_SEEN=true
           
-          # Disable man-db triggers
-          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          rm -f /var/lib/man-db/auto-update
+          # Disable man-db triggers (create directory first if needed)
+          mkdir -p /etc/dpkg/dpkg.cfg.d || true
+          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
+          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
+          rm -f /var/lib/man-db/auto-update || true
           
           # Add PostgreSQL APT repository
           apt-get update
@@ -147,6 +148,7 @@ jobs:
           dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
             gcc \
             make \
+            redhat-rpm-config \
             postgresql${{ matrix.pg_version }}-devel \
             golang \
             json-c-devel \
@@ -215,11 +217,12 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           export DEBCONF_NONINTERACTIVE_SEEN=true
           
-          # Disable documentation
-          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          echo 'path-exclude /usr/share/locale/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          rm -f /var/lib/man-db/auto-update
+          # Disable documentation (create directory first if needed)
+          mkdir -p /etc/dpkg/dpkg.cfg.d
+          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
+          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
+          echo 'path-exclude /usr/share/locale/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
+          rm -f /var/lib/man-db/auto-update || true
           
           # Install dependencies
           apt-get update
@@ -283,6 +286,7 @@ jobs:
           dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
             rpm-build \
             rpmdevtools \
+            redhat-rpm-config \
             gcc \
             make \
             postgresql${{ matrix.pg_version }}-devel \
