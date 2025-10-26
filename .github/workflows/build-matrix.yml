@@ -20,11 +20,6 @@ on:
         description: 'Release tag (e.g., v1.0.0)'
         required: false
         default: 'v1.0.0'
-  push:
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ main ]
 
 env:
   PACKAGE_VERSION: '1.0.0'
@@ -75,23 +70,12 @@ jobs:
           PLATFORMS='${{ steps.platforms.outputs.matrix }}'
           
           # Generate cross product of platforms and PG versions
-          MATRIX=$(jq -n \
+          MATRIX=$(jq -nc \
             --argjson pg "$PG_VERSIONS" \
             --argjson plat "$PLATFORMS" \
-            '{include: [
-              $plat[] as $p | $pg[] as $v | {
-                platform: $p,
-                pg_version: $v,
-                os: (if $p == "ubuntu" then "ubuntu-22.04"
-                     elif $p == "macos" then "macos-14"
-                     elif $p == "rocky" then "ubuntu-latest"
-                     else "ubuntu-latest" end),
-                container: (if $p == "rocky" then "rockylinux:9"
-                           else null end)
-              }
-            ]}')
+            '{include: [$plat[] as $p | $pg[] as $v | {platform: $p, pg_version: $v, os: (if $p == "ubuntu" then "ubuntu-22.04" elif $p == "macos" then "macos-14" elif $p == "rocky" then "ubuntu-latest" else "ubuntu-latest" end), container: (if $p == "rocky" then "rockylinux:9" else null end)}]}')
           
-          echo "matrix=${MATRIX}" >> $GITHUB_OUTPUT
+          echo "matrix=$(echo $MATRIX | jq -c .)" >> $GITHUB_OUTPUT
           echo "Generated matrix:"
           echo "${MATRIX}" | jq '.'
 
@@ -114,27 +98,32 @@ jobs:
         if: matrix.platform == 'ubuntu'
         run: |
           export DEBIAN_FRONTEND=noninteractive
-          export DEBCONF_NONINTERACTIVE_SEEN=true
           
-          # Disable man-db triggers
-          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          rm -f /var/lib/man-db/auto-update
+          # Disable man-db triggers (best effort)
+          sudo mkdir -p /etc/dpkg/dpkg.cfg.d || true
+          echo 'path-exclude /usr/share/man/*' | sudo tee -a /etc/dpkg/dpkg.cfg.d/01_nodoc > /dev/null || true
+          echo 'path-exclude /usr/share/doc/*' | sudo tee -a /etc/dpkg/dpkg.cfg.d/01_nodoc > /dev/null || true
+          sudo rm -f /var/lib/man-db/auto-update || true
           
           # Add PostgreSQL APT repository
-          apt-get update
-          apt-get install -y --no-install-recommends wget gnupg2 lsb-release ca-certificates
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
-          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wget gnupg2 lsb-release ca-certificates
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | sudo tee /usr/share/keyrings/postgresql.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           
-          # Install build dependencies
-          apt-get update
-          apt-get install -y --no-install-recommends \
+          # Install build dependencies (without golang-go, we'll use setup-go action)
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
             postgresql-server-dev-${{ matrix.pg_version }} \
-            golang-go \
             libjson-c-dev \
             pkg-config
+      
+      - name: Setup Go
+        if: matrix.platform == 'ubuntu' || matrix.platform == 'rocky'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
       
       - name: Install dependencies (macOS)
         if: matrix.platform == 'macos'
@@ -148,23 +137,30 @@ jobs:
           export LANG=C
           export LC_ALL=C
           
+          # Check if we need sudo (container runs as root, so no sudo needed in container)
+          if command -v sudo &> /dev/null && [ "$(id -u)" != "0" ]; then
+            SUDO="sudo"
+          else
+            SUDO=""
+          fi
+          
           # Enable EPEL and PowerTools
-          dnf install -y epel-release
-          dnf config-manager --set-enabled crb || crb enable || true
+          $SUDO dnf install -y epel-release
+          $SUDO dnf config-manager --set-enabled crb || $SUDO crb enable || true
           
           # Add PostgreSQL repository
           ARCH=$(uname -m)
-          dnf install -y --nogpgcheck https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-${ARCH}/pgdg-redhat-repo-latest.noarch.rpm
+          $SUDO dnf install -y --nogpgcheck https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-${ARCH}/pgdg-redhat-repo-latest.noarch.rpm
           
           # Disable built-in PostgreSQL module
-          dnf -qy module disable postgresql
+          $SUDO dnf -qy module disable postgresql
           
-          # Install build dependencies
-          dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
+          # Install build dependencies (without golang, using setup-go action)
+          $SUDO dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
             gcc \
             make \
+            redhat-rpm-config \
             postgresql${{ matrix.pg_version }}-devel \
-            golang \
             json-c-devel \
             pkg-config
       
@@ -221,6 +217,7 @@ jobs:
     
     container:
       image: ${{ matrix.os }}
+      options: --user root
     
     steps:
       - name: Checkout code
@@ -231,11 +228,12 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           export DEBCONF_NONINTERACTIVE_SEEN=true
           
-          # Disable documentation
-          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          echo 'path-exclude /usr/share/locale/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc
-          rm -f /var/lib/man-db/auto-update
+          # Disable documentation (create directory first if needed)
+          mkdir -p /etc/dpkg/dpkg.cfg.d
+          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
+          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
+          echo 'path-exclude /usr/share/locale/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
+          rm -f /var/lib/man-db/auto-update || true
           
           # Install dependencies
           apt-get update
@@ -276,6 +274,7 @@ jobs:
     
     container:
       image: ${{ matrix.os }}
+      options: --user root
     
     steps:
       - name: Checkout code
@@ -299,6 +298,7 @@ jobs:
           dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
             rpm-build \
             rpmdevtools \
+            redhat-rpm-config \
             gcc \
             make \
             postgresql${{ matrix.pg_version }}-devel \
@@ -369,7 +369,7 @@ jobs:
   release:
     name: Create Release
     needs: [prepare, test-packages]
-    if: ${{ github.event.inputs.create_release == 'true' || startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ github.event.inputs.create_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -396,11 +396,7 @@ jobs:
       - name: Determine release tag
         id: release_tag
         run: |
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ startsWith(github.ref, 'refs/tags/') }}" = "true" ]; then
-            TAG=${GITHUB_REF#refs/tags/}
-          else
-            TAG="${{ github.event.inputs.release_tag }}"
-          fi
+          TAG="${{ github.event.inputs.release_tag }}"
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
       
       - name: Create GitHub Release
@@ -456,22 +452,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  update-badges:
-    name: Update Status Badges
+  summary:
+    name: Build Summary
     needs: [build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: always()
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Update README badges
-        run: |
-          echo "✅ Build matrix completed - badges auto-generated by workflow status"
-      
       - name: Create build status summary
         run: |
           cat > $GITHUB_STEP_SUMMARY << 'EOF'
@@ -483,6 +470,6 @@ jobs:
           | **macOS** | ✅ | ✅ | ✅ |
           | **Rocky** | ✅ | ✅ | ✅ |
           
-          All builds completed successfully!
+          Build matrix completed!
           EOF
 
