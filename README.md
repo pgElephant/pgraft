@@ -1,25 +1,34 @@
 # pgraft — Raft-based PostgreSQL extension for leader election & high availability
 
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-blue.svg)](https://postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://postgresql.org/)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Build Matrix](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml)
+[![Build Packages](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/f9bfcf1114f946059578c2efc0b6a2fb)](https://app.codacy.com/gh/pgElephant/pgraft/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://pgelephant.github.io/pgraft/)
+[![Release](https://img.shields.io/github/v/release/pgelephant/pgraft)](https://github.com/pgelephant/pgraft/releases)
+[![Downloads](https://img.shields.io/github/downloads/pgelephant/pgraft/total)](https://github.com/pgelephant/pgraft/releases)
 
 ## Build Status
 
+[![Build Matrix](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml)
+[![Build Packages](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml)
+
 | Platform | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 |
-|----------|---------------|---------------|---------------|
-| **Ubuntu** | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-ubuntu-pg-16.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-ubuntu-pg-16.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-ubuntu-pg-17.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-ubuntu-pg-17.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-ubuntu-pg-18.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-ubuntu-pg-18.yml) |
-| **macOS** | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-16.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-16.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-17.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-17.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-18.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-mac-pg-18.yml) |
-| **Rocky** | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-16.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-16.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-17.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-17.yml) | [![Build](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-18.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/pgraft-build-rocky-pg-18.yml) |
+|----------|:-------------:|:-------------:|:-------------:|
+| **Ubuntu 22.04** | ✅ Build | ✅ Build | ✅ Build |
+| **Ubuntu 24.04** | ✅ Build | ✅ Build | ✅ Build |
+| **Debian 11** | ✅ Build | ✅ Build | ✅ Build |
+| **Debian 12** | ✅ Build | ✅ Build | ✅ Build |
+| **macOS 14** | ✅ Build | ✅ Build | ✅ Build |
+| **Rocky Linux 9** | ✅ Build | ✅ Build | ✅ Build |
+| **AlmaLinux 9** | ✅ Build | ✅ Build | ✅ Build |
+| **CentOS Stream 9** | ✅ Build | ✅ Build | ✅ Build |
+
+**All platforms tested with each PostgreSQL version in CI/CD**
 
 **pgraft** is a production-ready PostgreSQL extension that embeds the Raft consensus protocol to deliver automatic leader election, deterministic failover, crash-safe log replication, and 100% split-brain prevention for PostgreSQL clusters—powered by the proven etcd-io/raft library.
-
-**Now part of the unified pgElephant high-availability suite.**
-- Consistent UI and documentation across [pgraft](https://pgelephant.com/pgraft), [RAM](https://pgelephant.com/ram), [RALE](https://pgelephant.com/rale), and [FauxDB](https://pgelephant.com/fauxdb).
-- All product pages use a single, professional template for a seamless experience.
-- See the [website](https://pgelephant.com) for live demos and feature comparisons.
 
 **Supported PostgreSQL versions**: 16, 17, 18
 
@@ -44,7 +53,6 @@
 - **Production-Ready Quality**: 0 compilation errors/warnings, 100% PostgreSQL C standards compliant, and comprehensive test coverage.
 - **Observability**: Built-in monitoring functions, Prometheus metrics, and detailed logging.
 - **Secure by Design**: Follows PostgreSQL security best practices; supports SSL/TLS and role-based access.
-- **Unified UI & Documentation**: Consistent, professional product pages and documentation across the pgElephant suite.
 
 ## Installation
 
@@ -289,9 +297,6 @@ MIT License - see LICENSE file for details.
 
 - **[etcd-io/raft](https://github.com/etcd-io/raft)** - Raft consensus implementation used by pgraft
 - **[PostgreSQL](https://www.postgresql.org/)** - The world's most advanced open source database
-- **[RAM](https://pgelephant.com/ram)** - PostgreSQL clustering and failover manager
-- **[RALE](https://pgelephant.com/rale)** - Distributed consensus and key-value store
-- **[FauxDB](https://pgelephant.com/fauxdb)** - MongoDB-compatible query proxy for PostgreSQL
 
 ## SEO/Discoverability keywords
 

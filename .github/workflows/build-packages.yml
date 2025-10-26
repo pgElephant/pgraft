@@ -128,8 +128,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -143,7 +147,7 @@ jobs:
           cd release && sha256sum *.rpm *.deb > SHA256SUMS
           ls -lh
       
-      - name: Create release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.release_tag }}
@@ -169,5 +173,13 @@ jobs:
             
             **Enable:** `CREATE EXTENSION pgraft;`
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload SHA256SUMS to GitHub Release
+        working-directory: release
+        run: |
+          echo "📝 Uploading checksums to release"
+          gh release upload ${{ github.event.inputs.release_tag }} SHA256SUMS --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
