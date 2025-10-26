@@ -84,7 +84,9 @@ jobs:
     needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    container: ${{ matrix.container }}
+    container: 
+      image: ${{ matrix.container }}
+      options: --user root
     
     strategy:
       fail-fast: false
@@ -207,6 +209,7 @@ jobs:
     
     container:
       image: ${{ matrix.os }}
+      options: --user root
     
     steps:
       - name: Checkout code
@@ -263,6 +266,7 @@ jobs:
     
     container:
       image: ${{ matrix.os }}
+      options: --user root
     
     steps:
       - name: Checkout code
