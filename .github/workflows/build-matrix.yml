@@ -84,9 +84,6 @@ jobs:
     needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    container: 
-      image: ${{ matrix.container }}
-      options: --user root
     
     strategy:
       fail-fast: false
@@ -100,23 +97,22 @@ jobs:
         if: matrix.platform == 'ubuntu'
         run: |
           export DEBIAN_FRONTEND=noninteractive
-          export DEBCONF_NONINTERACTIVE_SEEN=true
           
-          # Disable man-db triggers (create directory first if needed)
-          mkdir -p /etc/dpkg/dpkg.cfg.d || true
-          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
-          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
-          rm -f /var/lib/man-db/auto-update || true
+          # Disable man-db triggers (best effort)
+          sudo mkdir -p /etc/dpkg/dpkg.cfg.d || true
+          echo 'path-exclude /usr/share/man/*' | sudo tee -a /etc/dpkg/dpkg.cfg.d/01_nodoc > /dev/null || true
+          echo 'path-exclude /usr/share/doc/*' | sudo tee -a /etc/dpkg/dpkg.cfg.d/01_nodoc > /dev/null || true
+          sudo rm -f /var/lib/man-db/auto-update || true
           
           # Add PostgreSQL APT repository
-          apt-get update
-          apt-get install -y --no-install-recommends wget gnupg2 lsb-release ca-certificates
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
-          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wget gnupg2 lsb-release ca-certificates
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | sudo tee /usr/share/keyrings/postgresql.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           
           # Install build dependencies
-          apt-get update
-          apt-get install -y --no-install-recommends \
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
             postgresql-server-dev-${{ matrix.pg_version }} \
             golang-go \
