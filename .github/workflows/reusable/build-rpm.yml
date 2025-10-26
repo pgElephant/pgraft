@@ -1,0 +1,131 @@
+name: Reusable RPM Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+        description: 'Package version'
+      pg_version:
+        required: true
+        type: string
+        description: 'PostgreSQL version'
+      release:
+        required: true
+        type: string
+        description: 'Release number'
+      os_image:
+        required: true
+        type: string
+        description: 'Container image to use'
+    outputs:
+      artifact_name:
+        description: 'Name of uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact_name }}
+
+jobs:
+  build:
+    name: Build RPM on ${{ inputs.os_image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: ${{ inputs.os_image }}
+    
+    outputs:
+      artifact_name: ${{ steps.artifact_name.outputs.name }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install build dependencies
+        uses: ./.github/actions/setup-pgraft
+        with:
+          type: rpm
+          pg_version: ${{ inputs.pg_version }}
+      
+      - name: Setup RPM build environment
+        run: |
+          rpmdev-setuptree
+      
+      - name: Create RPM spec file
+        run: |
+          cat > ~/rpmbuild/SPECS/pgraft.spec << 'SPEC_EOF'
+          Name:           pgraft
+          Version:        ${{ inputs.version }}
+          Release:        ${{ inputs.release }}%{?dist}
+          Summary:        PostgreSQL extension with Raft consensus protocol
+          License:        PostgreSQL
+          URL:            https://github.com/pgElephant/pgraft
+          Source0:        %{name}-%{version}.tar.gz
+          
+          BuildRequires:  postgresql${{ inputs.pg_version }}-devel
+          BuildRequires:  golang >= 1.21
+          BuildRequires:  json-c-devel
+          BuildRequires:  gcc
+          BuildRequires:  make
+          
+          Requires:       postgresql${{ inputs.pg_version }}-server
+          Requires:       json-c
+          
+          %description
+          pgraft is a PostgreSQL extension implementing Raft consensus protocol
+          for distributed PostgreSQL clusters with automatic failover.
+          
+          %prep
+          %setup -q
+          
+          %build
+          export PG_CONFIG=/usr/pgsql-${{ inputs.pg_version }}/bin/pg_config
+          make clean
+          make
+          
+          %install
+          export PG_CONFIG=/usr/pgsql-${{ inputs.pg_version }}/bin/pg_config
+          make install DESTDIR=%{buildroot}
+          
+          %files
+          %license LICENSE
+          %doc README.md
+          %{_libdir}/postgresql/pgraft.so
+          %{_libdir}/postgresql/pgraft_go.so
+          %{_datadir}/postgresql/extension/pgraft.control
+          %{_datadir}/postgresql/extension/pgraft--1.0.sql
+          
+          %changelog
+          * $(date "+%a %b %d %Y") GitHub Actions <noreply@github.com> - ${{ inputs.version }}-${{ inputs.release }}
+          - Automated build for PostgreSQL ${{ inputs.pg_version }}
+          SPEC_EOF
+      
+      - name: Create source tarball
+        run: |
+          mkdir -p pgraft-${{ inputs.version }}
+          cp -r * pgraft-${{ inputs.version }}/ 2>/dev/null || true
+          tar czf ~/rpmbuild/SOURCES/pgraft-${{ inputs.version }}.tar.gz pgraft-${{ inputs.version }}
+      
+      - name: Build RPM
+        run: |
+          rpmbuild -ba ~/rpmbuild/SPECS/pgraft.spec
+      
+      - name: List built RPMs
+        run: |
+          ls -lh ~/rpmbuild/RPMS/*/*.rpm
+          ls -lh ~/rpmbuild/SRPMS/*.rpm
+      
+      - name: Set artifact name
+        id: artifact_name
+        run: |
+          OS_NAME=$(echo "${{ inputs.os_image }}" | sed 's|/|-|g' | sed 's|:|-|g' | sed 's|quay.io-||')
+          echo "name=rpm-${OS_NAME}-pg${{ inputs.pg_version }}" >> $GITHUB_OUTPUT
+      
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}
+          path: |
+            ~/rpmbuild/RPMS/*/*.rpm
+            ~/rpmbuild/SRPMS/*.rpm
+          retention-days: 90
+          compression-level: 9
+

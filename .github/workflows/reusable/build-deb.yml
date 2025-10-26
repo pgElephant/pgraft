@@ -1,0 +1,155 @@
+name: Reusable DEB Build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+        description: 'Package version'
+      pg_version:
+        required: true
+        type: string
+        description: 'PostgreSQL version'
+      release:
+        required: true
+        type: string
+        description: 'Release number'
+      os_image:
+        required: true
+        type: string
+        description: 'Container image to use'
+    outputs:
+      artifact_name:
+        description: 'Name of uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact_name }}
+
+jobs:
+  build:
+    name: Build DEB on ${{ inputs.os_image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: ${{ inputs.os_image }}
+    
+    outputs:
+      artifact_name: ${{ steps.artifact_name.outputs.name }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install build dependencies
+        uses: ./.github/actions/setup-pgraft
+        with:
+          type: deb
+          pg_version: ${{ inputs.pg_version }}
+      
+      - name: Create Debian package structure
+        run: |
+          mkdir -p debian debian/source
+      
+      - name: Generate debian/control
+        run: |
+          cat > debian/control << 'CONTROL_EOF'
+          Source: pgraft
+          Section: database
+          Priority: optional
+          Maintainer: pgElephant <noreply@pgelephant.com>
+          Build-Depends: debhelper (>= 10),
+                         postgresql-server-dev-${{ inputs.pg_version }},
+                         golang-go (>= 2:1.21~),
+                         libjson-c-dev,
+                         pkg-config
+          Standards-Version: 4.5.0
+          Homepage: https://www.pgelephant.com
+          
+          Package: postgresql-${{ inputs.pg_version }}-pgraft
+          Architecture: any
+          Depends: ${shlibs:Depends}, ${misc:Depends},
+                   postgresql-${{ inputs.pg_version }},
+                   libjson-c5 | libjson-c4 | libjson-c3
+          Description: PostgreSQL extension with Raft consensus protocol
+           pgraft implements Raft consensus for distributed PostgreSQL clusters.
+           .
+           Features:
+            - Raft consensus protocol integration
+            - Distributed key-value store (etcd-compatible)
+            - Automatic leader election and failover
+            - Log replication across cluster nodes
+          CONTROL_EOF
+      
+      - name: Generate debian/rules
+        run: |
+          cat > debian/rules << 'RULES_EOF'
+          #!/usr/bin/make -f
+          
+          export DH_VERBOSE=1
+          export PG_CONFIG=/usr/lib/postgresql/${{ inputs.pg_version }}/bin/pg_config
+          
+          %:
+          	dh $@
+          
+          override_dh_auto_build:
+          	$(MAKE) PG_CONFIG=$(PG_CONFIG)
+          
+          override_dh_auto_install:
+          	$(MAKE) install DESTDIR=$(CURDIR)/debian/postgresql-${{ inputs.pg_version }}-pgraft PG_CONFIG=$(PG_CONFIG)
+          
+          override_dh_auto_clean:
+          	$(MAKE) clean || true
+          	dh_clean
+          RULES_EOF
+          chmod +x debian/rules
+      
+      - name: Generate debian/changelog
+        run: |
+          cat > debian/changelog << CHANGELOG_EOF
+          pgraft (${{ inputs.version }}-${{ inputs.release }}) unstable; urgency=medium
+          
+            * Automated build for PostgreSQL ${{ inputs.pg_version }}
+            * Built from GitHub Actions
+          
+           -- GitHub Actions <noreply@github.com>  $(date -R)
+          CHANGELOG_EOF
+      
+      - name: Generate debian/compat
+        run: echo "10" > debian/compat
+      
+      - name: Generate debian/source/format
+        run: echo "3.0 (native)" > debian/source/format
+      
+      - name: Generate debian/copyright
+        run: |
+          cat > debian/copyright << 'COPYRIGHT_EOF'
+          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+          Upstream-Name: pgraft
+          Source: https://github.com/pgElephant/pgraft
+          
+          Files: *
+          Copyright: 2024-2025 pgElephant, Inc.
+          License: PostgreSQL
+          COPYRIGHT_EOF
+      
+      - name: Build DEB package
+        run: |
+          dpkg-buildpackage -us -uc -b
+      
+      - name: List built DEBs
+        run: |
+          ls -lh ../*.deb || true
+      
+      - name: Set artifact name
+        id: artifact_name
+        run: |
+          OS_NAME=$(echo "${{ inputs.os_image }}" | sed 's|/|-|g' | sed 's|:|-|g')
+          echo "name=deb-${OS_NAME}-pg${{ inputs.pg_version }}" >> $GITHUB_OUTPUT
+      
+      - name: Upload DEB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}
+          path: ../*.deb
+          retention-days: 90
+          compression-level: 9
+
