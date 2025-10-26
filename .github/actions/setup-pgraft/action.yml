@@ -1,0 +1,93 @@
+name: 'Setup pgraft Build Environment'
+description: 'Install dependencies for building pgraft extension'
+author: 'pgElephant'
+
+inputs:
+  type:
+    description: 'Build type (rpm or deb)'
+    required: true
+  pg_version:
+    description: 'PostgreSQL version'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup RPM build environment
+      if: inputs.type == 'rpm'
+      shell: bash
+      run: |
+        # Speed up operations
+        export LANG=C
+        export LC_ALL=C
+        
+        echo "📦 Setting up RPM build environment for PostgreSQL ${{ inputs.pg_version }}"
+        
+        # Install EPEL repository
+        dnf install -y epel-release
+        
+        # Enable CRB/PowerTools repository
+        if command -v crb &> /dev/null; then
+          crb enable || /usr/bin/crb enable || true
+        else
+          dnf config-manager --set-enabled crb || \
+          dnf config-manager --set-enabled powertools || true
+        fi
+        
+        # Add PostgreSQL PGDG repository
+        dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+        
+        # Disable built-in PostgreSQL module
+        dnf -qy module disable postgresql 2>/dev/null || true
+        
+        # Install build dependencies (optimized)
+        dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
+          rpm-build rpmdevtools gcc make \
+          postgresql${{ inputs.pg_version }}-devel \
+          postgresql${{ inputs.pg_version }}-server \
+          golang json-c-devel
+        
+        echo "✅ RPM build environment ready"
+    
+    - name: Setup DEB build environment
+      if: inputs.type == 'deb'
+      shell: bash
+      run: |
+        export DEBIAN_FRONTEND=noninteractive
+        export DEBCONF_NONINTERACTIVE_SEEN=true
+        
+        echo "📦 Setting up DEB build environment for PostgreSQL ${{ inputs.pg_version }}"
+        
+        # Disable man-db and docs (prevents timeout)
+        mkdir -p /etc/dpkg/dpkg.cfg.d/
+        cat > /etc/dpkg/dpkg.cfg.d/01_nodoc << 'DPKG_EOF'
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/doc/*
+path-exclude=/usr/share/locale/*
+path-exclude=/usr/share/info/*
+DPKG_EOF
+        
+        rm -f /var/lib/man-db/auto-update
+        
+        # Install basic tools
+        apt-get update
+        apt-get install -y --no-install-recommends wget gnupg2 lsb-release ca-certificates
+        
+        # Add PostgreSQL APT repository
+        echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+        wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+        
+        # Update and install build dependencies
+        apt-get update
+        apt-get install -y --no-install-recommends \
+          build-essential debhelper devscripts \
+          postgresql-server-dev-${{ inputs.pg_version }} \
+          postgresql-${{ inputs.pg_version }} \
+          golang-go libjson-c-dev pkg-config
+        
+        echo "✅ DEB build environment ready"
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
