@@ -70,23 +70,12 @@ jobs:
           PLATFORMS='${{ steps.platforms.outputs.matrix }}'
           
           # Generate cross product of platforms and PG versions
-          MATRIX=$(jq -n \
+          MATRIX=$(jq -nc \
             --argjson pg "$PG_VERSIONS" \
             --argjson plat "$PLATFORMS" \
-            '{include: [
-              $plat[] as $p | $pg[] as $v | {
-                platform: $p,
-                pg_version: $v,
-                os: (if $p == "ubuntu" then "ubuntu-22.04"
-                     elif $p == "macos" then "macos-14"
-                     elif $p == "rocky" then "ubuntu-latest"
-                     else "ubuntu-latest" end),
-                container: (if $p == "rocky" then "rockylinux:9"
-                           else null end)
-              }
-            ]}')
+            '{include: [$plat[] as $p | $pg[] as $v | {platform: $p, pg_version: $v, os: (if $p == "ubuntu" then "ubuntu-22.04" elif $p == "macos" then "macos-14" elif $p == "rocky" then "ubuntu-latest" else "ubuntu-latest" end), container: (if $p == "rocky" then "rockylinux:9" else null end)}]}')
           
-          echo "matrix=${MATRIX}" >> $GITHUB_OUTPUT
+          echo "matrix=$(echo $MATRIX | jq -c .)" >> $GITHUB_OUTPUT
           echo "Generated matrix:"
           echo "${MATRIX}" | jq '.'
 
