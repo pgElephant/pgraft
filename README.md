@@ -1,219 +1,132 @@
-# pgraft — Raft-based PostgreSQL extension for leader election & high availability
+# pgraft
+
+**Raft consensus extension for PostgreSQL**
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20|%2017%20|%2018-blue.svg)](https://postgresql.org/)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Matrix](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml)
 [![Build Packages](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/f9bfcf1114f946059578c2efc0b6a2fb)](https://app.codacy.com/gh/pgElephant/pgraft/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://pgelephant.github.io/pgraft/)
-[![Release](https://img.shields.io/github/v/release/pgelephant/pgraft)](https://github.com/pgelephant/pgraft/releases)
-[![Downloads](https://img.shields.io/github/downloads/pgelephant/pgraft/total)](https://github.com/pgelephant/pgraft/releases)
 
-## Build Status
+pgraft embeds the Raft consensus protocol into PostgreSQL, providing automatic leader election, crash-safe log replication, and 100% split-brain prevention for distributed PostgreSQL clusters.
 
-[![Build Matrix](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-matrix.yml)
-[![Build Packages](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml/badge.svg)](https://github.com/pgelephant/pgraft/actions/workflows/build-packages.yml)
+## Features
 
-| Platform | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 |
-|----------|:-------------:|:-------------:|:-------------:|
-| **Ubuntu 22.04** | ✅ Build | ✅ Build | ✅ Build |
-| **Ubuntu 24.04** | ✅ Build | ✅ Build | ✅ Build |
-| **Debian 11** | ✅ Build | ✅ Build | ✅ Build |
-| **Debian 12** | ✅ Build | ✅ Build | ✅ Build |
-| **macOS 14** | ✅ Build | ✅ Build | ✅ Build |
-| **Rocky Linux 9** | ✅ Build | ✅ Build | ✅ Build |
-| **AlmaLinux 9** | ✅ Build | ✅ Build | ✅ Build |
-| **CentOS Stream 9** | ✅ Build | ✅ Build | ✅ Build |
+- **Automatic Leader Election** — Quorum-based, deterministic, fully automated
+- **Crash-Safe Replication** — All state changes replicated and persisted
+- **Split-Brain Prevention** — Mathematical guarantee via Raft consensus
+- **etcd-io/raft Integration** — Production-proven consensus library
+- **Background Worker Architecture** — Native PostgreSQL integration
+- **SQL Functions** — Full cluster management via SQL
+- **Observability** — Built-in monitoring, Prometheus metrics, detailed logging
 
-**All platforms tested with each PostgreSQL version in CI/CD**
+**Supported versions:** PostgreSQL 16, 17, 18 | Platforms: Linux, macOS
 
-**pgraft** is a production-ready PostgreSQL extension that embeds the Raft consensus protocol to deliver automatic leader election, deterministic failover, crash-safe log replication, and 100% split-brain prevention for PostgreSQL clusters—powered by the proven etcd-io/raft library.
+📚 **[Complete Documentation](https://pgelephant.github.io/pgraft/)**
 
-**Supported PostgreSQL versions**: 16, 17, 18
+---
 
-## Quick Links
+## Quick Start
 
-- **[Documentation](https://pgelephant.github.io/pgraft/)** - Complete documentation site
-- **[Quick Start Guide](https://pgelephant.github.io/pgraft/getting-started/quick-start/)** - Get running in minutes
-- **[Architecture](https://pgelephant.github.io/pgraft/concepts/architecture/)** - How pgraft works
-- **[SQL Functions](https://pgelephant.github.io/pgraft/user-guide/sql-functions/)** - Complete API reference
-- **[Contributing](CONTRIBUTING.md)** - How to contribute
+### 1. Install
 
-## Detailed Features List
-
-- **Raft Consensus Engine**: Embedded etcd-io/raft for proven, production-grade consensus.
-- **Automatic Leader Election**: Quorum-based, deterministic, and fully automated.
-- **Crash-Safe Log Replication**: All state changes are replicated and persisted across nodes.
-- **100% Split-Brain Prevention**: Mathematical guarantee—never more than one leader per term.
-- **Zero-Downtime Failover**: Seamless failover with sub-second detection and recovery.
-- **Leader-Driven Cluster Management**: Node addition/removal and configuration changes are always performed by the elected leader and automatically replicated.
-- **Background Worker Architecture**: PostgreSQL C background worker drives Raft ticks and state transitions.
-- **Persistent Storage**: HardState, log entries, and snapshots survive crashes and restarts.
-- **Production-Ready Quality**: 0 compilation errors/warnings, 100% PostgreSQL C standards compliant, and comprehensive test coverage.
-- **Observability**: Built-in monitoring functions, Prometheus metrics, and detailed logging.
-- **Secure by Design**: Follows PostgreSQL security best practices; supports SSL/TLS and role-based access.
-
-## Installation
-
-## Quick install (60 seconds)
-
-Prerequisites: PostgreSQL 16–18 with server headers, make, gcc/clang
-
+#### From Source
 ```bash
-# from repo root
+# Prerequisites: PostgreSQL 16-18, Go 1.21+, json-c
 make
 sudo make install
 ```
 
-Enable in postgresql.conf and restart:
-
-```conf
-shared_preload_libraries = 'pgraft'
+#### RPM (RHEL/Rocky/AlmaLinux 9)
+```bash
+# Download from releases
+sudo dnf install pgraft_17-1.0.0-1.el9.x86_64.rpm
 ```
 
-Create the extension:
-
-```sql
-CREATE EXTENSION pgraft;
+#### DEB (Ubuntu/Debian)
+```bash
+# Download from releases
+sudo apt install ./postgresql-17-pgraft_1.0.0-1_amd64.deb
 ```
 
-**For detailed installation instructions, see the [Installation Guide](https://pgelephant.github.io/pgraft/getting-started/installation/).**
+📦 **[Download Packages](https://github.com/pgelephant/pgraft/releases)**
 
-## Configuration
+### 2. Configure
 
 Add to `postgresql.conf`:
 
 ```ini
 shared_preload_libraries = 'pgraft'
 
-# Core cluster configuration
-pgraft.cluster_id = 'production-cluster'
-pgraft.node_id = 1
-pgraft.address = '127.0.0.1'
-pgraft.port = 7001
+# Cluster configuration (required)
+pgraft.cluster_id = 'prod-cluster'      # Same on all nodes
+pgraft.node_id = 1                      # Unique per node (1, 2, 3, ...)
+pgraft.address = '192.168.1.101'        # This node's address
+pgraft.port = 7001                      # Raft port (not PostgreSQL port)
 pgraft.data_dir = '/var/lib/postgresql/pgraft'
 
-# Consensus settings
-pgraft.election_timeout = 1000
-pgraft.heartbeat_interval = 100
+# Timing configuration (optional)
+pgraft.election_timeout = 1000          # milliseconds
+pgraft.heartbeat_interval = 100         # milliseconds
 ```
 
-**For complete configuration reference, see the [Configuration Guide](https://pgelephant.github.io/pgraft/user-guide/configuration/).**
+**Configuration notes:**
+- `cluster_id` must be identical on all nodes
+- `node_id` must be unique (typically 1, 2, 3, ...)
+- `address` is the IP/hostname other nodes use to reach this node
+- `port` is for Raft traffic (separate from PostgreSQL port 5432)
+- `data_dir` stores Raft state (logs, snapshots)
 
-## Quick Start
+Restart PostgreSQL after configuration.
 
+### 3. Initialize
+
+On each node:
 ```sql
--- Create extension
 CREATE EXTENSION pgraft;
-
--- Initialize node
 SELECT pgraft_init();
+```
 
--- Check if leader (wait 10 seconds for election)
-SELECT pgraft_is_leader();
-
--- If leader, add other nodes
-SELECT pgraft_add_node(2, '127.0.0.1', 7002);
-SELECT pgraft_add_node(3, '127.0.0.1', 7003);
+Wait 10 seconds for leader election, then on the leader:
+```sql
+-- Add other nodes (run on leader only)
+SELECT pgraft_add_node(2, '192.168.1.102', 7002);
+SELECT pgraft_add_node(3, '192.168.1.103', 7003);
 
 -- Verify cluster
 SELECT * FROM pgraft_get_cluster_status();
 ```
 
-**For complete setup instructions, see the [Quick Start Guide](https://pgelephant.github.io/pgraft/getting-started/quick-start/).**
+---
 
-## SQL Functions
+## Usage
 
-**Core functions:**
-
+### Check Cluster Status
 ```sql
--- Initialize and manage cluster
-pgraft_init() → boolean
-pgraft_add_node(node_id int, address text, port int) → boolean
-pgraft_remove_node(node_id int) → boolean
+-- Am I the leader?
+SELECT pgraft_is_leader();
 
--- Query cluster state
-pgraft_get_cluster_status() → TABLE(...)
-pgraft_get_nodes() → TABLE(node_id, address, port, is_leader)
-pgraft_is_leader() → boolean
-pgraft_get_leader() → bigint
+-- Who is the leader?
+SELECT pgraft_get_leader();
 
--- Log operations
-pgraft_replicate_entry(data text) → boolean
-pgraft_log_get_stats() → TABLE(log_size, last_index, commit_index, last_applied)
-
--- Monitoring
-pgraft_get_worker_state() → text
-pgraft_set_debug(enabled boolean) → boolean
+-- Full cluster status
+SELECT * FROM pgraft_get_cluster_status();
 ```
 
-**For complete SQL function reference, see the [SQL Functions Guide](https://pgelephant.github.io/pgraft/user-guide/sql-functions/).**
+### Manage Nodes
+```sql
+-- Add node (leader only)
+SELECT pgraft_add_node(node_id, 'address', port);
 
-## How It Works
+-- Remove node (leader only)
+SELECT pgraft_remove_node(node_id);
 
-```
-PostgreSQL Background Worker (C)
-    ↓ Every 100ms
-Raft Engine (Go/etcd-io/raft)
-    ↓
-Persist → Replicate → Apply → Advance
-```
-
-**Components:**
-- **C Layer**: PostgreSQL integration, SQL functions
-- **Go Layer**: Raft consensus engine (etcd-io/raft)
-- **Storage**: Persistent state on disk
-- **Network**: TCP server for inter-node communication
-
-**For detailed architecture, see the [Architecture Guide](https://pgelephant.github.io/pgraft/concepts/architecture/).**
-
-## Split-Brain Protection
-
-pgraft provides **100% split-brain protection** through Raft consensus:
-
-- **Quorum Requirement**: Leader needs majority votes (N/2 + 1)
-- **Term Monotonicity**: Higher term always wins
-- **Single Leader Per Term**: Mathematical guarantee
-
-**For a 3-node cluster:**
-- Minimum 2 votes required for election
-- Network partition: Only majority side can elect leader
-- Impossible to have 2 leaders in same term
-
-**Learn more: [Split-Brain Protection Guide](https://pgelephant.github.io/pgraft/concepts/split-brain/)**
-
-## Examples
-
-### Three-Node Cluster
-
-Configure each node with unique `node_id`:
-
-```ini
-shared_preload_libraries = 'pgraft'
-pgraft.cluster_id = 'prod-cluster'
-pgraft.node_id = 1  # 2, 3 for other nodes
-pgraft.address = '127.0.0.1'
-pgraft.port = 7001  # 7002, 7003 for other nodes
+-- List all nodes
+SELECT * FROM pgraft_get_nodes();
 ```
 
-Then initialize:
-
-```bash
-# On each node
-psql -c "CREATE EXTENSION pgraft; SELECT pgraft_init();"
-
-# On leader (after 10 seconds)
-psql -c "SELECT pgraft_add_node(2, '127.0.0.1', 7002);"
-psql -c "SELECT pgraft_add_node(3, '127.0.0.1', 7003);"
-```
-
-**For complete examples and test harness, see the [Tutorial](https://pgelephant.github.io/pgraft/user-guide/tutorial/).**
-
-## Monitoring
-
-Quick health check:
-
+### Monitor Health
 ```sql
 SELECT 
     pgraft_is_leader() as is_leader,
@@ -222,86 +135,260 @@ SELECT
     pgraft_get_worker_state() as worker;
 ```
 
-**For comprehensive monitoring guide, see [Monitoring](https://pgelephant.github.io/pgraft/operations/monitoring/).**
-
-## Troubleshooting
-
-**Common issues:**
-
-- **Worker not running**: Check `shared_preload_libraries` includes 'pgraft'
-- **Cannot add node**: Must run on leader node
-- **No leader elected**: Wait 10 seconds, check network connectivity
-
-**For complete troubleshooting guide, see [Troubleshooting](https://pgelephant.github.io/pgraft/operations/troubleshooting/).**
-
-## Development
-
-Build and test:
-
-```bash
-# Build
-make clean && make
-
-# Test
-cd examples
-./run.sh --destroy && ./run.sh --init
-```
-
-**For development guide, see [Development](https://pgelephant.github.io/pgraft/development/).**
-
-## Performance
-
-- **Tick Interval**: 100ms (worker-driven)
-- **Election Timeout**: 1000ms (default, configurable)
-- **Heartbeat**: 100ms (default, configurable)
-- **Memory**: ~50MB per node
-- **CPU**: <1% idle, <5% during elections
-
-## Architecture
-
-pgraft uses a worker-driven architecture where a PostgreSQL background worker drives the Raft consensus engine implemented in Go using etcd-io/raft.
-
-**For detailed architecture information, see the [Architecture Guide](https://pgelephant.github.io/pgraft/concepts/architecture/).**
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Documentation
-
-**Complete documentation is available at: https://pgelephant.github.io/pgraft/**
-
-### Documentation Sections
-
-- **[Getting Started](https://pgelephant.github.io/pgraft/getting-started/)** - Installation and quick start
-- **[User Guide](https://pgelephant.github.io/pgraft/user-guide/)** - Complete tutorial and configuration
-- **[Core Concepts](https://pgelephant.github.io/pgraft/concepts/)** - Architecture and algorithms
-- **[Operations](https://pgelephant.github.io/pgraft/operations/)** - Monitoring and best practices
-- **[Development](https://pgelephant.github.io/pgraft/development/)** - Building and contributing
-
-## Community and Support
-
-- **Documentation**: [https://pgelephant.github.io/pgraft/](https://pgelephant.github.io/pgraft/)
-- **Issues**: [GitHub Issues](https://github.com/pgelephant/pgraft/issues)
-- **Contributing**: [CONTRIBUTING.md](CONTRIBUTING.md)
-- **License**: [MIT License](LICENSE)
-
-## Project Status
-
-**Status**: Production Ready  
-**Version**: 1.0.0  
-**Standards**: 100% PostgreSQL C Compliant  
-**Quality**: 0 compilation errors/warnings
-
-## Related Projects
-
-- **[etcd-io/raft](https://github.com/etcd-io/raft)** - Raft consensus implementation used by pgraft
-- **[PostgreSQL](https://www.postgresql.org/)** - The world's most advanced open source database
-
-## SEO/Discoverability keywords
-
-PostgreSQL Raft, Postgres leader election, PostgreSQL automatic failover, PostgreSQL high availability, PostgreSQL clustering, Raft log replication, split‑brain prevention, Postgres background worker consensus, deterministic failover, HA Postgres on Kubernetes, distributed consensus for PostgreSQL, PostgreSQL Raft extension
+📖 **[SQL Functions Reference](https://pgelephant.github.io/pgraft/user-guide/sql-functions/)**
 
 ---
 
-Made with care for the PostgreSQL community
+## Architecture
+
+```
+PostgreSQL Process
+├── Background Worker (C)
+│   └── Tick every 100ms
+│       └── Go Raft Engine (etcd-io/raft)
+│           ├── Leader Election
+│           ├── Log Replication
+│           └── Persistent State
+└── SQL Functions (C)
+    └── Cluster Management API
+```
+
+**Components:**
+- **C Layer** — PostgreSQL integration, SQL functions, background worker
+- **Go Layer** — Raft consensus engine (etcd-io/raft library)
+- **Storage** — Persistent logs, snapshots, HardState on disk
+- **Network** — TCP server for inter-node Raft communication
+
+📐 **[Architecture Guide](https://pgelephant.github.io/pgraft/concepts/architecture/)**
+
+---
+
+## Configuration Examples
+
+### 3-Node Local Cluster (Testing)
+
+**Node 1** (`postgresql.conf`):
+```ini
+port = 5432
+shared_preload_libraries = 'pgraft'
+pgraft.cluster_id = 'test-cluster'
+pgraft.node_id = 1
+pgraft.address = '127.0.0.1'
+pgraft.port = 7001
+pgraft.data_dir = '/tmp/pgraft/node1'
+```
+
+**Node 2** (`postgresql.conf`):
+```ini
+port = 5433
+shared_preload_libraries = 'pgraft'
+pgraft.cluster_id = 'test-cluster'
+pgraft.node_id = 2
+pgraft.address = '127.0.0.1'
+pgraft.port = 7002
+pgraft.data_dir = '/tmp/pgraft/node2'
+```
+
+**Node 3** (`postgresql.conf`):
+```ini
+port = 5434
+shared_preload_libraries = 'pgraft'
+pgraft.cluster_id = 'test-cluster'
+pgraft.node_id = 3
+pgraft.address = '127.0.0.1'
+pgraft.port = 7003
+pgraft.data_dir = '/tmp/pgraft/node3'
+```
+
+### 3-Node Production Cluster
+
+**Node 1** (`postgresql.conf`):
+```ini
+shared_preload_libraries = 'pgraft'
+pgraft.cluster_id = 'prod-cluster'
+pgraft.node_id = 1
+pgraft.address = '10.0.1.11'
+pgraft.port = 7001
+pgraft.data_dir = '/var/lib/postgresql/pgraft'
+pgraft.election_timeout = 1000
+pgraft.heartbeat_interval = 100
+```
+
+**Node 2** (`postgresql.conf`):
+```ini
+shared_preload_libraries = 'pgraft'
+pgraft.cluster_id = 'prod-cluster'
+pgraft.node_id = 2
+pgraft.address = '10.0.1.12'
+pgraft.port = 7002
+pgraft.data_dir = '/var/lib/postgresql/pgraft'
+pgraft.election_timeout = 1000
+pgraft.heartbeat_interval = 100
+```
+
+**Node 3** (`postgresql.conf`):
+```ini
+shared_preload_libraries = 'pgraft'
+pgraft.cluster_id = 'prod-cluster'
+pgraft.node_id = 3
+pgraft.address = '10.0.1.13'
+pgraft.port = 7003
+pgraft.data_dir = '/var/lib/postgresql/pgraft'
+pgraft.election_timeout = 1000
+pgraft.heartbeat_interval = 100
+```
+
+**Setup:**
+```bash
+# On each node
+psql -c "CREATE EXTENSION pgraft; SELECT pgraft_init();"
+
+# Wait 10 seconds, then on leader (check with: SELECT pgraft_is_leader();)
+psql -c "SELECT pgraft_add_node(2, '10.0.1.12', 7002);"
+psql -c "SELECT pgraft_add_node(3, '10.0.1.13', 7003);"
+
+# Verify
+psql -c "SELECT * FROM pgraft_get_cluster_status();"
+```
+
+🔧 **[Configuration Guide](https://pgelephant.github.io/pgraft/user-guide/configuration/)**
+
+---
+
+## Documentation
+
+**Complete documentation:** [https://pgelephant.github.io/pgraft/](https://pgelephant.github.io/pgraft/)
+
+- **[Quick Start](https://pgelephant.github.io/pgraft/getting-started/quick-start/)** — Get running in 5 minutes
+- **[Installation](https://pgelephant.github.io/pgraft/getting-started/installation/)** — Detailed install guide
+- **[Configuration](https://pgelephant.github.io/pgraft/user-guide/configuration/)** — All GUC parameters
+- **[SQL Functions](https://pgelephant.github.io/pgraft/user-guide/sql-functions/)** — Complete API reference
+- **[Architecture](https://pgelephant.github.io/pgraft/concepts/architecture/)** — How pgraft works
+- **[Split-Brain Protection](https://pgelephant.github.io/pgraft/concepts/split-brain/)** — Raft consensus explained
+- **[Monitoring](https://pgelephant.github.io/pgraft/operations/monitoring/)** — Health checks and metrics
+- **[Best Practices](https://pgelephant.github.io/pgraft/operations/best-practices/)** — Production deployment
+- **[Troubleshooting](https://pgelephant.github.io/pgraft/operations/troubleshooting/)** — Common issues
+
+---
+
+## Building from Source
+
+### Prerequisites
+```bash
+# Ubuntu/Debian
+sudo apt install build-essential postgresql-server-dev-17 golang-go libjson-c-dev pkg-config
+
+# RHEL/Rocky/AlmaLinux
+sudo dnf install gcc make postgresql17-devel golang json-c-devel pkg-config
+
+# macOS
+brew install postgresql@17 go json-c
+```
+
+### Build
+```bash
+git clone https://github.com/pgelephant/pgraft.git
+cd pgraft
+make
+sudo make install
+```
+
+### Test
+```bash
+# Run test cluster
+cd examples
+./pgraft_cluster.py --init
+
+# Verify
+psql -p 5432 -c "SELECT * FROM pgraft_get_cluster_status();"
+```
+
+🛠️ **[Development Guide](https://pgelephant.github.io/pgraft/development/)**
+
+---
+
+## Performance
+
+- **Tick Interval:** 100ms (background worker)
+- **Election Timeout:** 1000ms (default, configurable)
+- **Heartbeat Interval:** 100ms (default, configurable)
+- **Memory:** ~50MB per node
+- **CPU:** <1% idle, <5% during elections
+- **Network:** ~1KB/s per node (heartbeats)
+
+---
+
+## Troubleshooting
+
+### Worker Not Running
+```sql
+-- Check if pgraft is loaded
+SHOW shared_preload_libraries;  -- Must include 'pgraft'
+
+-- Check worker status
+SELECT pgraft_get_worker_state();
+```
+
+### No Leader Elected
+```bash
+# Wait 10 seconds after init
+sleep 10
+
+# Check leader status
+psql -c "SELECT pgraft_get_leader();"
+
+# Check logs
+tail -f /var/log/postgresql/postgresql-*.log | grep pgraft
+```
+
+### Cannot Add Node
+```sql
+-- Must run on leader
+SELECT pgraft_is_leader();  -- Should return true
+
+-- Check configuration matches
+SHOW pgraft.cluster_id;
+SHOW pgraft.node_id;
+```
+
+⚠️ **[Full Troubleshooting Guide](https://pgelephant.github.io/pgraft/operations/troubleshooting/)**
+
+---
+
+## Contributing
+
+We welcome contributions! See **[CONTRIBUTING.md](CONTRIBUTING.md)** for guidelines.
+
+**Quick links:**
+- [Report a bug](https://github.com/pgelephant/pgraft/issues/new?labels=bug)
+- [Request a feature](https://github.com/pgelephant/pgraft/issues/new?labels=enhancement)
+- [Ask a question](https://github.com/pgelephant/pgraft/discussions)
+
+---
+
+## License
+
+MIT License — See [LICENSE](LICENSE) file for details.
+
+---
+
+## Project Status
+
+✅ **Production Ready**
+
+- **Version:** 1.0.0
+- **Standards:** 100% PostgreSQL C compliant
+- **Quality:** 0 compilation errors/warnings
+- **Testing:** Comprehensive test suite
+- **Documentation:** Complete user and developer guides
+
+---
+
+## Related Projects
+
+- [etcd-io/raft](https://github.com/etcd-io/raft) — Raft consensus implementation
+- [PostgreSQL](https://www.postgresql.org/) — World's most advanced open source database
+
+---
+
+**Made with ❤️ for the PostgreSQL community**
