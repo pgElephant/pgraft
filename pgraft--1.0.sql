@@ -93,6 +93,11 @@ RETURNS TABLE(
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_nodes_table';
 
+-- Get nodes directly from Raft cluster (works on replicas)
+CREATE OR REPLACE FUNCTION pgraft_get_nodes_from_raft()
+RETURNS text
+LANGUAGE C
+AS 'pgraft', 'pgraft_get_nodes_from_raft';
 
 -- Check if current node is leader
 CREATE OR REPLACE FUNCTION pgraft_is_leader()
@@ -202,6 +207,19 @@ SELECT
     CASE WHEN is_leader THEN 'leader' ELSE 'follower' END as "status"
 FROM pgraft_get_nodes()
 ORDER BY node_id;
+
+-- Enhanced member_list view that works on replicas by querying Raft directly
+CREATE OR REPLACE VIEW pgraft.member_list_all AS
+SELECT 
+    (node->>'id')::text as "memberID",
+    (node->>'address')::text as "peerURLs",
+    (node->>'address')::text as "clientURLs",
+    CASE 
+        WHEN pgraft_is_leader() THEN 'leader'
+        ELSE 'follower'
+    END as "status"
+FROM json_array_elements(pgraft_get_nodes_from_raft()::json) AS node
+ORDER BY (node->>'id')::int;
 
 -- View that matches 'etcdctl endpoint status' output format
 CREATE OR REPLACE VIEW pgraft.endpoint_status AS
@@ -334,6 +352,7 @@ WHERE pgraft_is_leader();
 
 -- Grant permissions for all views
 GRANT SELECT ON pgraft.member_list TO PUBLIC;
+GRANT SELECT ON pgraft.member_list_all TO PUBLIC;
 GRANT SELECT ON pgraft.endpoint_status TO PUBLIC;
 GRANT SELECT ON pgraft.endpoint_health TO PUBLIC;
 GRANT SELECT ON pgraft.cluster_health TO PUBLIC;

@@ -54,6 +54,9 @@ PG_FUNCTION_INFO_V1(pgraft_log_get_replication_status_table);
 PG_FUNCTION_INFO_V1(pgraft_log_sync_with_leader_sql);
 PG_FUNCTION_INFO_V1(pgraft_replicate_entry_func);
 
+/* New function to get nodes from Go Raft layer (works on replicas) */
+PG_FUNCTION_INFO_V1(pgraft_get_nodes_from_raft);
+
 
 
 /*
@@ -966,3 +969,40 @@ pgraft_replicate_entry_func(PG_FUNCTION_ARGS)
 }
 
 /* Network worker functions removed - handled automatically by background worker */
+
+/*
+ * Get nodes directly from Go Raft layer
+ * This function works on replicas because it queries the Raft cluster directly
+ * instead of reading from PostgreSQL shared memory
+ */
+Datum
+pgraft_get_nodes_from_raft(PG_FUNCTION_ARGS)
+{
+	char *result;
+	text *result_text;
+	pgraft_go_get_nodes_func get_nodes_func;
+	
+	/* Get the function pointer for pgraft_go_get_nodes */
+	get_nodes_func = pgraft_go_get_get_nodes_func();
+	if (get_nodes_func == NULL)
+	{
+		elog(DEBUG1, "pgraft_go_get_nodes function not available");
+		/* Return empty JSON array */
+		PG_RETURN_TEXT_P(cstring_to_text("[]"));
+	}
+	
+	/* Call Go function to get nodes from Raft cluster state */
+	result = get_nodes_func();
+	
+	if (result == NULL)
+	{
+		elog(DEBUG1, "pgraft_go_get_nodes returned NULL");
+		/* Return empty JSON array */
+		PG_RETURN_TEXT_P(cstring_to_text("[]"));
+	}
+	
+	/* Convert C string to PostgreSQL text */
+	result_text = cstring_to_text(result);
+	
+	PG_RETURN_TEXT_P(result_text);
+}
