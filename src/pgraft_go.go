@@ -527,6 +527,11 @@ var (
 	// Cluster state
 	clusterState ClusterState
 
+	// Initial cluster configuration (all members from initial_cluster setting)
+	// This is populated during initialization and never changes
+	initialClusterMembers map[string]string // map[name]address
+	initialClusterMutex   sync.RWMutex
+
 	// Error tracking
 	errorCount int64
 	lastError  time.Time
@@ -720,21 +725,31 @@ func pgraft_go_get_node_id() C.int64_t {
 
 //export pgraft_go_get_nodes
 func pgraft_go_get_nodes() *C.char {
-	// Read from clusterState.Nodes which is populated by the Raft processing loop
-	// Use nodesMutex for thread safety since clusterState doesn't have its own mutex
-	nodesMutex.RLock()
-	defer nodesMutex.RUnlock()
+	// Read from initialClusterMembers which contains ALL nodes from initial_cluster config
+	// This works on both leader and followers, unlike clusterState.Nodes which only
+	// contains active nodes visible to the current node
+	initialClusterMutex.RLock()
+	defer initialClusterMutex.RUnlock()
 
-	logInfo("pgraft_go_get_nodes called - clusterState.Nodes size: %d", len(clusterState.Nodes))
+	if initialClusterMembers == nil || len(initialClusterMembers) == 0 {
+		logInfo("pgraft_go_get_nodes called but initialClusterMembers is empty")
+		return C.CString("[]")
+	}
+
+	logInfo("pgraft_go_get_nodes called - initialClusterMembers size: %d", len(initialClusterMembers))
 
 	nodesList := make([]map[string]interface{}, 0)
-	for nodeID, address := range clusterState.Nodes {
-		logInfo("adding node to list: id=%d, address=%s", nodeID, address)
+	// Convert cluster members (name->address) to node list with IDs
+	nodeID := uint64(1)
+	for memberName, address := range initialClusterMembers {
+		logInfo("adding node to list: name=%s, id=%d, address=%s", memberName, nodeID, address)
 		nodeInfo := map[string]interface{}{
 			"id":      nodeID,
+			"name":    memberName,
 			"address": address,
 		}
 		nodesList = append(nodesList, nodeInfo)
+		nodeID++
 	}
 
 	jsonData, err := json.Marshal(nodesList)
@@ -846,6 +861,12 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	}
 
 	logInfo("==== LOADED %d cluster members from parsed configuration ====", len(clusterMembers))
+
+	// Store initial cluster members globally so they're accessible from all nodes
+	initialClusterMutex.Lock()
+	initialClusterMembers = clusterMembers
+	initialClusterMutex.Unlock()
+	logInfo("Stored %d initial cluster members globally", len(initialClusterMembers))
 
 	raftMutex.Lock()
 	defer raftMutex.Unlock()
