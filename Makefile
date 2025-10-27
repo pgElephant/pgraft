@@ -49,19 +49,32 @@ else
     SHLIB_LINK += -Wl,-rpath,'$$ORIGIN'
 endif
 
-# Go Raft library (platform-specific extension)
-ifeq ($(shell uname -s),Darwin)
+# Platform detection
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+
+# Go Raft library (platform-specific extension and flags)
+ifeq ($(UNAME_S),Darwin)
     GO_RAFT_LIB = src/pgraft_go.dylib
     GO_RAFT_EXT = dylib
+    # macOS: Use proper install_name for dylib
+    GO_LDFLAGS = '-w -s -extldflags "-install_name @rpath/pgraft_go.dylib"'
+else ifeq ($(UNAME_S),Linux)
+    GO_RAFT_LIB = src/pgraft_go.so
+    GO_RAFT_EXT = so
+    # Linux: Set soname for proper library loading
+    GO_LDFLAGS = '-w -s -extldflags "-Wl,-soname,pgraft_go.so"'
 else
     GO_RAFT_LIB = src/pgraft_go.so
     GO_RAFT_EXT = so
+    GO_LDFLAGS = '-w -s'
 endif
 
-# Build Go Raft library
+# Build Go Raft library with platform-specific flags
 $(GO_RAFT_LIB): src/pgraft_go.go src/go.mod
 	cd src && go mod tidy
-	cd src && go build -buildmode=c-shared -o pgraft_go.$(GO_RAFT_EXT) pgraft_go.go
+	cd src && CGO_ENABLED=1 CGO_CFLAGS="-O2 -g -fPIC" CGO_LDFLAGS="-shared -fPIC" \
+		go build -buildmode=c-shared -trimpath -o pgraft_go.$(GO_RAFT_EXT) pgraft_go.go
 
 # Dependencies
 $(OBJS): $(GO_RAFT_LIB)

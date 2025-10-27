@@ -29,7 +29,7 @@ jobs:
       - name: Setup build environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential devscripts debhelper golang-go
+          sudo apt-get install -y build-essential devscripts debhelper
       
       - name: Install Go 1.21
         uses: actions/setup-go@v5
