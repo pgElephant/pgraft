@@ -86,7 +86,7 @@ pgraft_go_load_library(void)
 		return 0;
 	}
 
-	/* Determine library path */
+	/* Determine library path with multiple fallbacks for cross-platform compatibility */
 	lib_path_to_load = go_library_path;
 	if (lib_path_to_load == NULL || strlen(lib_path_to_load) == 0)
 	{
@@ -97,11 +97,50 @@ pgraft_go_load_library(void)
 		elog(LOG, "pgraft: pgraft.go_library_path GUC is empty, using default path: %s", lib_path_to_load);
 	}
 
-	/* Verify library exists before loading */
+	/* Verify library exists, with fallback search paths */
 	if (access(lib_path_to_load, R_OK) != 0)
 	{
-		elog(ERROR, "pgraft: go library does not exist or is not readable: %s", lib_path_to_load);
-		return -1;
+		/* Try alternative paths for different platforms */
+		static char alt_paths[5][MAXPGPATH];
+		int alt_count = 0;
+		bool found = false;
+		int i;
+		
+		/* Path 1: Current directory (for development) */
+		snprintf(alt_paths[alt_count++], MAXPGPATH, "./src/%s", GO_LIB_NAME);
+		
+		/* Path 2: PostgreSQL lib dir */
+		snprintf(alt_paths[alt_count++], MAXPGPATH, "%s/%s", PKGLIBDIR, GO_LIB_NAME);
+		
+		/* Path 3: /usr/lib/postgresql/XX/lib (Debian/Ubuntu) */
+		snprintf(alt_paths[alt_count++], MAXPGPATH, "/usr/lib/postgresql/%d/lib/%s", 
+				 PG_VERSION_NUM / 10000, GO_LIB_NAME);
+		
+		/* Path 4: /usr/local/lib/postgresql (macOS/FreeBSD) */
+		snprintf(alt_paths[alt_count++], MAXPGPATH, "/usr/local/lib/postgresql/%s", GO_LIB_NAME);
+		
+		/* Path 5: /usr/pgsql-XX/lib (RHEL/Rocky) */
+		snprintf(alt_paths[alt_count++], MAXPGPATH, "/usr/pgsql-%d/lib/%s",
+				 PG_VERSION_NUM / 10000, GO_LIB_NAME);
+		
+		/* Try each alternative path */
+		for (i = 0; i < alt_count; i++)
+		{
+			if (access(alt_paths[i], R_OK) == 0)
+			{
+				lib_path_to_load = alt_paths[i];
+				found = true;
+				elog(LOG, "pgraft: found Go library at alternative path: %s", lib_path_to_load);
+				break;
+			}
+		}
+		
+		if (!found)
+		{
+			elog(ERROR, "pgraft: go library does not exist or is not readable: %s (tried %d alternative paths)", 
+				 lib_path_to_load, alt_count);
+			return -1;
+		}
 	}
 
 		elog(LOG, "pgraft: attempting to load Go library from %s", lib_path_to_load);

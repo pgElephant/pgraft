@@ -55,7 +55,34 @@ class PgraftCluster:
         # Build initial_cluster string
         initial_cluster = ",".join([f"{node['name']}=http://pgraft-{node['name']}:{node['raft_port']}" for node in nodes])
         
-        # Start PRIMARY first
+        # Generate pgraft configuration files for each node
+        self.log("Generating pgraft configuration files...")
+        for node in nodes:
+            config_content = f"""
+# PostgreSQL Replication Settings
+wal_level = replica
+max_wal_senders = 3
+max_replication_slots = 3
+hot_standby = on
+
+# pgraft Extension Configuration
+shared_preload_libraries = 'pgraft'
+pgraft.name = '{node['name']}'
+pgraft.data_dir = '/var/lib/postgresql/pgraft-data'
+pgraft.listen_peer_urls = 'http://0.0.0.0:{node['raft_port']}'
+pgraft.listen_client_urls = 'http://0.0.0.0:{node['metrics_port']}'
+pgraft.initial_advertise_peer_urls = 'http://pgraft-{node['name']}:{node['raft_port']}'
+pgraft.advertise_client_urls = 'http://pgraft-{node['name']}:{node['metrics_port']}'
+pgraft.initial_cluster = '{initial_cluster}'
+pgraft.initial_cluster_state = 'new'
+pgraft.initial_cluster_token = 'pgraft-cluster'
+"""
+            config_file = f"postgresql.conf.{node['name']}"
+            with open(config_file, 'w') as f:
+                f.write(config_content.strip() + '\n')
+            self.log(f"  ✓ Created {config_file}")
+        
+        # Start PRIMARY first WITH pgraft config
         primary = nodes[0]
         self.log(f"Starting PRIMARY ({primary['name']} on port {primary['pg_port']})...")
         self.run_cmd(f"""
@@ -73,14 +100,11 @@ docker run -d \
         """)
         time.sleep(5)
         
-        # Configure PRIMARY for replication (WITHOUT pgraft yet)
-        self.log("Configuring PRIMARY for streaming replication...")
-        
-        # Add replication settings only (no pgraft yet)
-        self.run_cmd(f"docker exec pgraft-{primary['name']} sh -c \"echo 'wal_level = replica' >> /var/lib/postgresql/data/postgresql.conf\"", check=False)
-        self.run_cmd(f"docker exec pgraft-{primary['name']} sh -c \"echo 'max_wal_senders = 3' >> /var/lib/postgresql/data/postgresql.conf\"", check=False)
-        self.run_cmd(f"docker exec pgraft-{primary['name']} sh -c \"echo 'max_replication_slots = 3' >> /var/lib/postgresql/data/postgresql.conf\"", check=False)
-        self.run_cmd(f"docker exec pgraft-{primary['name']} sh -c \"echo 'hot_standby = on' >> /var/lib/postgresql/data/postgresql.conf\"", check=False)
+        # Copy pgraft configuration to primary
+        self.log("Configuring PRIMARY with pgraft...")
+        config_file = f"postgresql.conf.{primary['name']}"
+        self.run_cmd(f"docker cp {config_file} pgraft-{primary['name']}:/tmp/pgraft.conf", check=False)
+        self.run_cmd(f"docker exec pgraft-{primary['name']} sh -c \"cat /tmp/pgraft.conf >> /var/lib/postgresql/data/postgresql.conf\"", check=False)
         
         # Restart primary to apply settings
         self.run_cmd(f"docker restart pgraft-{primary['name']}")
@@ -121,37 +145,25 @@ docker run -d \
             # Fix data directory permissions (required by PostgreSQL)
             self.run_cmd(f"docker exec pgraft-{node['name']} chmod 700 /var/lib/postgresql/data", check=False)
             
-            # Start PostgreSQL on replica as standby (without pgraft config yet)
+            # Update pgraft config with replica-specific settings
+            # (pg_basebackup copied primary's config, we need to update pgraft.name and ports)
+            self.log(f"Updating pgraft configuration for {node['name']}...")
+            self.run_cmd(f"""docker exec pgraft-{node['name']} sh -c "
+sed -i \"s/pgraft.name = 'primary'/pgraft.name = '{node['name']}'/\" /var/lib/postgresql/data/postgresql.conf &&
+sed -i 's/listen_peer_urls = .*/listen_peer_urls = '\\''http:\\/\\/0.0.0.0:{node['raft_port']}'\\''/' /var/lib/postgresql/data/postgresql.conf &&
+sed -i 's/listen_client_urls = .*/listen_client_urls = '\\''http:\\/\\/0.0.0.0:{node['metrics_port']}'\\''/' /var/lib/postgresql/data/postgresql.conf &&
+sed -i 's/initial_advertise_peer_urls = .*/initial_advertise_peer_urls = '\\''http:\\/\\/pgraft-{node['name']}:{node['raft_port']}'\\''/' /var/lib/postgresql/data/postgresql.conf &&
+sed -i 's/advertise_client_urls = .*/advertise_client_urls = '\\''http:\\/\\/pgraft-{node['name']}:{node['metrics_port']}'\\''/' /var/lib/postgresql/data/postgresql.conf
+"
+            """, check=False)
+            
+            # Start PostgreSQL on replica as standby
             self.log(f"Starting {node['name']} as standby...")
             self.run_cmd(f"docker exec -d pgraft-{node['name']} su -c 'postgres -D /var/lib/postgresql/data' postgres", check=False)
             time.sleep(5)
         
-        self.log("Waiting for all nodes to start...")
-        time.sleep(10)
-        
-        # Now add pgraft configuration to ALL nodes
-        self.log("Configuring pgraft on all nodes...")
-        for node in nodes:
-            # Copy pgraft config file for this specific node
-            config_file = f"postgresql.conf.{node['name']}"
-            self.run_cmd(f"docker cp {config_file} pgraft-{node['name']}:/tmp/pgraft.conf", check=False)
-            self.run_cmd(f"docker exec pgraft-{node['name']} sh -c \"cat /tmp/pgraft.conf >> /var/lib/postgresql/data/postgresql.conf\"", check=False)
-        
-        # Restart all nodes to load pgraft
-        self.log("Restarting all nodes to load pgraft...")
-        self.run_cmd(f"docker restart pgraft-{primary['name']}")
-        time.sleep(10)
-        
-        for node in nodes[1:]:
-            self.run_cmd(f"docker restart pgraft-{node['name']}")
-            time.sleep(3)
-            # Restart PostgreSQL on replica (custom entrypoint)
-            self.run_cmd(f"docker exec pgraft-{node['name']} chmod 700 /var/lib/postgresql/data", check=False)
-            self.run_cmd(f"docker exec -d pgraft-{node['name']} su -c 'postgres -D /var/lib/postgresql/data' postgres", check=False)
-            time.sleep(5)
-        
-        self.log("Waiting for all nodes to restart with pgraft...")
-        time.sleep(10)
+        self.log("Waiting for all nodes to start with pgraft...")
+        time.sleep(15)
         
         # Install pgraft extension on PRIMARY only (replicas get it from pg_basebackup)
         self.log(f"Installing pgraft extension on primary...")
