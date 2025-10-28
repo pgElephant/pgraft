@@ -2,14 +2,15 @@ name: Deploy Documentation
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - 'docs-requirements.txt'
-      - '.github/workflows/docs.yml'
+  # Automatic triggers disabled - run manually only
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'docs/**'
+  #     - 'mkdocs.yml'
+  #     - 'docs-requirements.txt'
+  #     - '.github/workflows/docs.yml'
 
 permissions:
   contents: write
