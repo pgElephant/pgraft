@@ -246,9 +246,15 @@ jobs:
             build-essential \
             debhelper \
             postgresql-server-dev-${{ matrix.pg_version }} \
-            golang-go \
             libjson-c-dev \
-            pkg-config
+            pkg-config \
+            curl
+          
+          # Install Go 1.21+ (Debian 11 only has Go 1.15, but we need 1.21+)
+          GO_VERSION=1.21.6
+          curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+          export PATH=/usr/local/go/bin:$PATH
+          go version
           
           # Build package (implementation from reusable-build-deb.yml)
           make PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
