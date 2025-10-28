@@ -1,290 +1,563 @@
+# SQL Functions & Tables Reference
 
-
-
-# SQL Functions, Tables & Views Reference (pgraft)
-
-This page documents all SQL functions, tables, and views available in **pgraft**, part of the [pgElephant](https://pgelephant.com) high-availability suite. All APIs are up to date with the latest release and reflect the current extension SQL.
+Complete reference for all SQL functions, tables, and views provided by **pgraft**.
 
 ---
-
 
 ## Core Tables
 
 ### `pgraft.kv`
-Key-value store table (etcd-compatible, Raft-replicated)
+Raft-replicated key-value store (etcd-compatible).
 
-| Column      | Type    | Description                       |
-|------------ |---------|-----------------------------------|
-| key         | text    | Primary key                       |
-| value       | text    | Value for the key                 |
-| version     | bigint  | Version number                    |
-| created_at  | timestamptz | Creation timestamp           |
-| updated_at  | timestamptz | Last update timestamp         |
+| Column      | Type            | Description                |
+|-------------|-----------------|----------------------------|
+| key         | text            | Primary key                |
+| value       | text            | Value for the key          |
+| version     | bigint          | Version number             |
+| created_at  | timestamptz     | Creation timestamp         |
+| updated_at  | timestamptz     | Last update timestamp      |
 
 ### `pgraft.applied_entries`
 Tracks which Raft log entries have been applied to PostgreSQL.
 
-| Column      | Type    | Description                       |
-|------------ |---------|-----------------------------------|
-| raft_index  | bigint  | Raft log index (PK)               |
-| raft_term   | bigint  | Raft term                         |
-| entry_type  | integer | Entry type                        |
-| applied_at  | timestamptz | When applied                  |
+| Column      | Type            | Description                |
+|-------------|-----------------|----------------------------|
+| raft_index  | bigint          | Raft log index (PK)        |
+| raft_term   | bigint          | Raft term                  |
+| entry_type  | integer         | Entry type                 |
+| applied_at  | timestamptz     | When applied               |
 
 ### `pgraft.log_index_mapping`
 Maps Raft log index to PostgreSQL operation for debugging/recovery.
 
-| Column         | Type    | Description                    |
-|--------------- |---------|--------------------------------|
-| raft_index     | bigint  | Raft log index (PK)            |
-| operation_type | text    | Operation type                 |
-| target_table   | text    | Target table                   |
-| operation_data | jsonb   | Operation data                 |
-| applied_at     | timestamptz | When applied               |
+| Column         | Type            | Description             |
+|----------------|-----------------|-------------------------|
+| raft_index     | bigint          | Raft log index (PK)     |
+| operation_type | text            | Operation type          |
+| target_table   | text            | Target table            |
+| operation_data | jsonb           | Operation data          |
+| applied_at     | timestamptz     | When applied            |
 
 ---
 
 ## Cluster Management Functions
 
 ### `pgraft_init()`
-Initialize pgraft on the current node.
+Initialize pgraft using GUC variables from `postgresql.conf`.
 
-**Returns:** `boolean` — `true` if successful.
+```sql
+SELECT pgraft_init();
+```
+
+**Returns:** `boolean` - `true` on success
+
+!!! warning "Deprecated"
+    This function is deprecated. The extension now auto-initializes from `postgresql.conf` settings when loaded via `shared_preload_libraries`.
 
 ---
 
-### `pgraft_add_node(node_id int, address text, port int)`
-Add a node to the cluster (leader only).
+### `pgraft_add_node(node_id integer, address text, port integer)`
+Add a node to the Raft cluster.
+
+```sql
+-- Must be called on the leader
+SELECT pgraft_add_node(2, '192.168.1.102', 7002);
+```
+
+**Parameters:**
+- `node_id` - Unique node identifier
+- `address` - IP address or hostname
+- `port` - Raft communication port
+
+**Returns:** `boolean` - `true` on success
+
+!!! note "Leader Only"
+    This function must be called on the leader node. It automatically replicates to all cluster members.
 
 ---
 
-### `pgraft_remove_node(node_id int)`
-Remove a node from the cluster.
+### `pgraft_remove_node(node_id integer)`
+Remove a node from the Raft cluster.
+
+```sql
+SELECT pgraft_remove_node(3);
+```
+
+**Returns:** `boolean` - `true` on success
+
+!!! warning "Leader Only"
+    Must be called on the leader node.
 
 ---
 
 ### `pgraft_get_cluster_status()`
-Returns a table with cluster status (node_id, current_term, leader_id, state, num_nodes, etc).
+Get comprehensive cluster status information.
+
+```sql
+SELECT * FROM pgraft_get_cluster_status();
+```
+
+**Returns TABLE:**
+
+| Column               | Type    | Description                     |
+|----------------------|---------|--------------------------------|
+| node_id              | integer | Current node's ID              |
+| current_term         | bigint  | Current Raft term              |
+| leader_id            | bigint  | Current leader's ID            |
+| state                | text    | Node state (leader/follower)   |
+| num_nodes            | integer | Number of cluster nodes        |
+| messages_processed   | bigint  | Total messages processed       |
+| heartbeats_sent      | bigint  | Heartbeats sent                |
+| elections_triggered  | bigint  | Elections triggered            |
 
 ---
 
 ### `pgraft_get_nodes()`
-Returns a table of all cluster nodes (node_id, address, port, is_leader).
+Get list of all nodes in the cluster.
+
+```sql
+SELECT * FROM pgraft_get_nodes();
+```
+
+**Returns TABLE:**
+
+| Column     | Type    | Description              |
+|------------|---------|--------------------------|
+| node_id    | integer | Node ID                  |
+| address    | text    | Node address             |
+| port       | integer | Raft communication port  |
+| is_leader  | boolean | Is this node the leader? |
+
+---
+
+### `pgraft_get_nodes_from_raft()`
+Get nodes directly from Raft cluster state (works on replicas).
+
+```sql
+SELECT pgraft_get_nodes_from_raft();
+```
+
+**Returns:** `text` - JSON array of nodes
 
 ---
 
 ### `pgraft_is_leader()`
-Returns `boolean` — true if current node is leader.
+Check if current node is the Raft leader.
+
+```sql
+SELECT pgraft_is_leader();
+```
+
+**Returns:** `boolean` - `true` if leader, `false` otherwise
+
+---
+
+### `pgraft_get_leader()`
+Get the current leader's node ID.
+
+```sql
+SELECT pgraft_get_leader();
+```
+
+**Returns:** `bigint` - Leader node ID (0 if no leader)
+
+---
+
+### `pgraft_get_term()`
+Get the current Raft term.
+
+```sql
+SELECT pgraft_get_term();
+```
+
+**Returns:** `bigint` - Current term number
 
 ---
 
 ### `pgraft_get_worker_state()`
-Returns `text` — background worker state (e.g., "RUNNING").
+Get background worker status information.
+
+```sql
+SELECT pgraft_get_worker_state();
+```
+
+**Returns:** `text` - JSON object with worker state
 
 ---
 
 ### `pgraft_get_version()`
-Returns `text` — extension version.
+Get pgraft extension version.
+
+```sql
+SELECT pgraft_get_version();
+```
+
+**Returns:** `text` - Version string
+
+---
+
+## Diagnostic & Debug Functions
+
+### `pgraft_test()`
+Run internal diagnostic tests.
+
+```sql
+SELECT pgraft_test();
+```
+
+**Returns:** `boolean` - Test result
 
 ---
 
 ### `pgraft_set_debug(enabled boolean)`
 Enable or disable debug logging.
 
----
+```sql
+SELECT pgraft_set_debug(true);
+```
 
-### `pgraft_test()`
-Test function for verifying pgraft is working.
-
----
+**Returns:** `void`
 
 ---
 
 ## Log Replication Functions
 
 ### `pgraft_log_append(term bigint, data text)`
-Append a log entry.
+Append an entry to the Raft log.
+
+```sql
+SELECT pgraft_log_append(1, 'test data');
+```
+
+**Returns:** `bigint` - Log index
 
 ---
 
 ### `pgraft_log_commit(index bigint)`
-Commit a log entry.
+Mark a log entry as committed.
+
+```sql
+SELECT pgraft_log_commit(100);
+```
+
+**Returns:** `boolean`
 
 ---
 
 ### `pgraft_log_apply(index bigint)`
-Apply a log entry to the state machine.
+Apply a committed log entry.
+
+```sql
+SELECT pgraft_log_apply(100);
+```
+
+**Returns:** `boolean`
 
 ---
 
 ### `pgraft_log_get_entry(index bigint)`
-Get a specific log entry (returns text).
+Get a specific log entry.
+
+```sql
+SELECT pgraft_log_get_entry(100);
+```
+
+**Returns:** `text` - JSON object with entry data
 
 ---
 
 ### `pgraft_log_get_stats()`
-Returns table with log statistics (log_size, last_index, commit_index, last_applied, ...).
+Get log replication statistics.
+
+```sql
+SELECT * FROM pgraft_log_get_stats();
+```
+
+**Returns TABLE:**
+
+| Column           | Type   | Description              |
+|------------------|--------|--------------------------|
+| total_entries    | bigint | Total log entries        |
+| committed_index  | bigint | Last committed index     |
+| applied_index    | bigint | Last applied index       |
+| snapshot_index   | bigint | Last snapshot index      |
 
 ---
 
 ### `pgraft_log_get_replication_status()`
-Returns table with replication status for each follower.
+Get replication status for all nodes.
+
+```sql
+SELECT * FROM pgraft_log_get_replication_status();
+```
+
+**Returns TABLE:**
+
+| Column        | Type    | Description                  |
+|---------------|---------|------------------------------|
+| node_id       | integer | Node ID                      |
+| match_index   | bigint  | Highest replicated index     |
+| next_index    | bigint  | Next index to send           |
+| is_active     | boolean | Is node active?              |
 
 ---
 
 ### `pgraft_log_sync_with_leader()`
-Synchronize local log with the leader.
+Synchronize log with leader (follower only).
+
+```sql
+SELECT pgraft_log_sync_with_leader();
+```
+
+**Returns:** `boolean`
 
 ---
 
-### `pgraft_replicate_entry(entry_data text)`
-Replicate an entry through Raft consensus.
-
----
-
----
-
-## Key/Value Store Functions (etcd-compatible)
+## Key-Value Store Functions
 
 ### `pgraft_kv_put(key text, value text)`
-Store a key/value pair. Returns `boolean`.
+Store a key-value pair (Raft-replicated).
+
+```sql
+SELECT pgraft_kv_put('config/setting', 'value123');
+```
+
+**Returns:** `boolean` - `true` on success
+
+!!! note "Leader Only"
+    Must be called on the leader node.
 
 ---
 
 ### `pgraft_kv_get(key text)`
-Retrieve value for a key. Returns `text`.
+Retrieve a value by key.
+
+```sql
+SELECT pgraft_kv_get('config/setting');
+```
+
+**Returns:** `text` - Value or NULL if not found
 
 ---
 
 ### `pgraft_kv_delete(key text)`
-Delete a key. Returns `boolean`.
+Delete a key-value pair (Raft-replicated).
+
+```sql
+SELECT pgraft_kv_delete('config/setting');
+```
+
+**Returns:** `boolean`
+
+!!! note "Leader Only"
+    Must be called on the leader node.
 
 ---
 
 ### `pgraft_kv_exists(key text)`
-Check if a key exists. Returns `boolean`.
+Check if a key exists.
+
+```sql
+SELECT pgraft_kv_exists('config/setting');
+```
+
+**Returns:** `boolean`
 
 ---
 
 ### `pgraft_kv_list_keys()`
-List all keys as a JSON array. Returns `text`.
+List all keys in the store.
+
+```sql
+SELECT pgraft_kv_list_keys();
+```
+
+**Returns:** `SETOF text` - List of keys
 
 ---
 
 ### `pgraft_kv_get_stats()`
-Returns table with key/value store statistics (num_entries, total_operations, puts, gets, deletes, ...).
+Get key-value store statistics.
+
+```sql
+SELECT * FROM pgraft_kv_get_stats();
+```
+
+**Returns TABLE:**
+
+| Column       | Type    | Description           |
+|--------------|---------|----------------------|
+| total_keys   | bigint  | Total keys           |
+| total_size   | bigint  | Total size in bytes  |
 
 ---
 
 ### `pgraft_kv_compact()`
-Remove deleted entries and optimize storage. Returns `boolean`.
+Compact the key-value store.
+
+```sql
+SELECT pgraft_kv_compact();
+```
+
+**Returns:** `boolean`
 
 ---
 
 ### `pgraft_kv_reset()`
-Clear all key/value data (use with caution!). Returns `boolean`.
+Reset/clear the key-value store.
 
----
-
----
-
-## Monitoring & Debugging Functions
-
-### `pgraft_get_queue_status()`
-Returns table with command queue status.
-
----
-
----
-
-## etcd-Compatible Views
-
-
-The following views provide etcd-style cluster and key-value status for compatibility with etcd tools:
-
-- `pgraft.member_list` — etcdctl member list format (shows all cluster members, peer/client URLs, leader/follower status)
-- `pgraft.endpoint_status` — etcdctl endpoint status format (endpoint, isLeader, raftTerm, raftIndex, etc.)
-- `pgraft.endpoint_health` — etcdctl endpoint health format (endpoint, health, took)
-- `pgraft.cluster_health` — etcdctl cluster-health format (member, isLeader, isLearner, health)
-- `pgraft.cluster_info` — etcdctl cluster info format (clusterID, memberCount, leader, raftTerm, raftIndex, raftAppliedIndex)
-- `pgraft.kv_status` — etcdctl key-value status (key, value, version, create_revision, mod_revision)
-- `pgraft.endpoint_hashkv` — etcdctl endpoint hashkv format (endpoint, hash, hash_revision)
-- `pgraft.watch_status` — etcdctl watch status (watcher_id, is_active, watch_count, watch_pending)
-- `pgraft.member_details` — etcdctl member details (ID, Name, PeerURLs, ClientURLs, IsLeader, IsLearner)
-- `pgraft.auth_status` — etcdctl auth status (enabled, revision)
-- `pgraft.alarm_list` — etcdctl alarm list (alarm, memberID)
-- `pgraft.snapshot_status` — etcdctl snapshot status (hash, revision, total_key, total_size, version)
-
-- `pgraft.member_list` — etcdctl member list format
-- `pgraft.endpoint_status` — etcdctl endpoint status format
-- `pgraft.endpoint_health` — etcdctl endpoint health format
-- `pgraft.cluster_health` — etcdctl cluster-health format
-- `pgraft.cluster_info` — etcdctl cluster info format
-- `pgraft.kv_status` — etcdctl key-value status
-- `pgraft.endpoint_hashkv` — etcdctl endpoint hashkv format
-- `pgraft.watch_status` — etcdctl watch status
-- `pgraft.member_details` — etcdctl member details
-- `pgraft.auth_status` — etcdctl auth status
-- `pgraft.alarm_list` — etcdctl alarm list
-- `pgraft.snapshot_status` — etcdctl snapshot status
-
-**Example:**
 ```sql
-SELECT * FROM pgraft.member_list;
-SELECT * FROM pgraft.endpoint_status;
-SELECT * FROM pgraft.kv_status;
+SELECT pgraft_kv_reset();
 ```
 
----
+**Returns:** `boolean`
+
+!!! danger "Destructive Operation"
+    This deletes all key-value data. Use with caution.
 
 ---
 
-## Internal & Advanced Views
+## Internal Functions
 
-- `pgraft_cluster_state` — Core cluster state (reads from shared memory; combines cluster and worker info)
-- `pgraft_worker_status` — Background worker status (worker_state, is_running)
-- `pgraft_cluster_overview` — Cluster overview (worker + node status, leader, term, state, etc.)
-- `pgraft_nodes` — Node information (with cluster state)
-- `pgraft_log_status` — Log replication status (simplified, for quick checks)
-- `pgraft_kv_status` — Key/value store status (num_entries, active_entries, deleted_entries, total_operations, puts, gets, deletes, last_applied_index, status)
+### `pgraft_replicate_entry(entry_data text)`
+Replicate a log entry (internal use).
+
+```sql
+SELECT pgraft_replicate_entry('{"type":"config","data":"..."}');
+```
+
+**Returns:** `boolean`
 
 ---
+
+### `pgraft_kv_put_local(key text, value text)`
+Put key-value locally without replication (internal use).
+
+```sql
+SELECT pgraft_kv_put_local('local/cache', 'value');
+```
+
+**Returns:** `void`
+
+---
+
+### `pgraft_kv_delete_local(key text)`
+Delete key locally without replication (internal use).
+
+```sql
+SELECT pgraft_kv_delete_local('local/cache');
+```
+
+**Returns:** `void`
+
+---
+
+### `pgraft_get_applied_index()`
+Get the last applied log index.
+
+```sql
+SELECT pgraft_get_applied_index();
+```
+
+**Returns:** `bigint`
+
+---
+
+### `pgraft_record_applied_index(index bigint)`
+Record that a log index has been applied.
+
+```sql
+SELECT pgraft_record_applied_index(100);
+```
+
+**Returns:** `void`
+
+---
+
+### `pgraft_get_queue_status()`
+Get message queue status.
+
+```sql
+SELECT * FROM pgraft_get_queue_status();
+```
+
+**Returns TABLE:**
+
+| Column         | Type    | Description              |
+|----------------|---------|--------------------------|
+| pending_msgs   | integer | Pending messages         |
+| processed_msgs | bigint  | Processed messages       |
+| queue_full     | boolean | Is queue full?           |
 
 ---
 
 ## Usage Examples
 
-### Health Check
+### Check Cluster Health
+
 ```sql
-SELECT pgraft_is_leader(), pgraft_get_term(), pgraft_get_leader(), pgraft_get_worker_state();
-SELECT * FROM pgraft_get_cluster_status();
+-- Quick health check
+SELECT 
+    node_id,
+    state,
+    leader_id,
+    num_nodes
+FROM pgraft_get_cluster_status();
+
+-- Verify all nodes are present
 SELECT * FROM pgraft_get_nodes();
 ```
 
-### Key/Value Store
+### Store and Retrieve Data
+
 ```sql
-SELECT pgraft_kv_put('foo', 'bar');
-SELECT pgraft_kv_get('foo');
-SELECT pgraft_kv_delete('foo');
-SELECT * FROM pgraft_kv_status;
+-- On leader: Store configuration
+SELECT pgraft_kv_put('app/config', '{"timeout":30,"retries":3}');
+
+-- On any node: Retrieve configuration
+SELECT pgraft_kv_get('app/config');
 ```
 
-### etcd-Compatible Views
+### Monitor Replication
+
 ```sql
-SELECT * FROM pgraft.member_list;
-SELECT * FROM pgraft.endpoint_status;
-SELECT * FROM pgraft.cluster_health;
+-- Check replication status
+SELECT * FROM pgraft_log_get_replication_status();
+
+-- View log statistics
+SELECT * FROM pgraft_log_get_stats();
 ```
 
-### Add Nodes (Leader Only)
+---
+
+## Function Categories
+
+| Category             | Functions                                                          |
+|----------------------|--------------------------------------------------------------------|
+| Cluster Management   | `pgraft_init`, `pgraft_add_node`, `pgraft_remove_node`           |
+| Status & Monitoring  | `pgraft_get_cluster_status`, `pgraft_get_nodes`, `pgraft_is_leader` |
+| Log Replication      | `pgraft_log_*` functions                                           |
+| Key-Value Store      | `pgraft_kv_*` functions                                            |
+| Diagnostics          | `pgraft_test`, `pgraft_set_debug`, `pgraft_get_queue_status`     |
+
+---
+
+## Best Practices
+
+1. **Leader-Only Operations**: Always check `pgraft_is_leader()` before calling functions that modify cluster state
+2. **Read Operations**: Can be performed on any node (leader or follower)
+3. **Error Handling**: Wrap cluster operations in exception handlers
+4. **Monitoring**: Regularly check `pgraft_get_cluster_status()` and `pgraft_log_get_replication_status()`
+
 ```sql
+-- Example: Safe node addition
 DO $$
 BEGIN
-    IF NOT pgraft_is_leader() THEN
+    IF pgraft_is_leader() THEN
+        PERFORM pgraft_add_node(4, '192.168.1.104', 7004);
+        RAISE NOTICE 'Node added successfully';
+    ELSE
         RAISE EXCEPTION 'Must run on leader node';
     END IF;
-    PERFORM pgraft_add_node(2, '127.0.0.1', 7002);
-    PERFORM pgraft_add_node(3, '127.0.0.1', 7003);
 END $$;
 ```
-

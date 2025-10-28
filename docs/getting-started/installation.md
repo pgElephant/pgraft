@@ -1,7 +1,7 @@
 
-# Installation (pgElephant Suite)
+# Installation
 
-This guide will walk you through installing **pgraft**, part of the unified [pgElephant](https://pgelephant.com) high-availability suite. All steps and troubleshooting are up to date for the latest release.
+This guide will walk you through installing **pgraft**. All steps and troubleshooting are up to date for the latest release.
 
 ## Prerequisites
 

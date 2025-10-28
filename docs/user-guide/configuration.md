@@ -1,7 +1,7 @@
 
-# Configuration (pgElephant Suite)
+# Configuration
 
-This page describes all available configuration parameters for **pgraft**, part of the unified [pgElephant](https://pgelephant.com) high-availability suite. All configuration and monitoring is unified with the rest of the suite.
+This page describes all available configuration parameters for **pgraft**.
 
 ## PostgreSQL Configuration
 

@@ -1,11 +1,11 @@
 
-# User Guide (pgElephant Suite)
+# User Guide
 
-Comprehensive guides for using **pgraft** in production, as part of the unified [pgElephant](https://pgelephant.com) high-availability suite. All documentation and product pages share a consistent, professional template and feature matrix.
+Comprehensive guides for using **pgraft** in production.
 
 ## Overview
 
-This section contains detailed documentation for operating pgraft clusters, from basic configuration to advanced cluster operations. For related products, see [RAM](https://pgelephant.com/ram), [RALE](https://pgelephant.com/rale), and [FauxDB](https://pgelephant.com/fauxdb).
+This section contains detailed documentation for operating pgraft clusters, from basic configuration to advanced cluster operations.
 
 ## Contents
 

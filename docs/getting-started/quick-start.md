@@ -1,7 +1,7 @@
 
-# Quick Start (pgElephant Suite)
+# Quick Start
 
-Get your first **pgraft** cluster up and running in minutes! All steps and health checks are up to date for the latest release and unified with the [pgElephant](https://pgelephant.com) suite.
+Get your first **pgraft** cluster up and running in minutes!
 
 ## Step 1: Configure PostgreSQL
 
@@ -10,24 +10,25 @@ Add these settings to your `postgresql.conf`:
 ```ini
 shared_preload_libraries = 'pgraft'
 
-# Core cluster configuration
-pgraft.cluster_id = 'production-cluster'
-pgraft.node_id = 1
-pgraft.address = '127.0.0.1'
-pgraft.port = 7001
+# Cluster identification and networking
+pgraft.name = 'node1'
+pgraft.listen_address = '0.0.0.0:7001'
+pgraft.initial_cluster = 'node1=127.0.0.1:7001,node2=127.0.0.1:7002,node3=127.0.0.1:7003'
+
+# Storage location
 pgraft.data_dir = '/var/lib/postgresql/pgraft'
 
 # Consensus settings (optional, these are defaults)
 pgraft.election_timeout = 1000        # milliseconds
 pgraft.heartbeat_interval = 100       # milliseconds
 pgraft.snapshot_interval = 10000      # entries
-pgraft.max_log_entries = 1000         # compaction threshold
 ```
 
 !!! tip "Configuration Tips"
-    - `node_id` must be unique for each node (1, 2, 3, ...)
-    - `cluster_id` must be the same for all nodes in the cluster
-    - `port` is for Raft communication (not PostgreSQL port)
+    - `pgraft.name` must be unique for each node and match a name in `initial_cluster`
+    - `pgraft.initial_cluster` must be identical on all nodes
+    - Node IDs are automatically assigned based on position in `initial_cluster`
+    - `listen_address` is for Raft communication (not PostgreSQL port)
 
 ## Step 2: Restart PostgreSQL
 
@@ -36,65 +37,57 @@ pgraft.max_log_entries = 1000         # compaction threshold
 pg_ctl restart -D /path/to/data
 ```
 
-## Step 3: Initialize pgraft
+## Step 3: Create Extension
 
 Connect to PostgreSQL and create the extension:
 
 ```sql
--- Create extension
+-- Create extension (automatically initializes from configuration)
 CREATE EXTENSION pgraft;
-
--- Initialize node
-SELECT pgraft_init();
 ```
 
-??? success "Expected Output"
-    ```
-     pgraft_init 
-    -------------
-     t
-    (1 row)
-    ```
+The extension will automatically initialize using the settings from `postgresql.conf`.
 
 ## Step 4: Set Up Additional Nodes
 
-Repeat steps 1-3 on other nodes with different `node_id` values:
+Repeat steps 1-3 on other nodes with different `pgraft.name` values:
 
 **Node 2** (`postgresql.conf`):
 ```ini
-pgraft.node_id = 2
-pgraft.port = 7002
+pgraft.name = 'node2'
+pgraft.listen_address = '0.0.0.0:7002'
+pgraft.initial_cluster = 'node1=127.0.0.1:7001,node2=127.0.0.1:7002,node3=127.0.0.1:7003'
 ```
 
 **Node 3** (`postgresql.conf`):
 ```ini
-pgraft.node_id = 3
-pgraft.port = 7003
+pgraft.name = 'node3'
+pgraft.listen_address = '0.0.0.0:7003'
+pgraft.initial_cluster = 'node1=127.0.0.1:7001,node2=127.0.0.1:7002,node3=127.0.0.1:7003'
 ```
 
-## Step 5: Add Nodes to Cluster
+!!! important "Initial Cluster Configuration"
+    The `initial_cluster` string must be **identical** on all nodes. This ensures consistent node ID assignment based on the order in the list.
 
-!!! warning "Leader Only"
-    Node addition must be performed **only on the leader node**.
+## Step 5: Verify Cluster Formation
 
-Wait 10 seconds for leader election, then check which node is the leader:
+Wait a few seconds for leader election, then check the cluster status:
 
 ```sql
+-- Check cluster status
+SELECT * FROM pgraft_get_cluster_status();
+
+-- View all nodes (automatically discovered from initial_cluster)
+SELECT * FROM pgraft_get_nodes();
+
 -- Check if current node is leader
 SELECT pgraft_is_leader();
-
--- Get leader ID
-SELECT pgraft_get_leader();
 ```
 
-On the **leader node**, add the other nodes:
+!!! success "Automatic Node Discovery"
+    Nodes are automatically added to the cluster based on the `initial_cluster` configuration. No manual `pgraft_add_node()` calls are needed for initial setup!
 
-```sql
-SELECT pgraft_add_node(2, '127.0.0.1', 7002);
-SELECT pgraft_add_node(3, '127.0.0.1', 7003);
-```
-
-## Step 6: Verify Cluster Status
+## Step 6: Verify Cluster Health
 
 On any node, check the cluster status:
 
