@@ -177,6 +177,15 @@ jobs:
           
           make clean
           make PG_CONFIG=$PG_CONFIG
+          
+          # Organize build artifacts in release folder structure
+          mkdir -p $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            cp *.dylib src/*.dylib $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/ 2>/dev/null || true
+          else
+            cp *.so src/*.so $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/ 2>/dev/null || true
+          fi
+          ls -la $HOME/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/
       
       - name: Run tests
         run: |
@@ -196,12 +205,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pgraft-${{ matrix.platform }}-pg${{ matrix.pg_version }}
-          path: |
-            *.so
-            *.dylib
-            *.control
-            *.sql
+          path: ~/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/*
           retention-days: 30
+          if-no-files-found: warn
 
   package-deb:
     name: Package DEB PG-${{ matrix.pg_version }}
@@ -258,13 +264,21 @@ jobs:
           
           # Build package (implementation from reusable-build-deb.yml)
           make PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
+          
+          # Organize packages in release folder structure
+          mkdir -p $HOME/release/deb/pg${{ matrix.pg_version }}
+          if [ -f ../*.deb ]; then
+            cp ../*.deb $HOME/release/deb/pg${{ matrix.pg_version }}/ || true
+          fi
+          ls -la $HOME/release/deb/pg${{ matrix.pg_version }}/
       
       - name: Upload DEB artifacts
         uses: actions/upload-artifact@v4
         with:
           name: deb-$(echo "${{ matrix.os }}" | sed 's/:/-/g')-pg${{ matrix.pg_version }}
-          path: ../*.deb
+          path: ~/release/deb/pg${{ matrix.pg_version }}/*.deb
           retention-days: 90
+          if-no-files-found: warn
 
   package-rpm:
     name: Package RPM PG-${{ matrix.pg_version }}
@@ -315,15 +329,24 @@ jobs:
           # Build package (implementation from reusable-build-rpm.yml)
           rpmdev-setuptree
           make PG_CONFIG=/usr/pgsql-${{ matrix.pg_version }}/bin/pg_config
+          
+          # Organize packages in release folder structure
+          mkdir -p $HOME/release/rpm/pg${{ matrix.pg_version }}
+          if [ -d ~/rpmbuild/RPMS ]; then
+            find ~/rpmbuild/RPMS -name "*.rpm" -exec cp {} $HOME/release/rpm/pg${{ matrix.pg_version }}/ \;
+          fi
+          if [ -d ~/rpmbuild/SRPMS ]; then
+            find ~/rpmbuild/SRPMS -name "*.rpm" -exec cp {} $HOME/release/rpm/pg${{ matrix.pg_version }}/ \;
+          fi
+          ls -la $HOME/release/rpm/pg${{ matrix.pg_version }}/
       
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rpm-$(echo "${{ matrix.os }}" | sed 's|/|-|g' | sed 's|:|-|g' | sed 's|quay.io-||')-pg${{ matrix.pg_version }}
-          path: |
-            ~/rpmbuild/RPMS/*/*.rpm
-            ~/rpmbuild/SRPMS/*.rpm
+          path: ~/release/rpm/pg${{ matrix.pg_version }}/*.rpm
           retention-days: 90
+          if-no-files-found: warn
 
   test-packages:
     name: Test Packages
