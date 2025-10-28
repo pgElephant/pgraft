@@ -532,13 +532,20 @@ Datum
 pgraft_get_leader(PG_FUNCTION_ARGS)
 {
 	pgraft_cluster_t cluster_state;
-	int64_t leader_id;
+	int64_t leader_id = 0;
+	int32_t term = 0;
+	int64_t node_id = 0;
 	
-	leader_id = -1;
-	
-	if (pgraft_core_get_cluster_state(&cluster_state) == 0)
+	/* Try shared memory first */
+	if (pgraft_core_get_cluster_state(&cluster_state) == 0 && cluster_state.leader_id > 0)
 	{
 		leader_id = cluster_state.leader_id;
+	}
+	/* Fallback to persistence file for replicas */
+	else if (pgraft_read_state_from_file(&leader_id, &term, &node_id) == 0)
+	{
+		/* Successfully read from file */
+		elog(DEBUG1, "pgraft_get_leader: read leader_id=%lld from persistence file", (long long)leader_id);
 	}
 	
 	PG_RETURN_INT64(leader_id);
@@ -978,31 +985,64 @@ pgraft_replicate_entry_func(PG_FUNCTION_ARGS)
 Datum
 pgraft_get_nodes_from_raft(PG_FUNCTION_ARGS)
 {
-	char *result;
+	char *result = NULL;
 	text *result_text;
-	pgraft_go_get_nodes_func get_nodes_func;
+	FILE *fp;
+	char filepath[MAXPGPATH];
+	char line[4096];
+	const char *data_dir;
+	char *nodes_start = NULL;
 	
-	/* Get the function pointer for pgraft_go_get_nodes */
-	get_nodes_func = pgraft_go_get_get_nodes_func();
-	if (get_nodes_func == NULL)
+	/* Read nodes list from persistence file (written by background worker) */
+	/* This allows SQL functions to access the data without calling Go directly */
+	
+	data_dir = GetConfigOption("pgraft.data_dir", false, false);
+	if (!data_dir)
+		data_dir = "pgraft-data";
+	
+	snprintf(filepath, sizeof(filepath), "%s/cluster_state.json", data_dir);
+	
+	fp = fopen(filepath, "r");
+	if (!fp)
 	{
-		elog(DEBUG1, "pgraft_go_get_nodes function not available");
-		/* Return empty JSON array */
+		elog(DEBUG1, "pgraft_get_nodes_from_raft: could not open state file");
 		PG_RETURN_TEXT_P(cstring_to_text("[]"));
 	}
 	
-	/* Call Go function to get nodes from Raft cluster state */
-	result = get_nodes_func();
+	/* Parse the file to extract the "nodes" field */
+	while (fgets(line, sizeof(line), fp) != NULL)
+	{
+		char *nodes_pos = strstr(line, "\"nodes\":");
+		if (nodes_pos)
+		{
+			/* Skip "nodes": */
+			nodes_start = nodes_pos + 8;
+			/* Skip whitespace */
+			while (*nodes_start == ' ' || *nodes_start == '\t')
+				nodes_start++;
+			
+			/* Find the end of the JSON array (before the comma) */
+			char *end = strrchr(nodes_start, ',');
+			if (end)
+			{
+				*end = '\0';
+				result = pstrdup(nodes_start);
+			}
+			break;
+		}
+	}
+	
+	fclose(fp);
 	
 	if (result == NULL)
 	{
-		elog(DEBUG1, "pgraft_go_get_nodes returned NULL");
-		/* Return empty JSON array */
+		elog(DEBUG1, "pgraft_get_nodes_from_raft: nodes field not found in file");
 		PG_RETURN_TEXT_P(cstring_to_text("[]"));
 	}
 	
 	/* Convert C string to PostgreSQL text */
 	result_text = cstring_to_text(result);
+	pfree(result);
 	
 	PG_RETURN_TEXT_P(result_text);
 }

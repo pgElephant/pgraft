@@ -31,38 +31,59 @@ class PgraftCluster:
         result = subprocess.run(cmd, capture_output=True, text=True, shell=isinstance(cmd, str))
         if check and result.returncode != 0:
             self.log(f"Command failed: {result.stderr}", "ERROR")
-            return None
         return result
     
     def init_cluster(self, num_nodes=3):
         self.log(f"Initializing 1 primary + {num_nodes-1} replicas with pgraft Raft cluster...")
         
-        # Cleanup
-        self.run_cmd("docker rm -f pgraft-primary pgraft-replica1 pgraft-replica2 2>/dev/null || true", check=False)
+        # Cleanup existing containers
+        self.run_cmd("docker rm -f $(docker ps -a --filter name=pgraft- -q) 2>/dev/null || true", check=False)
         self.run_cmd(f"docker network rm {self.network} 2>/dev/null || true", check=False)
         
         # Create network
         self.log("Creating Docker network...")
         self.run_cmd(f"docker network create {self.network}")
         
-        # Node configurations: 1 primary + 2 replicas
-        nodes = [
-            {"name": "primary", "id": 1, "pg_port": 7001, "raft_port": 8001, "metrics_port": 9191, "role": "primary"},
-            {"name": "replica1", "id": 2, "pg_port": 7002, "raft_port": 8002, "metrics_port": 9192, "role": "replica"},
-            {"name": "replica2", "id": 3, "pg_port": 7003, "raft_port": 8003, "metrics_port": 9193, "role": "replica"},
-        ][:num_nodes]
+        # Node configurations: 1 primary + (num_nodes-1) replicas
+        nodes = []
+        # Always create primary first
+        nodes.append({
+            "name": "primary", 
+            "id": 1, 
+            "pg_port": 7001, 
+            "raft_port": 8001, 
+            "metrics_port": 9191, 
+            "role": "primary"
+        })
+        
+        # Create replicas dynamically based on num_nodes
+        for i in range(1, num_nodes):
+            nodes.append({
+                "name": f"replica{i}",
+                "id": i + 1,
+                "pg_port": 7000 + i + 1,
+                "raft_port": 8000 + i + 1,
+                "metrics_port": 9190 + i + 1,
+                "role": "replica"
+            })
+        
+        self.log(f"Creating cluster with {num_nodes} nodes: 1 primary + {num_nodes-1} replicas")
         
         # Build initial_cluster string
         initial_cluster = ",".join([f"{node['name']}=http://pgraft-{node['name']}:{node['raft_port']}" for node in nodes])
         
         # Generate pgraft configuration files for each node
         self.log("Generating pgraft configuration files...")
+        # Calculate replication settings based on cluster size
+        num_replicas = num_nodes - 1
+        max_replicas = max(3, num_replicas + 1)  # At least 3, or num_replicas + 1 buffer
+        
         for node in nodes:
             config_content = f"""
 # PostgreSQL Replication Settings
 wal_level = replica
-max_wal_senders = 3
-max_replication_slots = 3
+max_wal_senders = {max_replicas}
+max_replication_slots = {max_replicas}
 hot_standby = on
 
 # pgraft Extension Configuration
@@ -146,14 +167,21 @@ docker run -d \
             self.run_cmd(f"docker exec pgraft-{node['name']} chmod 700 /var/lib/postgresql/data", check=False)
             
             # Update pgraft config with replica-specific settings
-            # (pg_basebackup copied primary's config, we need to update pgraft.name and ports)
+            # (pg_basebackup copied primary's config, we need to replace pgraft section)
             self.log(f"Updating pgraft configuration for {node['name']}...")
+            
+            # Copy the pre-generated config file for this replica
+            config_file = f"postgresql.conf.{node['name']}"
+            self.run_cmd(f"docker cp {config_file} pgraft-{node['name']}:/tmp/pgraft_replica.conf", check=False)
+            
+            # Remove old pgraft settings and append new ones
+            # This ensures no duplicate/conflicting pgraft.* settings
             self.run_cmd(f"""docker exec pgraft-{node['name']} sh -c "
-sed -i \"s/pgraft.name = 'primary'/pgraft.name = '{node['name']}'/\" /var/lib/postgresql/data/postgresql.conf &&
-sed -i 's/listen_peer_urls = .*/listen_peer_urls = '\\''http:\\/\\/0.0.0.0:{node['raft_port']}'\\''/' /var/lib/postgresql/data/postgresql.conf &&
-sed -i 's/listen_client_urls = .*/listen_client_urls = '\\''http:\\/\\/0.0.0.0:{node['metrics_port']}'\\''/' /var/lib/postgresql/data/postgresql.conf &&
-sed -i 's/initial_advertise_peer_urls = .*/initial_advertise_peer_urls = '\\''http:\\/\\/pgraft-{node['name']}:{node['raft_port']}'\\''/' /var/lib/postgresql/data/postgresql.conf &&
-sed -i 's/advertise_client_urls = .*/advertise_client_urls = '\\''http:\\/\\/pgraft-{node['name']}:{node['metrics_port']}'\\''/' /var/lib/postgresql/data/postgresql.conf
+# Remove all existing pgraft settings
+sed -i '/^pgraft\\./d' /var/lib/postgresql/data/postgresql.conf
+sed -i '/^shared_preload_libraries.*pgraft/d' /var/lib/postgresql/data/postgresql.conf
+# Append replica-specific pgraft config
+cat /tmp/pgraft_replica.conf >> /var/lib/postgresql/data/postgresql.conf
 "
             """, check=False)
             
@@ -171,45 +199,45 @@ sed -i 's/advertise_client_urls = .*/advertise_client_urls = '\\''http:\\/\\/pgr
         if result and result.returncode == 0:
             self.log(f"✅ pgraft extension installed on primary")
         
-        # Clear pgraft data directory on ALL nodes (ensure fresh Raft state)
-        self.log(f"Clearing pgraft data directories on all nodes...")
-        for node in nodes:
-            self.run_cmd(f"docker exec pgraft-{node['name']} sh -c \"rm -rf /var/lib/postgresql/pgraft-data/*\"", check=False)
+        # Note: Don't clear pgraft data directory here - workers have already initialized!
+        # The data directory is fresh because we destroyed the containers before creating them
         
-        # Initialize pgraft on ALL nodes IN PARALLEL to form a unified cluster
-        # All nodes must call pgraft_init() simultaneously with the same initial_cluster config
-        # pgraft_init() can run on replicas because it doesn't modify the database
-        self.log("Initializing pgraft Raft cluster on all nodes (in parallel)...")
+        # Note: pgraft initialization is now automatic!
+        # The background worker on each node will automatically:
+        # 1. Load the Go library
+        # 2. Call pgraft_init_from_gucs() to initialize Raft
+        # 3. Start the Raft consensus protocol
+        # 4. Update shared memory and persistence files
+        # No manual pgraft_init() calls needed!
         
-        # Start pgraft_init() on all nodes in background
-        import threading
-        results = {}
+        self.log("Background workers will automatically initialize pgraft Raft cluster...")
         
-        def init_node(node):
-            result = self.run_cmd(f"PGPASSWORD=postgres psql -h localhost -p {node['pg_port']} -U postgres -c \"SELECT pgraft_init();\"", check=False)
-            results[node['name']] = result
-        
-        threads = []
-        for node in nodes:
-            t = threading.Thread(target=init_node, args=(node,))
-            t.start()
-            threads.append(t)
-        
-        # Wait for all to complete
-        for t in threads:
-            t.join(timeout=30)
-        
-        # Check results
-        for node in nodes:
-            if node['name'] in results and results[node['name']].returncode == 0:
-                self.log(f"  ✅ pgraft initialized on {node['name']} ({node['role']})")
-            else:
-                self.log(f"  ⚠️  pgraft init failed on {node['name']} ({node['role']})", "WARN")
-        
-        self.log("Waiting for Raft cluster to synchronize...")
+        self.log("Waiting for Raft cluster to synchronize and elect leader...")
         time.sleep(10)
         
-        self.log("✓ Cluster initialization complete!")
+        # Wait for leader election (check every 2 seconds for up to 60 seconds)
+        self.log("Waiting for leader election...")
+        leader_elected = False
+        for attempt in range(30):  # 30 attempts * 2 seconds = 60 seconds max
+            try:
+                result = self.run_cmd(f"PGPASSWORD=postgres psql -h localhost -p {primary['pg_port']} -U postgres -t -c \"SELECT pgraft_get_leader();\"", check=False)
+                if result and result.stdout:
+                    leader_id = result.stdout.strip()
+                    if leader_id and leader_id.isdigit() and leader_id != "0":
+                        self.log(f"✅ Leader elected: node {leader_id}")
+                        leader_elected = True
+                        break
+            except:
+                pass
+            time.sleep(2)
+            if attempt % 5 == 4:  # Log every 10 seconds
+                self.log(f"Still waiting for leader... ({attempt * 2 + 2}s)")
+        
+        if leader_elected:
+            self.log("✓ Cluster initialization complete!")
+        else:
+            self.log("⚠️  Leader election timed out, but cluster may still be forming...", "WARN")
+        
         self.show_status()
     
     def show_status(self):

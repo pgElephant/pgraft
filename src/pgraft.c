@@ -18,6 +18,10 @@
 #include "utils/elog.h"
 #include "utils/builtins.h"
 #include "postmaster/bgworker.h"
+#include "access/xact.h"
+#include "access/xlog.h"
+#include "storage/proc.h"
+#include <time.h>
 #include "utils/ps_status.h"
 
 #include "../include/pgraft_core.h"
@@ -142,7 +146,8 @@ pgraft_register_worker(void)
 	memset(&worker, 0, sizeof(BackgroundWorker));
 
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
-	worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+	/* Use ConsistentState instead of RecoveryFinished so worker starts on standbys too */
+	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
 
 	/* Entry via library + symbol */
@@ -199,6 +204,28 @@ pgraft_main(Datum main_arg)
 	sleep_count = 0;
 	
 	elog(LOG, "pgraft: background worker main function started");
+	
+	/* Wait for PostgreSQL to be fully ready before initializing Raft */
+	/* On standbys, wait for them to reach consistent hot standby state */
+	elog(LOG, "pgraft: waiting for PostgreSQL to be ready (primary or stable standby)...");
+	
+	/* Give PostgreSQL time to fully initialize */
+	pg_usleep(3000000L); /* 3 seconds initial wait */
+	
+	/* Additional wait for standby to be stable (if in recovery) */
+	if (RecoveryInProgress())
+	{
+		elog(LOG, "pgraft: node is in recovery (standby mode), waiting for stable hot standby state...");
+		/* Wait for standby to be ready for read queries */
+		pg_usleep(5000000L); /* 5 seconds */
+		elog(LOG, "pgraft: standby is now in stable hot standby mode");
+	}
+	else
+	{
+		elog(LOG, "pgraft: node is primary (not in recovery)");
+	}
+	
+	elog(LOG, "pgraft: PostgreSQL is ready, proceeding with Raft initialization");
 	
 	/* Load Go library in the background worker process */
 	if (!pgraft_go_is_loaded())
@@ -608,6 +635,143 @@ pgraft_init_system(int node_id, const char *address, int port)
 }
 
 /*
+ * Write cluster state to persistence file with nodes list
+ * This allows replicas and other processes to read the state without accessing Go library
+ */
+static void
+pgraft_write_state_to_file_with_nodes(int64_t leader_id, int32_t term, int64_t node_id, const char *nodes_json)
+{
+	char filepath[MAXPGPATH];
+	char temppath[MAXPGPATH];
+	FILE *fp;
+	const char *data_dir;
+	
+	/* Get pgraft data directory from GUC */
+	data_dir = GetConfigOption("pgraft.data_dir", false, false);
+	if (!data_dir)
+		data_dir = "pgraft-data";
+	
+	/* Construct file path */
+	snprintf(filepath, sizeof(filepath), "%s/cluster_state.json", data_dir);
+	snprintf(temppath, sizeof(temppath), "%s/cluster_state.json.tmp", data_dir);
+	
+	/* Write to temporary file first (atomic update) */
+	fp = fopen(temppath, "w");
+	if (!fp)
+	{
+		elog(DEBUG1, "pgraft: Could not open state file for writing: %s", temppath);
+		return;
+	}
+	
+	fprintf(fp, "{\n");
+	fprintf(fp, "  \"leader_id\": %lld,\n", (long long)leader_id);
+	fprintf(fp, "  \"term\": %d,\n", term);
+	fprintf(fp, "  \"node_id\": %lld,\n", (long long)node_id);
+	fprintf(fp, "  \"nodes\": %s,\n", nodes_json);
+	fprintf(fp, "  \"updated_at\": %ld\n", (long)time(NULL));
+	fprintf(fp, "}\n");
+	
+	fclose(fp);
+	
+	/* Atomic rename */
+	if (rename(temppath, filepath) != 0)
+	{
+		elog(DEBUG1, "pgraft: Could not rename state file: %s -> %s", temppath, filepath);
+		unlink(temppath);
+	}
+}
+
+/*
+ * Write cluster state to persistence file (without nodes list)
+ * This allows replicas and other processes to read the state without accessing Go library
+ */
+static void
+pgraft_write_state_to_file(int64_t leader_id, int32_t term, int64_t node_id)
+{
+	char filepath[MAXPGPATH];
+	char temppath[MAXPGPATH];
+	FILE *fp;
+	const char *data_dir;
+	
+	/* Get pgraft data directory from GUC */
+	data_dir = GetConfigOption("pgraft.data_dir", false, false);
+	if (!data_dir)
+		data_dir = "pgraft-data";
+	
+	/* Construct file path */
+	snprintf(filepath, sizeof(filepath), "%s/cluster_state.json", data_dir);
+	snprintf(temppath, sizeof(temppath), "%s/cluster_state.json.tmp", data_dir);
+	
+	/* Write to temporary file first (atomic update) */
+	fp = fopen(temppath, "w");
+	if (!fp)
+	{
+		elog(DEBUG1, "pgraft: Could not open state file for writing: %s", temppath);
+		return;
+	}
+	
+	fprintf(fp, "{\n");
+	fprintf(fp, "  \"leader_id\": %lld,\n", (long long)leader_id);
+	fprintf(fp, "  \"term\": %d,\n", term);
+	fprintf(fp, "  \"node_id\": %lld,\n", (long long)node_id);
+	fprintf(fp, "  \"updated_at\": %ld\n", (long)time(NULL));
+	fprintf(fp, "}\n");
+	
+	fclose(fp);
+	
+	/* Atomic rename */
+	if (rename(temppath, filepath) != 0)
+	{
+		elog(DEBUG1, "pgraft: Could not rename state file: %s -> %s", temppath, filepath);
+		unlink(temppath);
+	}
+}
+
+/*
+ * Read cluster state from persistence file
+ * Returns 0 on success, -1 on failure
+ */
+int
+pgraft_read_state_from_file(int64_t *leader_id, int32_t *term, int64_t *node_id)
+{
+	char filepath[MAXPGPATH];
+	FILE *fp;
+	const char *data_dir;
+	char line[256];
+	int fields_read = 0;
+	
+	/* Get pgraft data directory from GUC */
+	data_dir = GetConfigOption("pgraft.data_dir", false, false);
+	if (!data_dir)
+		data_dir = "pgraft-data";
+	
+	/* Construct file path */
+	snprintf(filepath, sizeof(filepath), "%s/cluster_state.json", data_dir);
+	
+	/* Open file */
+	fp = fopen(filepath, "r");
+	if (!fp)
+	{
+		return -1;  /* File doesn't exist yet */
+	}
+	
+	/* Parse simple JSON */
+	while (fgets(line, sizeof(line), fp) != NULL)
+	{
+		if (sscanf(line, "  \"leader_id\": %lld,", (long long*)leader_id) == 1)
+			fields_read++;
+		else if (sscanf(line, "  \"term\": %d,", term) == 1)
+			fields_read++;
+		else if (sscanf(line, "  \"node_id\": %lld,", (long long*)node_id) == 1)
+			fields_read++;
+	}
+	
+	fclose(fp);
+	
+	return (fields_read >= 3) ? 0 : -1;
+}
+
+/*
  * Update shared memory with current state from Go library
  */
 void
@@ -648,7 +812,9 @@ pgraft_update_shared_memory_from_go(void)
 	/* Get node_id from Go layer (auto-generated from name hash) */
 	go_node_id = get_node_id_func();
 	
-		/* Get nodes list from Go library using json-c */
+	/* Get nodes list from Go library using json-c */
+	/* Also save it for writing to persistence file */
+	char *nodes_json_for_file = NULL;
 	{
 		pgraft_go_get_nodes_func get_nodes_func = pgraft_go_get_get_nodes_func();
 		if (get_nodes_func)
@@ -657,6 +823,9 @@ pgraft_update_shared_memory_from_go(void)
 			elog(LOG, "pgraft: DEBUG - Got nodes JSON from Go: '%s'", nodes_json ? nodes_json : "NULL");
 			if (nodes_json && strcmp(nodes_json, "[]") != 0)
 			{
+				/* Keep a copy for persistence file */
+				nodes_json_for_file = pstrdup(nodes_json);
+				
 				/* Parse JSON using separate module */
 				int node_count;
 				int32_t node_ids[16];
@@ -725,6 +894,17 @@ pgraft_update_shared_memory_from_go(void)
 	
 	elog(DEBUG1, "pgraft: Updated shared memory from Go library - leader=%lld, term=%d, state=%s", 
 		 (long long)current_leader, current_term, shm_cluster->state);
+	
+	/* Write state to persistence file for processes that can't access shared memory */
+	if (nodes_json_for_file)
+	{
+		pgraft_write_state_to_file_with_nodes(current_leader, current_term, go_node_id, nodes_json_for_file);
+		pfree(nodes_json_for_file);
+	}
+	else
+	{
+		pgraft_write_state_to_file(current_leader, current_term, go_node_id);
+	}
 }
 
 /*

@@ -194,12 +194,38 @@ RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_log_sync_with_leader_sql';
 
+-- Get current leader ID
+CREATE OR REPLACE FUNCTION pgraft_get_leader()
+RETURNS bigint
+LANGUAGE C
+AS 'pgraft', 'pgraft_get_leader';
+
+-- Get current term
+CREATE OR REPLACE FUNCTION pgraft_get_term()
+RETURNS bigint
+LANGUAGE C
+AS 'pgraft', 'pgraft_get_term';
+
 -- ============================================================================
 -- etcd-compatible Views
 -- ============================================================================
 
--- View that matches 'etcdctl member list' output format
+-- View that matches 'etcdctl member list' output format (with dead node detection)
 CREATE OR REPLACE VIEW pgraft.member_list AS
+SELECT 
+    (node->>'id')::text as "memberID",
+    (node->>'address')::text as "peerURLs",
+    (node->>'address')::text as "clientURLs",
+    CASE 
+        WHEN (node->>'active')::boolean = false THEN 'unavailable'
+        WHEN (node->>'id')::int = pgraft_get_leader() THEN 'leader'
+        ELSE 'follower'
+    END as "status"
+FROM json_array_elements(pgraft_get_nodes_from_raft()::json) AS node
+ORDER BY (node->>'id')::int;
+
+-- Legacy view using C function (deprecated, kept for compatibility)
+CREATE OR REPLACE VIEW pgraft.member_list_legacy AS
 SELECT 
     node_id::text as "memberID",
     COALESCE(current_setting('listen_peer_urls', true), address || ':2380') as "peerURLs",
@@ -207,19 +233,6 @@ SELECT
     CASE WHEN is_leader THEN 'leader' ELSE 'follower' END as "status"
 FROM pgraft_get_nodes()
 ORDER BY node_id;
-
--- Enhanced member_list view that works on replicas by querying Raft directly
-CREATE OR REPLACE VIEW pgraft.member_list_all AS
-SELECT 
-    (node->>'id')::text as "memberID",
-    (node->>'address')::text as "peerURLs",
-    (node->>'address')::text as "clientURLs",
-    CASE 
-        WHEN pgraft_is_leader() THEN 'leader'
-        ELSE 'follower'
-    END as "status"
-FROM json_array_elements(pgraft_get_nodes_from_raft()::json) AS node
-ORDER BY (node->>'id')::int;
 
 -- View that matches 'etcdctl endpoint status' output format
 CREATE OR REPLACE VIEW pgraft.endpoint_status AS
@@ -352,7 +365,7 @@ WHERE pgraft_is_leader();
 
 -- Grant permissions for all views
 GRANT SELECT ON pgraft.member_list TO PUBLIC;
-GRANT SELECT ON pgraft.member_list_all TO PUBLIC;
+GRANT SELECT ON pgraft.member_list_legacy TO PUBLIC;
 GRANT SELECT ON pgraft.endpoint_status TO PUBLIC;
 GRANT SELECT ON pgraft.endpoint_health TO PUBLIC;
 GRANT SELECT ON pgraft.cluster_health TO PUBLIC;
