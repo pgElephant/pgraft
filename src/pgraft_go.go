@@ -529,12 +529,23 @@ var (
 
 	// Initial cluster configuration (all members from initial_cluster setting)
 	// This is populated during initialization and never changes
-	initialClusterMembers map[string]string // map[name]address
+	// Initial cluster members stored as ordered array (max 10 nodes)
+	initialClusterMembers []clusterMember
 	initialClusterMutex   sync.RWMutex
 
 	// Error tracking
 	errorCount int64
 	lastError  time.Time
+)
+
+// clusterMember represents a single member in the cluster (name + address)
+// Using struct for ordered storage (max 10 nodes)
+type clusterMember struct {
+	name string
+	addr string
+}
+
+var (
 
 	// Shutdown control
 	shutdownRequested int32
@@ -738,18 +749,55 @@ func pgraft_go_get_nodes() *C.char {
 
 	logInfo("pgraft_go_get_nodes called - initialClusterMembers size: %d", len(initialClusterMembers))
 
-	nodesList := make([]map[string]interface{}, 0)
-	// Convert cluster members (name->address) to node list with IDs
-	nodeID := uint64(1)
-	for memberName, address := range initialClusterMembers {
-		logInfo("adding node to list: name=%s, id=%d, address=%s", memberName, nodeID, address)
+	// Get raft status to check which nodes are active/reachable
+	raftMutex.RLock()
+	var activeNodes map[uint64]bool
+	var isLeader bool
+	if raftNode != nil {
+		status := raftNode.Status()
+		activeNodes = make(map[uint64]bool)
+		isLeader = (status.RaftState == raft.StateLeader)
+
+		if isLeader {
+			// Leader tracks active nodes via Progress map
+			for id := range status.Progress {
+				activeNodes[id] = true
+			}
+		} else {
+			// Followers: can't use Progress (only leaders track that)
+			// Instead, mark nodes as active based on whether we've seen them recently
+			// For simplicity, mark the leader and self as active, others unknown
+			if status.Lead != 0 {
+				activeNodes[status.Lead] = true // Leader is definitely active
+				activeNodes[status.ID] = true   // Self is active
+				// Mark other nodes based on Config (members in current configuration)
+				for id := range status.Config.Voters[0] {
+					activeNodes[id] = true
+				}
+			}
+		}
+	}
+	raftMutex.RUnlock()
+
+	nodesList := make([]map[string]interface{}, 0, len(initialClusterMembers))
+	// Convert cluster members array to node list with IDs
+	// Array is already ordered - just iterate directly
+	for i, member := range initialClusterMembers {
+		nodeID := uint64(i + 1) // IDs start from 1
+
+		isActive := false
+		if activeNodes != nil {
+			isActive = activeNodes[nodeID]
+		}
+
+		logInfo("adding node to list: name=%s, id=%d, address=%s, active=%v", member.name, nodeID, member.addr, isActive)
 		nodeInfo := map[string]interface{}{
 			"id":      nodeID,
-			"name":    memberName,
-			"address": address,
+			"name":    member.name,
+			"address": member.addr,
+			"active":  isActive,
 		}
 		nodesList = append(nodesList, nodeInfo)
-		nodeID++
 	}
 
 	jsonData, err := json.Marshal(nodesList)
@@ -820,16 +868,51 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	snapshotInterval := int(config.snapshot_interval)
 	memberCount := int(config.cluster_member_count)
 
-	// Auto-generate node ID from name hash if not provided
+	// Extract pre-parsed cluster members from C struct (already split into host/port)
+	if memberCount == 0 || config.cluster_members == nil {
+		logError("no cluster members provided in configuration")
+		return -1
+	}
+
+	// Convert C array of cluster members to Go slice (ORDERED, no map!)
+	// Using a struct slice instead of map to preserve order deterministically
+	const maxClusterSize = 10
+
+	if memberCount > maxClusterSize {
+		logError("cluster size %d exceeds maximum allowed size of %d", memberCount, maxClusterSize)
+		return -1
+	}
+
+	// Use package-level clusterMember type for ordered storage
+	clusterMembers := make([]clusterMember, 0, maxClusterSize)
+	membersSlice := (*[1 << 30]C.struct_pgraft_go_cluster_member)(unsafe.Pointer(config.cluster_members))[:memberCount:memberCount]
+
+	logInfo("==== PARSING CLUSTER MEMBERS: memberCount=%d (max: %d) ====", memberCount, maxClusterSize)
+	for i := 0; i < memberCount; i++ {
+		memberName := C.GoString(membersSlice[i].name)
+		peerHost := C.GoString(membersSlice[i].peer_host)
+		peerPort := int(membersSlice[i].peer_port)
+		peerAddr := fmt.Sprintf("%s:%d", peerHost, peerPort)
+
+		clusterMembers = append(clusterMembers, clusterMember{name: memberName, addr: peerAddr})
+		logInfo("cluster member %d: %s -> %s (host=%s, port=%d)", i+1, memberName, peerAddr, peerHost, peerPort)
+	}
+
+	// Determine node ID from position in initial_cluster (CRITICAL for consistency!)
+	// Find this node's name in the ordered members list
 	if nodeID == 0 && nodeName != "" {
-		// Generate a simple hash from the node name for consistent node IDs
-		hash := 0
-		for _, c := range nodeName {
-			hash = hash*31 + int(c)
+		for i, member := range clusterMembers {
+			if member.name == nodeName {
+				nodeID = i + 1 // IDs start from 1
+				logInfo("DETERMINED node_id=%d from position of '%s' in initial_cluster", nodeID, nodeName)
+				break
+			}
 		}
-		// Ensure positive and reasonable range (1-65535)
-		nodeID = (hash&0x7FFFFFFF)%65535 + 1
-		logInfo("auto-generated node_id %d from name '%s'", nodeID, nodeName)
+
+		if nodeID == 0 {
+			logError("CRITICAL: node name '%s' not found in initial_cluster members!", nodeName)
+			return -1
+		}
 	}
 
 	// Note: currentNodeID will be set later to the Raft ID for consistency
@@ -839,34 +922,14 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	logInfo("using etcd-style configuration: election_timeout=%dms, heartbeat_interval=%dms, snapshot_interval=%d, data_dir=%s",
 		electionTimeout, heartbeatInterval, snapshotInterval, dataDir)
 
-	// Extract pre-parsed cluster members from C struct (already split into host/port)
-	if memberCount == 0 || config.cluster_members == nil {
-		logError("no cluster members provided in configuration")
-		return -1
-	}
-
-	// Convert C array of cluster members to Go map
-	clusterMembers := make(map[string]string)
-	membersSlice := (*[1 << 30]C.struct_pgraft_go_cluster_member)(unsafe.Pointer(config.cluster_members))[:memberCount:memberCount]
-
-	logInfo("==== PARSING CLUSTER MEMBERS: memberCount=%d ====", memberCount)
-	for i := 0; i < memberCount; i++ {
-		memberName := C.GoString(membersSlice[i].name)
-		peerHost := C.GoString(membersSlice[i].peer_host)
-		peerPort := int(membersSlice[i].peer_port)
-		peerAddr := fmt.Sprintf("%s:%d", peerHost, peerPort)
-
-		clusterMembers[memberName] = peerAddr
-		logInfo("cluster member %d: %s -> %s (host=%s, port=%d)", i+1, memberName, peerAddr, peerHost, peerPort)
-	}
-
 	logInfo("==== LOADED %d cluster members from parsed configuration ====", len(clusterMembers))
 
 	// Store initial cluster members globally so they're accessible from all nodes
+	// Already an ordered array - just copy it
 	initialClusterMutex.Lock()
-	initialClusterMembers = clusterMembers
+	initialClusterMembers = clusterMembers // Already ordered array!
 	initialClusterMutex.Unlock()
-	logInfo("Stored %d initial cluster members globally", len(initialClusterMembers))
+	logInfo("Stored %d initial cluster members globally (deterministic array order)", len(initialClusterMembers))
 
 	raftMutex.Lock()
 	defer raftMutex.Unlock()
@@ -928,24 +991,23 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 
 	// Register all cluster members in the nodes map using sequential IDs
 	// Match node name to find this node's Raft ID
+	// CRITICAL: Use clusterMembers array (ordered) - array iteration is always deterministic
 	var thisNodeRaftID uint64
 	foundThisNode := false
-	peerNodeID := uint64(1)
 
-	logInfo("populating nodes map from %d cluster members", len(clusterMembers))
-	for memberName, peerAddr := range clusterMembers {
-		nodes[peerNodeID] = peerAddr
-		logInfo("added to nodes map: nodes[%d] = '%s' (member: %s)", peerNodeID, peerAddr, memberName)
+	logInfo("populating nodes map from %d cluster members (using ORDERED array)", len(clusterMembers))
+	for i, member := range clusterMembers {
+		peerNodeID := uint64(i + 1) // IDs start from 1
+		nodes[peerNodeID] = member.addr
+		logInfo("added to nodes map: nodes[%d] = '%s' (member: %s)", peerNodeID, member.addr, member.name)
 
-		if memberName == nodeName {
+		if member.name == nodeName {
 			thisNodeRaftID = peerNodeID
 			foundThisNode = true
-			logInfo("*** this node '%s' has Raft ID %d -> %s", nodeName, peerNodeID, peerAddr)
+			logInfo("*** this node '%s' has Raft ID %d -> %s", member.name, peerNodeID, member.addr)
 		} else {
-			logInfo("cluster member %d: %s -> %s", peerNodeID, memberName, peerAddr)
+			logInfo("cluster member %d: %s -> %s", peerNodeID, member.name, member.addr)
 		}
-
-		peerNodeID++
 	}
 	logInfo("nodes map population complete - map now has %d entries", len(nodes))
 	nodesMutex.Unlock()

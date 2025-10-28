@@ -7,6 +7,9 @@
 /* Internal initialization function (callable from worker) */
 int			pgraft_init_from_gucs(void);
 
+/* Persistence file functions (for replicas without shared memory access) */
+int			pgraft_read_state_from_file(int64_t *leader_id, int32_t *term, int64_t *node_id);
+
 /* SQL function declarations */
 Datum		pgraft_init(PG_FUNCTION_ARGS);
 Datum		pgraft_init_guc(PG_FUNCTION_ARGS);
