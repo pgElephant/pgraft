@@ -151,6 +151,7 @@ nav:
     - Configuration Reference: user-guide/configuration.md
     - SQL Functions: user-guide/sql-functions.md
     - Cluster Operations: user-guide/cluster-operations.md
+    - Cluster Script (Docker): user-guide/pgraft-cluster-script.md
   - Core Concepts:
     - concepts/index.md
     - Architecture: concepts/architecture.md

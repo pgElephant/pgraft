@@ -1,7 +1,7 @@
 
-# pgraft Tutorial: Complete Setup and Usage Guide (pgElephant Suite)
+# pgraft Tutorial: Complete Setup and Usage Guide
 
-This tutorial will walk you through setting up a complete **pgraft** cluster from scratch, including installation, configuration, and advanced usage scenarios. All steps, scripts, and best practices are up to date and consistent with the unified [pgElephant](https://pgelephant.com) suite.
+This tutorial will walk you through setting up a complete **pgraft** cluster from scratch, including installation, configuration, and advanced usage scenarios.
 
 ## Table of Contents
 
@@ -183,11 +183,8 @@ Connect to each node and initialize pgraft:
 # Connect to Node 1
 psql -h 127.0.0.1 -p 5433 -U postgres
 
-# Create the extension
+# Create the extension (automatically initializes from postgresql.conf)
 CREATE EXTENSION IF NOT EXISTS pgraft;
-
-# Initialize the first node
-SELECT pgraft_init();
 
 # Check the status
 SELECT pgraft_get_worker_state();
@@ -201,11 +198,8 @@ SELECT * FROM pgraft_get_cluster_status();
 # Connect to Node 2
 psql -h 127.0.0.1 -p 5434 -U postgres
 
-# Create the extension
+# Create the extension (automatically initializes)
 CREATE EXTENSION IF NOT EXISTS pgraft;
-
-# Initialize the node
-SELECT pgraft_init();
 
 # Exit
 \q
@@ -215,19 +209,19 @@ SELECT pgraft_init();
 # Connect to Node 3
 psql -h 127.0.0.1 -p 5435 -U postgres
 
-# Create the extension
+# Create the extension (automatically initializes)
 CREATE EXTENSION IF NOT EXISTS pgraft;
-
-# Initialize the node
-SELECT pgraft_init();
 
 # Exit
 \q
 ```
 
-### Step 5: Form the Cluster
+!!! success "Automatic Initialization"
+    The extension automatically initializes using the `initial_cluster` configuration from `postgresql.conf`. Nodes are discovered and added automatically based on this setting.
 
-Connect to the first node and add the other nodes:
+### Step 5: Verify Cluster Formation
+
+Check the cluster status to verify all nodes have joined:
 
 ```bash
 # Connect to Node 1 (should be the initial leader)

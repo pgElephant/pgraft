@@ -1,10 +1,10 @@
 
-# pgraft — PostgreSQL Raft Consensus Extension (pgElephant Suite)
+# pgraft — PostgreSQL Raft Consensus Extension
 
 <div align="center">
 
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17+-blue.svg)](https://postgresql.org/)
-[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-blue.svg)](https://postgresql.org/)
+[![Go](https://img.shields.io/badge/Go-1.15+-00ADD8.svg)](https://golang.org/)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)]()
 
 **Distributed consensus for PostgreSQL using the Raft algorithm**
@@ -15,10 +15,6 @@
 </div>
 
 ---
-
-## Unified High-Availability Suite
-
-**pgraft** is part of the unified [pgElephant](https://pgelephant.com) high-availability suite, alongside [RAM](https://pgelephant.com/ram), [RALE](https://pgelephant.com/rale), and [FauxDB](https://pgelephant.com/fauxdb). All product pages and documentation share a consistent, professional template and feature matrix.
 
 ## Overview
 
@@ -43,26 +39,26 @@
 - **Production-Ready Quality**: 0 compilation errors/warnings, 100% PostgreSQL C standards compliant, and comprehensive test coverage
 - **Observability**: Built-in monitoring functions, Prometheus metrics, and detailed logging
 - **Secure by Design**: Follows PostgreSQL security best practices; supports SSL/TLS and role-based access
-- **Unified UI & Documentation**: Consistent, professional product pages and documentation across the pgElephant suite
+- **Comprehensive Documentation**: Complete documentation with examples, tutorials, and operational guides
 
 ## Quick Example
 
 ```sql
--- Create extension
+-- Create extension (automatically initializes from postgresql.conf settings)
 CREATE EXTENSION pgraft;
 
--- Initialize node
-SELECT pgraft_init();
+-- Check cluster status
+SELECT * FROM pgraft_get_cluster_status();
 
 -- Check if current node is leader
 SELECT pgraft_is_leader();
 
--- If leader, add other nodes
-SELECT pgraft_add_node(2, '127.0.0.1', 7002);
-SELECT pgraft_add_node(3, '127.0.0.1', 7003);
+-- If leader, add other nodes to the cluster
+SELECT pgraft_add_node(2, 'node2.example.com', 7002);
+SELECT pgraft_add_node(3, 'node3.example.com', 7003);
 
--- Get cluster status
-SELECT * FROM pgraft_get_cluster_status();
+-- View all cluster nodes
+SELECT * FROM pgraft_get_nodes();
 ```
 
 ## Architecture at a Glance
@@ -150,12 +146,6 @@ When you add a node to the leader, it **automatically appears on ALL other nodes
     [Learn More](concepts/architecture.md)
 
 </div>
-
-## Related Projects
-
-- **[RAM](https://pgelephant.com/ram)** — PostgreSQL clustering and failover manager
-- **[RALE](https://pgelephant.com/rale)** — Distributed consensus and key-value store
-- **[FauxDB](https://pgelephant.com/fauxdb)** — MongoDB-compatible query proxy for PostgreSQL
 
 ## License
 

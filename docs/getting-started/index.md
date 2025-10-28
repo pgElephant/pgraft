@@ -1,11 +1,11 @@
 
-# Getting Started with pgraft (pgElephant Suite)
+# Getting Started with pgraft
 
-Welcome! This section will help you get up and running with **pgraft**, part of the unified [pgElephant](https://pgelephant.com) high-availability suite (see also: [RAM](https://pgelephant.com/ram), [RALE](https://pgelephant.com/rale), [FauxDB](https://pgelephant.com/fauxdb)).
+Welcome! This section will help you get up and running with **pgraft**.
 
 ## What is pgraft?
 
-**pgraft** is a PostgreSQL extension that brings production-grade Raft consensus, automatic leader election, crash-safe log replication, and 100% split-brain prevention to distributed PostgreSQL clusters. All configuration and monitoring is unified with the rest of the pgElephant suite.
+**pgraft** is a PostgreSQL extension that brings production-grade Raft consensus, automatic leader election, crash-safe log replication, and 100% split-brain prevention to distributed PostgreSQL clusters.
 
 ## Quick Navigation
 
