@@ -21,8 +21,9 @@
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "storage/proc.h"
-#include <time.h>
 #include "utils/ps_status.h"
+#include <time.h>
+#include <unistd.h>
 
 #include "../include/pgraft_core.h"
 #include "../include/pgraft_go.h"
@@ -52,13 +53,16 @@ PG_MODULE_MAGIC;
 /* Extension version */
 #define PGRAFT_VERSION "1.0.0"
 
-/* Shared memory request hook */
+/* Shared memory request hook (PG15+) */
+#if PG_VERSION_NUM >= 150000
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
+#endif
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
 /*
- * Shared memory request hook
+ * Shared memory request hook (PG15+)
  */
+#if PG_VERSION_NUM >= 150000
 static void
 pgraft_shmem_request_hook(void)
 {
@@ -83,6 +87,7 @@ pgraft_shmem_request_hook(void)
 	
 	elog(LOG, "pgraft: shared memory request hook completed");
 }
+#endif
 
 
 /*
@@ -111,10 +116,20 @@ _PG_init(void)
 {
 	elog(INFO, "pgraft: initializing extension version %s", PGRAFT_VERSION);
 
-	/* Install shared memory request hook */
+	/* Install shared memory request hook (PG15+) */
+#if PG_VERSION_NUM >= 150000
 	prev_shmem_request_hook = shmem_request_hook;
 	shmem_request_hook = pgraft_shmem_request_hook;
 	elog(LOG, "pgraft: shared memory request hook installed");
+#else
+	/* For PG < 15, request shared memory in _PG_init */
+	RequestAddinShmemSpace(sizeof(pgraft_cluster_t));
+	RequestAddinShmemSpace(sizeof(pgraft_go_state_t));
+	RequestAddinShmemSpace(sizeof(pgraft_log_state_t));
+	RequestAddinShmemSpace(sizeof(pgraft_kv_store_t));
+	RequestAddinShmemSpace(sizeof(pgraft_worker_state_t));
+	elog(LOG, "pgraft: shared memory requested (PG < 15)");
+#endif
 
 	/* Install shared memory startup hook */
 	prev_shmem_startup_hook = shmem_startup_hook;
@@ -785,6 +800,7 @@ pgraft_update_shared_memory_from_go(void)
 	int64_t current_leader;
 	int32_t current_term;
 	int64_t go_node_id;
+	char *nodes_json_for_file;
 
 	if (!pgraft_go_is_loaded())
 		return;
@@ -814,7 +830,7 @@ pgraft_update_shared_memory_from_go(void)
 	
 	/* Get nodes list from Go library using json-c */
 	/* Also save it for writing to persistence file */
-	char *nodes_json_for_file = NULL;
+	nodes_json_for_file = NULL;
 	{
 		pgraft_go_get_nodes_func get_nodes_func = pgraft_go_get_get_nodes_func();
 		if (get_nodes_func)
@@ -823,15 +839,15 @@ pgraft_update_shared_memory_from_go(void)
 			elog(LOG, "pgraft: DEBUG - Got nodes JSON from Go: '%s'", nodes_json ? nodes_json : "NULL");
 			if (nodes_json && strcmp(nodes_json, "[]") != 0)
 			{
-				/* Keep a copy for persistence file */
-				nodes_json_for_file = pstrdup(nodes_json);
-				
 				/* Parse JSON using separate module */
 				int node_count;
 				int32_t node_ids[16];
 				char *addresses[16];
 				char address_buf[16][256];
 				int i;
+				
+				/* Keep a copy for persistence file */
+				nodes_json_for_file = pstrdup(nodes_json);
 				
 				/* Initialize */
 				for (i = 0; i < 16; i++) {

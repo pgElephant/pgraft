@@ -9,9 +9,9 @@ DATA = pgraft--1.0.sql
 PGFILEDESC = "pgraft - PostgreSQL extension with etcd-io/raft integration"
 
 # PostgreSQL configuration
-# Use pg_config from PATH by default (allows version-specific builds)
-# Can be overridden: make PG_CONFIG=/path/to/pg_config
+# Use pg_config from PATH, can be overridden: make PG_CONFIG=/path/to/pg_config
 PG_CONFIG ?= pg_config
+USE_PGXS = 1
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
