@@ -25,9 +25,29 @@ env:
   PACKAGE_VERSION: '1.0.0'
   PACKAGE_RELEASE: '1'
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
+  authorize:
+    name: Authorize
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check authorization
+        if: github.actor != 'pgelephant2025'
+        run: |
+          echo "❌ Only pgelephant2025 can run this workflow"
+          echo "Current user: ${{ github.actor }}"
+          exit 1
+      
+      - name: Authorization successful
+        run: |
+          echo "✅ Authorization successful for ${{ github.actor }}"
+
   prepare:
     name: Prepare Build Matrix
+    needs: authorize
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -411,16 +431,119 @@ jobs:
       - name: Download all package artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '{rpm,deb}-*'
+          pattern: '{rpm,deb,build}-*'
           path: artifacts
       
       - name: Organize release packages
+        id: packages
         run: |
           mkdir -p release
-          find artifacts -name '*.rpm' -exec cp {} release/ \;
-          find artifacts -name '*.deb' -exec cp {} release/ \;
-          cd release && sha256sum *.rpm *.deb > SHA256SUMS 2>/dev/null || true
-          ls -lh
+          find artifacts -name '*.rpm' -exec cp {} release/ \; 2>/dev/null || true
+          find artifacts -name '*.deb' -exec cp {} release/ \; 2>/dev/null || true
+          
+          # Generate checksums only if packages exist
+          cd release
+          PACKAGE_COUNT=$(ls -1 *.rpm *.deb 2>/dev/null | wc -l)
+          
+          if [ "$PACKAGE_COUNT" -gt 0 ]; then
+            sha256sum *.rpm *.deb 2>/dev/null > SHA256SUMS || true
+            echo "📦 Release packages found: $PACKAGE_COUNT"
+            ls -lh
+            echo ""
+            echo "🔐 SHA256 Checksums:"
+            cat SHA256SUMS
+            echo "has_packages=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Warning: No packages found for release"
+            echo "has_packages=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Copy packages to local releases directory
+        if: steps.packages.outputs.has_packages == 'true'
+        run: |
+          # Create local releases directory structure
+          RELEASES_DIR="/Users/pgedge/pge/releases"
+          
+          if [ -d "$RELEASES_DIR" ]; then
+            echo "📦 Copying pgraft packages to $RELEASES_DIR (organized by PostgreSQL version)"
+            
+            # Function to extract PostgreSQL version from filename
+            extract_pg_version() {
+              local filename="$1"
+              if [[ "$filename" =~ pg([0-9]+) ]] || [[ "$filename" =~ postgresql-([0-9]+) ]] || [[ "$filename" =~ pg_([0-9]+) ]]; then
+                echo "${BASH_REMATCH[1]}"
+              elif [[ "$filename" =~ -pg([0-9]+) ]]; then
+                echo "${BASH_REMATCH[1]}"
+              else
+                for pg_ver in 13 14 15 16 17 18; do
+                  if [[ "$filename" =~ pg${pg_ver} ]] || [[ "$filename" =~ -pg${pg_ver} ]]; then
+                    echo "$pg_ver"
+                    return
+                  fi
+                done
+                if [[ "$filename" =~ build-.*-pg([0-9]+) ]] || [[ "$filename" =~ rpm-.*-pg([0-9]+) ]] || [[ "$filename" =~ deb-.*-pg([0-9]+) ]]; then
+                  echo "${BASH_REMATCH[1]}"
+                else
+                  echo ""
+                fi
+              fi
+            }
+            
+            # Copy RPM packages
+            echo "📦 Organizing RPM packages..."
+            find release -name '*.rpm' | while read rpm_file; do
+              filename=$(basename "$rpm_file")
+              pg_version=$(extract_pg_version "$filename")
+              
+              if [ -n "$pg_version" ]; then
+                mkdir -p "$RELEASES_DIR/rpm/pg${pg_version}"
+                cp -v "$rpm_file" "$RELEASES_DIR/rpm/pg${pg_version}/"
+                echo "  ✓ Copied to rpm/pg${pg_version}/"
+              fi
+            done
+            
+            # Copy DEB packages
+            echo "📦 Organizing DEB packages..."
+            find release -name '*.deb' | while read deb_file; do
+              filename=$(basename "$deb_file")
+              pg_version=$(extract_pg_version "$filename")
+              
+              if [ -n "$pg_version" ]; then
+                mkdir -p "$RELEASES_DIR/deb/pg${pg_version}"
+                cp -v "$deb_file" "$RELEASES_DIR/deb/pg${pg_version}/"
+                echo "  ✓ Copied to deb/pg${pg_version}/"
+              fi
+            done
+            
+            # Copy macOS artifacts
+            echo "📦 Organizing macOS packages..."
+            find artifacts -name 'build-*-macos-*' -o -name '*-macos-pg*' | while read osx_file; do
+              if [ -f "$osx_file" ]; then
+                filename=$(basename "$osx_file")
+                pg_version=$(extract_pg_version "$filename")
+                
+                if [ -n "$pg_version" ]; then
+                  mkdir -p "$RELEASES_DIR/osx/pg${pg_version}"
+                  cp -v "$osx_file" "$RELEASES_DIR/osx/pg${pg_version}/"
+                  echo "  ✓ Copied to osx/pg${pg_version}/"
+                fi
+              fi
+            done
+            
+            # Copy checksums
+            if [ -f release/SHA256SUMS ]; then
+              echo "📦 Copying checksums..."
+              for pg_ver in 13 14 15 16 17 18; do
+                [ -d "$RELEASES_DIR/rpm/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/rpm/pg${pg_ver}/" 2>/dev/null || true
+                [ -d "$RELEASES_DIR/deb/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/deb/pg${pg_ver}/" 2>/dev/null || true
+                [ -d "$RELEASES_DIR/osx/pg${pg_ver}" ] && cp release/SHA256SUMS "$RELEASES_DIR/osx/pg${pg_ver}/" 2>/dev/null || true
+              done
+            fi
+            
+            echo "✅ pgraft packages organized successfully"
+          else
+            echo "⚠️  Warning: Releases directory not found at $RELEASES_DIR"
+          fi
       
       - name: Determine release tag
         id: release_tag
@@ -429,11 +552,15 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
       
       - name: Create GitHub Release
+        if: steps.packages.outputs.has_packages == 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           name: pgraft ${{ needs.prepare.outputs.version }}
-          files: release/*
+          files: |
+            release/*.rpm
+            release/*.deb
+            release/SHA256SUMS
           body: |
             ## pgraft ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
             
