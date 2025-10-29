@@ -489,44 +489,36 @@ jobs:
               fi
             }
             
-            # Copy RPM packages
-            echo "📦 Organizing RPM packages..."
-            find release -name '*.rpm' | while read rpm_file; do
-              filename=$(basename "$rpm_file")
-              pg_version=$(extract_pg_version "$filename")
+            # Copy build artifacts from downloaded artifacts directory
+            echo "📦 Organizing packages by PostgreSQL version..."
+            find artifacts -type f | while read artifact_file; do
+              filename=$(basename "$artifact_file")
               
-              if [ -n "$pg_version" ]; then
-                mkdir -p "$RELEASES_DIR/rpm/pg${pg_version}"
-                cp -v "$rpm_file" "$RELEASES_DIR/rpm/pg${pg_version}/"
-                echo "  ✓ Copied to rpm/pg${pg_version}/"
-              fi
-            done
-            
-            # Copy DEB packages
-            echo "📦 Organizing DEB packages..."
-            find release -name '*.deb' | while read deb_file; do
-              filename=$(basename "$deb_file")
-              pg_version=$(extract_pg_version "$filename")
-              
-              if [ -n "$pg_version" ]; then
-                mkdir -p "$RELEASES_DIR/deb/pg${pg_version}"
-                cp -v "$deb_file" "$RELEASES_DIR/deb/pg${pg_version}/"
-                echo "  ✓ Copied to deb/pg${pg_version}/"
-              fi
-            done
-            
-            # Copy macOS artifacts
-            echo "📦 Organizing macOS packages..."
-            find artifacts -name 'build-*-macos-*' -o -name '*-macos-pg*' | while read osx_file; do
-              if [ -f "$osx_file" ]; then
-                filename=$(basename "$osx_file")
-                pg_version=$(extract_pg_version "$filename")
+              # Extract from artifact directory name (e.g., pgraft-ubuntu-pg17)
+              artifact_dir=$(dirname "$artifact_file")
+              if [[ "$artifact_dir" =~ pgraft-([a-z]+)-pg([0-9]+) ]]; then
+                platform="${BASH_REMATCH[1]}"
+                pg_version="${BASH_REMATCH[2]}"
                 
-                if [ -n "$pg_version" ]; then
-                  mkdir -p "$RELEASES_DIR/osx/pg${pg_version}"
-                  cp -v "$osx_file" "$RELEASES_DIR/osx/pg${pg_version}/"
-                  echo "  ✓ Copied to osx/pg${pg_version}/"
-                fi
+                # Map platform to release directory
+                case "$platform" in
+                  ubuntu)
+                    release_platform="deb"
+                    ;;
+                  rocky)
+                    release_platform="rpm"
+                    ;;
+                  macos)
+                    release_platform="osx"
+                    ;;
+                  *)
+                    release_platform="$platform"
+                    ;;
+                esac
+                
+                mkdir -p "$RELEASES_DIR/$release_platform/pg${pg_version}"
+                cp -v "$artifact_file" "$RELEASES_DIR/$release_platform/pg${pg_version}/"
+                echo "  ✓ Copied $(basename $artifact_file) to $release_platform/pg${pg_version}/"
               fi
             done
             
