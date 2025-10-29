@@ -1,0 +1,72 @@
+name: Enforce Commit Email and User Restrictions
+on:
+  push:
+    branches:
+      - '**'  # All branches
+
+jobs:
+  validate-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Verify user is pgelephant2025
+        run: |
+          ALLOWED_USER="pgelephant2025"
+          if [ "${{ github.actor }}" != "$ALLOWED_USER" ]; then
+            echo "❌ UNAUTHORIZED PUSH BLOCKED"
+            echo "❌ Only user '$ALLOWED_USER' (Admin) is allowed to push"
+            echo "❌ Current user: ${{ github.actor }}"
+            echo "❌ This repository is restricted"
+            exit 1
+          fi
+          echo "✅ Authorized user: ${{ github.actor }}"
+      
+      - name: Check commit author email
+        run: |
+          ALLOWED_EMAIL="admin@pgelephant.com"
+          echo "Validating all commits..."
+          echo "Required email: $ALLOWED_EMAIL"
+          
+          # Get all commits in this push
+          COMMITS=$(git rev-list ${{ github.event.before }}..${{ github.event.after }})
+          
+          if [ -z "$COMMITS" ]; then
+            echo "No commits to validate"
+            exit 0
+          fi
+          
+          INVALID_COMMITS=0
+          for commit in $COMMITS; do
+            AUTHOR_EMAIL=$(git show -s --format='%ae' "$commit")
+            AUTHOR_NAME=$(git show -s --format='%an' "$commit")
+            COMMIT_MSG=$(git show -s --format='%s' "$commit")
+            
+            echo "Checking commit: $commit"
+            echo "  Author: $AUTHOR_NAME <$AUTHOR_EMAIL>"
+            echo "  Message: $COMMIT_MSG"
+            
+            if [ "$AUTHOR_EMAIL" != "$ALLOWED_EMAIL" ]; then
+              echo "❌ INVALID COMMIT DETECTED"
+              echo "❌ Commit $commit has disallowed email: $AUTHOR_EMAIL"
+              echo "❌ Required email: $ALLOWED_EMAIL"
+              INVALID_COMMITS=$((INVALID_COMMITS + 1))
+            else
+              echo "✅ Valid commit"
+            fi
+            echo ""
+          done
+          
+          if [ $INVALID_COMMITS -gt 0 ]; then
+            echo "❌ PUSH BLOCKED: $INVALID_COMMITS commit(s) with invalid email"
+            echo "❌ Only commits from $ALLOWED_EMAIL are allowed"
+            echo "❌ Please configure git with: git config user.email '$ALLOWED_EMAIL'"
+            exit 1
+          fi
+          
+          echo "✅ All commits validated successfully"
+          echo "✅ All commits from: $ALLOWED_EMAIL"
+
