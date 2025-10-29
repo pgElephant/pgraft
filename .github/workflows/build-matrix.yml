@@ -229,195 +229,30 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-  package-deb:
-    name: Package DEB PG-${{ matrix.pg_version }}
-    needs: [prepare, build]
+  summary:
+    name: Build Summary
+    needs: [build]
+    if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        pg_version: ${{ fromJson(needs.prepare.outputs.pg_versions) }}
-        os: ['ubuntu:22.04', 'ubuntu:24.04', 'debian:11', 'debian:12']
-    
-    container:
-      image: ${{ matrix.os }}
-      options: --user root
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Build DEB package
+      - name: Create build status summary
         run: |
-          export DEBIAN_FRONTEND=noninteractive
-          export DEBCONF_NONINTERACTIVE_SEEN=true
+          cat > $GITHUB_STEP_SUMMARY << 'EOF'
+          ## Build Matrix Results
           
-          # Disable documentation (create directory first if needed)
-          mkdir -p /etc/dpkg/dpkg.cfg.d
-          echo 'path-exclude /usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
-          echo 'path-exclude /usr/share/doc/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
-          echo 'path-exclude /usr/share/locale/*' >> /etc/dpkg/dpkg.cfg.d/01_nodoc || true
-          rm -f /var/lib/man-db/auto-update || true
+          | Platform | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 |
+          |----------|---------------|---------------|---------------|
+          | **Ubuntu** | ✅ | ✅ | ✅ |
+          | **macOS** | ✅ | ✅ | ✅ |
+          | **Rocky** | ✅ | ✅ | ✅ |
           
-          # Install dependencies
-          apt-get update
-          apt-get install -y --no-install-recommends wget gnupg2 lsb-release ca-certificates
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
-          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
-          apt-get update
-          
-          apt-get install -y --no-install-recommends \
-            build-essential \
-            debhelper \
-            postgresql-server-dev-${{ matrix.pg_version }} \
-            libjson-c-dev \
-            pkg-config \
-            curl
-          
-          # Install Go 1.21+ (Debian 11 only has Go 1.15, but we need 1.21+)
-          GO_VERSION=1.21.6
-          curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xzf -
-          export PATH=/usr/local/go/bin:$PATH
-          go version
-          
-          # Build package (implementation from reusable-build-deb.yml)
-          make PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg_version }}/bin/pg_config
-          
-          # Organize packages in release folder structure
-          mkdir -p $HOME/release/deb/pg${{ matrix.pg_version }}
-          if [ -f ../*.deb ]; then
-            cp ../*.deb $HOME/release/deb/pg${{ matrix.pg_version }}/ || true
-          fi
-          ls -la $HOME/release/deb/pg${{ matrix.pg_version }}/
-      
-      - name: Upload DEB artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: deb-$(echo "${{ matrix.os }}" | sed 's/:/-/g')-pg${{ matrix.pg_version }}
-          path: ~/release/deb/pg${{ matrix.pg_version }}/*.deb
-          retention-days: 90
-          if-no-files-found: warn
-
-  package-rpm:
-    name: Package RPM PG-${{ matrix.pg_version }}
-    needs: [prepare, build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        pg_version: ${{ fromJson(needs.prepare.outputs.pg_versions) }}
-        os: ['rockylinux:9', 'almalinux:9', 'quay.io/centos/centos:stream9']
-    
-    container:
-      image: ${{ matrix.os }}
-      options: --user root
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Build RPM package
-        run: |
-          export LANG=C
-          export LC_ALL=C
-          
-          # Enable repositories
-          dnf install -y epel-release
-          dnf config-manager --set-enabled crb || crb enable || true
-          
-          # Add PostgreSQL repository
-          ARCH=$(uname -m)
-          dnf install -y --nogpgcheck https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-${ARCH}/pgdg-redhat-repo-latest.noarch.rpm
-          dnf -qy module disable postgresql
-          
-          # Install dependencies
-          dnf install -y --setopt=deltarpm=0 --setopt=install_weak_deps=false \
-            rpm-build \
-            rpmdevtools \
-            redhat-rpm-config \
-            gcc \
-            make \
-            postgresql${{ matrix.pg_version }}-devel \
-            golang \
-            json-c-devel \
-            pkg-config
-          
-          # Build package (implementation from reusable-build-rpm.yml)
-          rpmdev-setuptree
-          make PG_CONFIG=/usr/pgsql-${{ matrix.pg_version }}/bin/pg_config
-          
-          # Organize packages in release folder structure
-          mkdir -p $HOME/release/rpm/pg${{ matrix.pg_version }}
-          if [ -d ~/rpmbuild/RPMS ]; then
-            find ~/rpmbuild/RPMS -name "*.rpm" -exec cp {} $HOME/release/rpm/pg${{ matrix.pg_version }}/ \;
-          fi
-          if [ -d ~/rpmbuild/SRPMS ]; then
-            find ~/rpmbuild/SRPMS -name "*.rpm" -exec cp {} $HOME/release/rpm/pg${{ matrix.pg_version }}/ \;
-          fi
-          ls -la $HOME/release/rpm/pg${{ matrix.pg_version }}/
-      
-      - name: Upload RPM artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rpm-$(echo "${{ matrix.os }}" | sed 's|/|-|g' | sed 's|:|-|g' | sed 's|quay.io-||')-pg${{ matrix.pg_version }}
-          path: ~/release/rpm/pg${{ matrix.pg_version }}/*.rpm
-          retention-days: 90
-          if-no-files-found: warn
-
-  test-packages:
-    name: Test Packages
-    needs: [prepare, package-deb, package-rpm]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        type: [rpm, deb]
-        pg_version: ['17']
-    
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: ${{ matrix.type }}-*-pg${{ matrix.pg_version }}
-          path: ./packages
-          merge-multiple: true
-      
-      - name: Test RPM installation
-        if: matrix.type == 'rpm'
-        run: |
-          docker run --rm -v $PWD/packages:/pkg rockylinux:9 bash -c "
-            ARCH=\$(uname -m)
-            dnf install -y --nogpgcheck https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-\${ARCH}/pgdg-redhat-repo-latest.noarch.rpm
-            dnf -qy module disable postgresql
-            dnf install -y --nogpgcheck postgresql${{ matrix.pg_version }}-server json-c
-            dnf install -y --nogpgcheck /pkg/pgraft_${{ matrix.pg_version }}-*.rpm || \
-            dnf install -y --nogpgcheck /pkg/pgraft-*.rpm
-            echo '✅ RPM installation successful'
-          "
-      
-      - name: Test DEB installation
-        if: matrix.type == 'deb'
-        run: |
-          docker run --rm -v $PWD/packages:/pkg -e DEBIAN_FRONTEND=noninteractive ubuntu:22.04 bash -c "
-            apt-get update
-            apt-get install -y wget gnupg2 lsb-release
-            wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
-            echo 'deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' > /etc/apt/sources.list.d/pgdg.list
-            apt-get update
-            apt-get install -y postgresql-${{ matrix.pg_version }} libjson-c5
-            dpkg -i /pkg/postgresql-${{ matrix.pg_version }}-pgraft*.deb || apt-get install -f -y
-            echo '✅ DEB installation successful'
-          "
+          Build matrix completed!
+          EOF
 
   release:
     name: Create Release
-    needs: [prepare, test-packages]
+    needs: [prepare, build]
     if: ${{ github.event.inputs.create_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -428,30 +263,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Download all package artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '{rpm,deb,build}-*'
+          pattern: 'pgraft-*'
           path: artifacts
       
       - name: Organize release packages
         id: packages
         run: |
           mkdir -p release
-          find artifacts -name '*.rpm' -exec cp {} release/ \; 2>/dev/null || true
-          find artifacts -name '*.deb' -exec cp {} release/ \; 2>/dev/null || true
+          find artifacts -name '*.so' -exec cp {} release/ \; 2>/dev/null || true
+          find artifacts -name '*.dylib' -exec cp {} release/ \; 2>/dev/null || true
           
-          # Generate checksums only if packages exist
           cd release
-          PACKAGE_COUNT=$(ls -1 *.rpm *.deb 2>/dev/null | wc -l)
+          PACKAGE_COUNT=$(ls -1 2>/dev/null | wc -l)
           
           if [ "$PACKAGE_COUNT" -gt 0 ]; then
-            sha256sum *.rpm *.deb 2>/dev/null > SHA256SUMS || true
+            sha256sum * 2>/dev/null > SHA256SUMS || true
             echo "📦 Release packages found: $PACKAGE_COUNT"
             ls -lh
-            echo ""
-            echo "🔐 SHA256 Checksums:"
-            cat SHA256SUMS
             echo "has_packages=true" >> $GITHUB_OUTPUT
           else
             echo "⚠️  Warning: No packages found for release"
@@ -459,15 +290,25 @@ jobs:
           fi
       
       - name: Copy packages to local releases directory
-        if: steps.packages.outputs.has_packages == 'true'
+        if: steps.packages.outputs.has_packages == 'true' && runner.os != 'Linux'
+        continue-on-error: true
         run: |
-          # Create local releases directory structure
           RELEASES_DIR="/Users/pgedge/pge/releases"
           
-          if [ -d "$RELEASES_DIR" ]; then
-            echo "📦 Copying pgraft packages to $RELEASES_DIR (organized by PostgreSQL version)"
+          # Skip on GitHub Actions runners
+          if [ ! -w "/Users/pgedge" ] && [ ! -w "/Users" ]; then
+            echo "⚠️  Skipping: Not running on local machine (GitHub Actions runner detected)"
+            exit 0
+          fi
+          
+          # Create releases directory if it doesn't exist
+          if [ ! -d "$RELEASES_DIR" ]; then
+            echo "📦 Creating releases directory structure at $RELEASES_DIR"
+            mkdir -p "$RELEASES_DIR"/{deb,rpm,osx}/{pg13,pg14,pg15,pg16,pg17,pg18}
+          fi
+          
+          echo "📦 Copying pgraft packages to $RELEASES_DIR (organized by PostgreSQL version)"
             
-            # Function to extract PostgreSQL version from filename
             extract_pg_version() {
               local filename="$1"
               if [[ "$filename" =~ pg([0-9]+) ]] || [[ "$filename" =~ postgresql-([0-9]+) ]] || [[ "$filename" =~ pg_([0-9]+) ]]; then
@@ -481,7 +322,7 @@ jobs:
                     return
                   fi
                 done
-                if [[ "$filename" =~ build-.*-pg([0-9]+) ]] || [[ "$filename" =~ rpm-.*-pg([0-9]+) ]] || [[ "$filename" =~ deb-.*-pg([0-9]+) ]]; then
+                if [[ "$filename" =~ pgraft-.*-pg([0-9]+) ]]; then
                   echo "${BASH_REMATCH[1]}"
                 else
                   echo ""
@@ -489,7 +330,6 @@ jobs:
               fi
             }
             
-            # Copy build artifacts from downloaded artifacts directory
             echo "📦 Organizing packages by PostgreSQL version..."
             find artifacts -type f | while read artifact_file; do
               filename=$(basename "$artifact_file")
@@ -522,7 +362,6 @@ jobs:
               fi
             done
             
-            # Copy checksums
             if [ -f release/SHA256SUMS ]; then
               echo "📦 Copying checksums..."
               for pg_ver in 13 14 15 16 17 18; do
@@ -532,49 +371,43 @@ jobs:
               done
             fi
             
+            echo ""
             echo "✅ pgraft packages organized successfully"
-          else
-            echo "⚠️  Warning: Releases directory not found at $RELEASES_DIR"
-          fi
-      
-      - name: Determine release tag
-        id: release_tag
-        run: |
-          TAG="${{ github.event.inputs.release_tag }}"
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+            echo ""
+            echo "📂 Package Summary:"
+            for pg_ver in 13 14 15 16 17 18; do
+              if [ -d "$RELEASES_DIR/rpm/pg${pg_ver}" ] || [ -d "$RELEASES_DIR/deb/pg${pg_ver}" ] || [ -d "$RELEASES_DIR/osx/pg${pg_ver}" ]; then
+                echo "  PostgreSQL ${pg_ver}:"
+                echo "    RPM: $(ls -1 "$RELEASES_DIR/rpm/pg${pg_ver}" 2>/dev/null | wc -l) files"
+                echo "    DEB: $(ls -1 "$RELEASES_DIR/deb/pg${pg_ver}" 2>/dev/null | wc -l) files"
+                echo "    macOS: $(ls -1 "$RELEASES_DIR/osx/pg${pg_ver}" 2>/dev/null | wc -l) files"
+              fi
+            done
       
       - name: Create GitHub Release
         if: steps.packages.outputs.has_packages == 'true'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.release_tag.outputs.tag }}
+          tag_name: ${{ github.event.inputs.release_tag }}
           name: pgraft ${{ needs.prepare.outputs.version }}
           files: |
-            release/*.rpm
-            release/*.deb
-            release/SHA256SUMS
+            release/*
           body: |
             ## pgraft ${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.release }}
             
             Raft consensus extension for PostgreSQL.
             
-            ### 📦 Packages
+            ### 📦 Build Artifacts
             
             - **PostgreSQL versions**: 16, 17, 18
-            - **RPM**: RHEL/CentOS Stream 9, Rocky Linux 9, AlmaLinux 9
-            - **DEB**: Ubuntu 22.04/24.04, Debian 11/12
+            - **Platforms**: Ubuntu (.so), Rocky Linux (.so), macOS (.dylib)
             
             ### 🚀 Installation
             
-            **RPM (RHEL/Rocky/AlmaLinux):**
             ```bash
-            sudo dnf install pgraft_17-*.rpm
-            ```
-            
-            **DEB (Ubuntu/Debian):**
-            ```bash
-            sudo dpkg -i postgresql-17-pgraft_*.deb
-            sudo apt-get install -f
+            # Build from source
+            make PG_CONFIG=/path/to/pg_config
+            sudo make install PG_CONFIG=/path/to/pg_config
             ```
             
             ### ✨ Features
@@ -592,32 +425,10 @@ jobs:
             
             ### ✅ Verification
             
-            Download SHA256SUMS and verify:
             ```bash
             sha256sum -c SHA256SUMS
             ```
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  summary:
-    name: Build Summary
-    needs: [build]
-    if: always()
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Create build status summary
-        run: |
-          cat > $GITHUB_STEP_SUMMARY << 'EOF'
-          ## Build Matrix Results
-          
-          | Platform | PostgreSQL 16 | PostgreSQL 17 | PostgreSQL 18 |
-          |----------|---------------|---------------|---------------|
-          | **Ubuntu** | ✅ | ✅ | ✅ |
-          | **macOS** | ✅ | ✅ | ✅ |
-          | **Rocky** | ✅ | ✅ | ✅ |
-          
-          Build matrix completed!
-          EOF
 
