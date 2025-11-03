@@ -289,9 +289,9 @@ if __name__ == "__main__":
     
     if args.init:
         cluster.init_cluster(args.nodes)
-        elif args.destroy:
+    elif args.destroy:
         cluster.destroy_cluster()
-        elif args.status:
+    elif args.status:
         cluster.show_status()
     else:
         parser.print_help()
