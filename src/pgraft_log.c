@@ -95,9 +95,15 @@ pgraft_log_append_entry(int64_t term, const char *data, int32_t data_size)
 		return -1;
 	}
 	
-	if (data_size > 1024)
+	/*
+	 * entry->data is a 1024-byte buffer and we NUL-terminate at
+	 * entry->data[data_size], so the largest payload we can store is 1023
+	 * bytes.  Reject anything that would not leave room for the terminator.
+	 */
+	if (data_size < 0 || data_size >= (int32_t) sizeof(entry->data))
 	{
-		elog(ERROR, "pgraft: data size %d exceeds maximum 1024", data_size);
+		elog(ERROR, "pgraft: data size %d exceeds maximum %zu",
+			 data_size, sizeof(((pgraft_log_entry_t *) 0)->data) - 1);
 		return -1;
 	}
 	

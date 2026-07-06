@@ -314,7 +314,12 @@ pgraft_json_parse_kv_operation(const char *json_data, size_t len, int *op_type, 
 		return -1;
 	}
 	type_str = json_object_get_string(type_obj);
-	
+	if (type_str == NULL) {
+		elog(WARNING, "pgraft_json: 'type' field is not a string");
+		json_object_put(json_obj);
+		return -1;
+	}
+
 	/* Extract key */
 	if (!json_object_object_get_ex(json_obj, "key", &key_obj)) {
 		elog(ERROR, "pgraft_json: missing 'key' field in JSON");
@@ -322,7 +327,12 @@ pgraft_json_parse_kv_operation(const char *json_data, size_t len, int *op_type, 
 		return -1;
 	}
 	key_str = json_object_get_string(key_obj);
-	
+	if (key_str == NULL) {
+		elog(WARNING, "pgraft_json: 'key' field is not a string");
+		json_object_put(json_obj);
+		return -1;
+	}
+
 	/* Determine operation type */
 	if (strcmp(type_str, "kv_put") == 0) {
 		*op_type = PGRAFT_KV_PUT;
@@ -334,6 +344,11 @@ pgraft_json_parse_kv_operation(const char *json_data, size_t len, int *op_type, 
 			return -1;
 		}
 		value_str = json_object_get_string(value_obj);
+		if (value_str == NULL) {
+			elog(WARNING, "pgraft_json: 'value' field is not a string");
+			json_object_put(json_obj);
+			return -1;
+		}
 		*value = pstrdup(value_str);
 	} else if (strcmp(type_str, "kv_delete") == 0) {
 		*op_type = PGRAFT_KV_DELETE;

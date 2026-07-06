@@ -60,6 +60,41 @@ static pgraft_go_update_cluster_state_func pgraft_go_update_cluster_state_ptr = 
 static pgraft_go_replicate_log_entry_func pgraft_go_replicate_log_entry_ptr = NULL;
 
 /*
+ * Reset every cached function pointer to NULL.
+ *
+ * Used both when unloading the library and when symbol loading fails partway
+ * through, so we never leave dangling pointers into an unmapped (or partially
+ * bound) library that later callers might invoke.
+ */
+static void
+pgraft_go_reset_symbols(void)
+{
+	pgraft_go_init_ptr = NULL;
+	pgraft_go_init_config_ptr = NULL;
+	pgraft_go_start_ptr = NULL;
+	pgraft_go_start_background_ptr = NULL;
+	pgraft_go_stop_ptr = NULL;
+	pgraft_go_add_peer_ptr = NULL;
+	pgraft_go_remove_peer_ptr = NULL;
+	pgraft_go_get_leader_ptr = NULL;
+	pgraft_go_get_term_ptr = NULL;
+	pgraft_go_get_node_id_ptr = NULL;
+	pgraft_go_is_initialized_ptr = NULL;
+	pgraft_go_is_leader_ptr = NULL;
+	pgraft_go_append_log_ptr = NULL;
+	pgraft_go_get_nodes_ptr = NULL;
+	pgraft_go_log_replicate_ptr = NULL;
+	pgraft_go_version_ptr = NULL;
+	pgraft_go_test_ptr = NULL;
+	pgraft_go_set_debug_ptr = NULL;
+	pgraft_go_start_network_server_ptr = NULL;
+	pgraft_go_trigger_heartbeat_ptr = NULL;
+	pgraft_go_free_string_ptr = NULL;
+	pgraft_go_update_cluster_state_ptr = NULL;
+	pgraft_go_replicate_log_entry_ptr = NULL;
+}
+
+/*
  * Load Go Raft library dynamically
  */
 int
@@ -158,16 +193,21 @@ pgraft_go_load_library(void)
 	/* Load function symbols with proper error handling */
 	if (pgraft_go_load_symbols() != 0)
 	{
-		/* Don't dlclose - keep library for process lifetime */
+		/* Symbol loading failed - drop the handle AND clear any pointers that
+		 * were bound before the failure, so we don't report a partially-bound
+		 * library as "already loaded" on the next attempt. */
+		dlclose(go_lib_handle);
 		go_lib_handle = NULL;
+		pgraft_go_reset_symbols();
 		return -1;
 	}
 
 	/* Verify version compatibility */
 	if (pgraft_go_check_version() != 0)
 	{
-		/* Don't dlclose - keep library for process lifetime */
+		dlclose(go_lib_handle);
 		go_lib_handle = NULL;
+		pgraft_go_reset_symbols();
 		return -1;
 	}
 
@@ -190,24 +230,10 @@ pgraft_go_unload_library(void)
 		dlclose(go_lib_handle);
 		go_lib_handle = NULL;
 	}
-	
-	/* Reset function pointers */
-	pgraft_go_init_ptr = NULL;
-	pgraft_go_init_config_ptr = NULL;
-	pgraft_go_start_ptr = NULL;
-	pgraft_go_stop_ptr = NULL;
-	pgraft_go_add_peer_ptr = NULL;
-	pgraft_go_remove_peer_ptr = NULL;
-	pgraft_go_get_leader_ptr = NULL;
-	pgraft_go_get_term_ptr = NULL;
-	pgraft_go_get_node_id_ptr = NULL;
-	pgraft_go_is_leader_ptr = NULL;
-	pgraft_go_get_nodes_ptr = NULL;
-	pgraft_go_version_ptr = NULL;
-	pgraft_go_test_ptr = NULL;
-	pgraft_go_set_debug_ptr = NULL;
-	pgraft_go_free_string_ptr = NULL;
-	
+
+	/* Reset ALL function pointers so none dangle into the unmapped library */
+	pgraft_go_reset_symbols();
+
 	/* Update shared memory state */
 	pgraft_state_set_go_lib_loaded(false);
 	
@@ -543,7 +569,7 @@ pgraft_go_load_symbols(void)
 	pgraft_go_init_ptr = (pgraft_go_init_func) dlsym(go_lib_handle, "pgraft_go_init");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_init': %s", error);
+		elog(WARNING, "pgraft: failed to load symbol 'pgraft_go_init': %s", error);
 		return -1;
 	}
 	
@@ -562,7 +588,7 @@ pgraft_go_load_symbols(void)
 	pgraft_go_start_ptr = (pgraft_go_start_func) dlsym(go_lib_handle, "pgraft_go_start");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_start': %s", error);
+		elog(WARNING, "pgraft: failed to load symbol 'pgraft_go_start': %s", error);
 		return -1;
 	}
 	
@@ -576,42 +602,42 @@ pgraft_go_load_symbols(void)
 	pgraft_go_stop_ptr = (pgraft_go_stop_func) dlsym(go_lib_handle, "pgraft_go_stop");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_stop': %s", error);
+		elog(WARNING, "pgraft: failed to load symbol 'pgraft_go_stop': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_add_peer_ptr = (pgraft_go_add_peer_func) dlsym(go_lib_handle, "pgraft_go_add_peer");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_add_peer': %s", error);
+		elog(WARNING, "pgraft: failed to load symbol 'pgraft_go_add_peer': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_get_leader_ptr = (pgraft_go_get_leader_func) dlsym(go_lib_handle, "pgraft_go_get_leader");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_get_leader': %s", error);
+		elog(WARNING, "pgraft: failed to load symbol 'pgraft_go_get_leader': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_get_term_ptr = (pgraft_go_get_term_func) dlsym(go_lib_handle, "pgraft_go_get_term");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_get_term': %s", error);
+		elog(WARNING, "pgraft: failed to load symbol 'pgraft_go_get_term': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_get_node_id_ptr = (pgraft_go_get_node_id_func) dlsym(go_lib_handle, "pgraft_go_get_node_id");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_get_node_id': %s", error);
+		elog(WARNING, "pgraft: failed to load symbol 'pgraft_go_get_node_id': %s", error);
 		return -1;
 	}
 	
 	pgraft_go_version_ptr = (pgraft_go_version_func) dlsym(go_lib_handle, "pgraft_go_version");
 	if ((error = dlerror()) != NULL)
 	{
-		elog(ERROR, "pgraft: failed to load symbol 'pgraft_go_version': %s", error);
+		elog(WARNING, "pgraft: failed to load symbol 'pgraft_go_version': %s", error);
 		return -1;
 	}
 	
@@ -706,7 +732,12 @@ pgraft_go_check_version(void)
 	{
 		elog(LOG, "pgraft: version check passed - %s", version);
 	}
-	
+
+	/* The version string is a C.CString allocated on the C heap by the Go
+	 * layer; free it via the Go allocator to avoid a per-load leak. */
+	if (pgraft_go_free_string_ptr != NULL)
+		pgraft_go_free_string_ptr((char *) version);
+
 	return 0;
 }
 

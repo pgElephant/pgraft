@@ -111,7 +111,7 @@ pgraft_kv_put_sql(PG_FUNCTION_ARGS)
 	}
 	
 	/* Check for invalid characters in key */
-	if (strpbrk(key, "\0\r\n\t")) {
+	if (strpbrk(key, "\r\n\t")) {
 		elog(WARNING, "pgraft_kv: key contains invalid characters (null, newline, tab, or carriage return)");
 		PG_RETURN_BOOL(false);
 	}
@@ -203,7 +203,7 @@ pgraft_kv_delete_sql(PG_FUNCTION_ARGS)
 	}
 	
 	/* Check for invalid characters in key */
-	if (strpbrk(key, "\0\r\n\t")) {
+	if (strpbrk(key, "\r\n\t")) {
 		elog(WARNING, "pgraft_kv: key contains invalid characters (null, newline, tab, or carriage return)");
 		PG_RETURN_BOOL(false);
 	}
@@ -306,44 +306,50 @@ pgraft_kv_stats_sql(PG_FUNCTION_ARGS)
 Datum
 pgraft_kv_get_stats_table(PG_FUNCTION_ARGS)
 {
-	pgraft_kv_store_t *store;
+	pgraft_kv_store_t *store_copy;
 	TupleDesc tupdesc;
 	Datum values[8];
 	bool nulls[8] = {false};
 	HeapTuple tuple;
 	int active_entries = 0, deleted_entries = 0;
-	
-	/* Get the store */
-	store = pgraft_kv_get_store();
-	if (!store) {
+
+	/*
+	 * Take a consistent, locked snapshot of the store rather than reading the
+	 * live shared-memory struct field-by-field, which could otherwise observe
+	 * torn counters or a num_entries that races with a concurrent writer.
+	 */
+	store_copy = (pgraft_kv_store_t *) palloc(sizeof(pgraft_kv_store_t));
+	if (pgraft_kv_get_stats(store_copy) != 0) {
+		pfree(store_copy);
 		elog(ERROR, "pgraft_kv: key/value store not initialized");
 		PG_RETURN_NULL();
 	}
-	
+
 	/* Build tuple descriptor */
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "pgraft_kv: return type must be a row type");
-	
+
 	/* Calculate active vs deleted entries */
-	for (int i = 0; i < store->num_entries; i++) {
-		if (store->entries[i].deleted)
+	for (int i = 0; i < store_copy->num_entries; i++) {
+		if (store_copy->entries[i].deleted)
 			deleted_entries++;
 		else
 			active_entries++;
 	}
-	
+
 	/* Prepare values */
-	values[0] = Int32GetDatum(store->num_entries);
-	values[1] = Int64GetDatum(store->total_operations);
-	values[2] = Int64GetDatum(store->last_applied_index);
-	values[3] = Int64GetDatum(store->puts);
-	values[4] = Int64GetDatum(store->deletes);
-	values[5] = Int64GetDatum(store->gets);
+	values[0] = Int32GetDatum(store_copy->num_entries);
+	values[1] = Int64GetDatum(store_copy->total_operations);
+	values[2] = Int64GetDatum(store_copy->last_applied_index);
+	values[3] = Int64GetDatum(store_copy->puts);
+	values[4] = Int64GetDatum(store_copy->deletes);
+	values[5] = Int64GetDatum(store_copy->gets);
 	values[6] = Int32GetDatum(active_entries);
 	values[7] = Int32GetDatum(deleted_entries);
-	
+
 	/* Build and return tuple */
 	tuple = heap_form_tuple(tupdesc, values, nulls);
+	pfree(store_copy);
 	PG_RETURN_DATUM(HeapTupleGetDatum(tuple));
 }
 
@@ -358,8 +364,8 @@ pgraft_kv_compact_sql(PG_FUNCTION_ARGS)
 	
 	/* Perform compaction */
 	pgraft_kv_compact();
-	
-	PG_RETURN_TEXT_P(cstring_to_text("Key/value store compacted successfully"));
+
+	PG_RETURN_BOOL(true);
 }
 
 /*
@@ -373,6 +379,6 @@ pgraft_kv_reset_sql(PG_FUNCTION_ARGS)
 	
 	/* Perform reset */
 	pgraft_kv_reset();
-	
-	PG_RETURN_TEXT_P(cstring_to_text("Key/value store reset successfully"));
+
+	PG_RETURN_BOOL(true);
 }

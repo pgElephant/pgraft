@@ -301,40 +301,42 @@ pgraft_kv_get(const char *key, char *value, size_t value_size, int64_t *version)
 	pgraft_kv_store_t *store = pgraft_kv_get_store();
 	pgraft_kv_entry_t *entry;
 	int entry_index;
-	
+	int64_t entry_version;
+
 	if (!store || !key || !value)
 	{
 		elog(ERROR, "pgraft_kv: invalid parameters for GET operation");
 		return -1;
 	}
-	
+
 	SpinLockAcquire(&store->mutex);
-	
+
 	entry_index = pgraft_kv_find_entry_index(key);
-	
+
 	if (entry_index < 0)
 	{
 		SpinLockRelease(&store->mutex);
 		elog(DEBUG1, "pgraft_kv: Key '%s' not found", key);
 		return -1;  /* Key not found */
 	}
-	
+
 	entry = &store->entries[entry_index];
-	
+
 	/* Copy value */
 	strncpy(value, entry->value, value_size - 1);
 	value[value_size - 1] = '\0';
-	
+
+	entry_version = entry->version;
 	if (version)
-		*version = entry->version;
-	
+		*version = entry_version;
+
 	store->gets++;
 	store->total_operations++;
-	
+
 	SpinLockRelease(&store->mutex);
-	
-	elog(DEBUG1, "pgraft_kv: Retrieved key '%s' (version %lld)", key, (long long)entry->version);
-	
+
+	elog(DEBUG1, "pgraft_kv: Retrieved key '%s' (version %lld)", key, (long long)entry_version);
+
 	return 0;  /* Success */
 }
 
@@ -429,35 +431,50 @@ int
 pgraft_kv_save_to_disk(const char *path)
 {
 	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	pgraft_kv_store_t *snapshot;
 	FILE *file;
 	size_t written;
-	
+	int num_entries;
+
 	if (!store || !path)
 		return -1;
-	
+
+	/*
+	 * Take a consistent snapshot of the store under the spinlock, then
+	 * release the lock BEFORE doing any blocking file I/O.  A PostgreSQL
+	 * spinlock must only be held for a handful of instructions; holding it
+	 * across fopen/fwrite of a ~MB structure would make every other backend
+	 * busy-wait for the duration of the disk write.
+	 */
+	snapshot = (pgraft_kv_store_t *) palloc(sizeof(pgraft_kv_store_t));
+
+	SpinLockAcquire(&store->mutex);
+	memcpy(snapshot, store, sizeof(pgraft_kv_store_t));
+	SpinLockRelease(&store->mutex);
+
+	num_entries = snapshot->num_entries;
+
 	file = fopen(path, "wb");
 	if (!file)
 	{
 		elog(WARNING, "pgraft_kv: failed to open file for writing: %s", path);
+		pfree(snapshot);
 		return -1;
 	}
-	
-	SpinLockAcquire(&store->mutex);
-	
-	/* Write the entire store structure */
-	written = fwrite(store, sizeof(pgraft_kv_store_t), 1, file);
-	
-	SpinLockRelease(&store->mutex);
-	
+
+	/* Write the snapshot copy (no lock held during I/O) */
+	written = fwrite(snapshot, sizeof(pgraft_kv_store_t), 1, file);
+
 	fclose(file);
-	
+	pfree(snapshot);
+
 	if (written != 1)
 	{
 		elog(WARNING, "pgraft_kv: failed to write store to disk");
 		return -1;
 	}
-	
-	elog(DEBUG1, "pgraft_kv: Saved store to disk (%d entries)", store->num_entries);
+
+	elog(DEBUG1, "pgraft_kv: Saved store to disk (%d entries)", num_entries);
 	return 0;
 }
 
@@ -492,9 +509,23 @@ pgraft_kv_load_from_disk(const char *path)
 		elog(WARNING, "pgraft_kv: failed to read store from disk");
 		return -1;
 	}
-	
+
+	/*
+	 * Validate the entry count read from disk before trusting it.  The file
+	 * lives at a fixed, potentially world-writable path, so a corrupt or
+	 * tampered num_entries could drive every subsequent loop past the end of
+	 * the fixed-size entries[] array.  Reject anything out of range.
+	 */
+	if (temp_store.num_entries < 0 ||
+		temp_store.num_entries > (int32_t) (sizeof(store->entries) / sizeof(store->entries[0])))
+	{
+		elog(WARNING, "pgraft_kv: on-disk store has invalid entry count %d, ignoring persisted data",
+			 temp_store.num_entries);
+		return -1;
+	}
+
 	SpinLockAcquire(&store->mutex);
-	
+
 	/* Copy data except the mutex */
 	memcpy(store->entries, temp_store.entries, sizeof(store->entries));
 	store->num_entries = temp_store.num_entries;

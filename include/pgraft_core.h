@@ -80,6 +80,19 @@ typedef struct
 	int			port;
 	WORKER_STATUS status;
 
+	/*
+	 * Protects the command/status/apply circular buffers and their
+	 * head/tail/count indices below.  Client backends (producers) and the
+	 * background worker (consumer) mutate these concurrently, so every
+	 * head/tail/count update must be done while holding this spinlock.
+	 */
+	slock_t		mutex;
+
+	/* Monotonic id source used to uniquely identify queued commands
+	 * (replaces the old 1-second-granularity time(NULL) key, which collided
+	 * for commands queued within the same second). */
+	int64_t		next_command_id;
+
 	/* Fixed-size circular buffer for commands */
 	pgraft_command_t commands[MAX_COMMANDS];
 	int			command_head;		/* Index of next command to process */

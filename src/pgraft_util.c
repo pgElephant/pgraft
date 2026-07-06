@@ -20,8 +20,9 @@ pgraft_queue_command(COMMAND_TYPE type, int node_id, const char *address, int po
 {
 	pgraft_worker_state_t *state;
 	pgraft_command_t *cmd;
-	
-	elog(LOG, "pgraft: pgraft_queue_command called with type=%d, node_id=%d, address=%s, port=%d", 
+	int			command_count;
+
+	elog(LOG, "pgraft: pgraft_queue_command called with type=%d, node_id=%d, address=%s, port=%d",
 		 type, node_id, address ? address : "NULL", port);
 	
 	state = pgraft_worker_get_state();
@@ -29,16 +30,19 @@ pgraft_queue_command(COMMAND_TYPE type, int node_id, const char *address, int po
 		elog(ERROR, "pgraft: failed to get worker state in pgraft_queue_command");
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Check if queue is full */
 	if (state->command_count >= MAX_COMMANDS) {
+		SpinLockRelease(&state->mutex);
 		elog(WARNING, "pgraft: command queue is full, cannot queue new command");
 		return false;
 	}
-	
+
 	/* Get pointer to next slot in circular buffer */
 	cmd = &state->commands[state->command_tail];
-	
+
 	/* Initialize command */
 	cmd->type = type;
 	cmd->node_id = node_id;
@@ -49,25 +53,27 @@ pgraft_queue_command(COMMAND_TYPE type, int node_id, const char *address, int po
 		cmd->address[0] = '\0';
 	}
 	cmd->port = port;
-	
+
 	if (cluster_id) {
 		strncpy(cmd->cluster_id, cluster_id, sizeof(cmd->cluster_id) - 1);
 		cmd->cluster_id[sizeof(cmd->cluster_id) - 1] = '\0';
 	} else {
 		cmd->cluster_id[0] = '\0';
 	}
-	
-	/* Initialize status tracking */
+
+	/* Initialize status tracking (unique, collision-free command id) */
 	cmd->status = COMMAND_STATUS_PENDING;
 	cmd->error_message[0] = '\0';
-	cmd->timestamp = time(NULL);
-	
+	cmd->timestamp = state->next_command_id++;
+
 	/* Update circular buffer pointers */
 	state->command_tail = (state->command_tail + 1) % MAX_COMMANDS;
-	state->command_count++;
-	
-	elog(LOG, "pgraft: command %d queued for node %d at %s:%d (count=%d)", 
-		 type, node_id, address, port, state->command_count);
+	command_count = ++state->command_count;
+
+	SpinLockRelease(&state->mutex);
+
+	elog(LOG, "pgraft: command %d queued for node %d at %s:%d (count=%d)",
+		 type, node_id, address ? address : "NULL", port, command_count);
 	return true;
 }
 
@@ -84,19 +90,24 @@ pgraft_dequeue_command(pgraft_command_t *cmd)
 	if (state == NULL) {
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Check if queue is empty */
 	if (state->command_count == 0) {
+		SpinLockRelease(&state->mutex);
 		return false;
 	}
-	
+
 	/* Copy command from head of circular buffer */
 	*cmd = state->commands[state->command_head];
-	
+
 	/* Update circular buffer pointers */
 	state->command_head = (state->command_head + 1) % MAX_COMMANDS;
 	state->command_count--;
-	
+
+	SpinLockRelease(&state->mutex);
+
 	return true;
 }
 
@@ -124,28 +135,32 @@ pgraft_queue_log_command(COMMAND_TYPE type, const char *log_data, int log_index)
 {
 	pgraft_worker_state_t *state;
 	pgraft_command_t *cmd;
-	
+	int			command_count;
+
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Check if queue is full */
 	if (state->command_count >= MAX_COMMANDS) {
+		SpinLockRelease(&state->mutex);
 		elog(WARNING, "pgraft: command queue is full, cannot queue log command");
 		return false;
 	}
-	
+
 	/* Get pointer to next slot in circular buffer */
 	cmd = &state->commands[state->command_tail];
-	
+
 	/* Initialize command */
 	cmd->type = type;
 	cmd->node_id = 0;  /* Not applicable for log commands */
 	cmd->address[0] = '\0';  /* Not applicable for log commands */
 	cmd->port = 0;  /* Not applicable for log commands */
 	cmd->cluster_id[0] = '\0';  /* Not applicable for log commands */
-	
+
 	/* Set log-specific fields */
 	if (log_data) {
 		strncpy(cmd->log_data, log_data, sizeof(cmd->log_data) - 1);
@@ -154,17 +169,19 @@ pgraft_queue_log_command(COMMAND_TYPE type, const char *log_data, int log_index)
 		cmd->log_data[0] = '\0';
 	}
 	cmd->log_index = log_index;
-	
-	/* Initialize status tracking */
+
+	/* Initialize status tracking (unique, collision-free command id) */
 	cmd->status = COMMAND_STATUS_PENDING;
 	cmd->error_message[0] = '\0';
-	cmd->timestamp = time(NULL);
-	
+	cmd->timestamp = state->next_command_id++;
+
 	/* Update circular buffer pointers */
 	state->command_tail = (state->command_tail + 1) % MAX_COMMANDS;
-	state->command_count++;
-	
-	elog(LOG, "pgraft: log command %d queued (index=%d, count=%d)", type, log_index, state->command_count);
+	command_count = ++state->command_count;
+
+	SpinLockRelease(&state->mutex);
+
+	elog(LOG, "pgraft: log command %d queued (index=%d, count=%d)", type, log_index, command_count);
 	return true;
 }
 
@@ -176,28 +193,32 @@ pgraft_queue_kv_command(COMMAND_TYPE type, const char *key, const char *value, c
 {
 	pgraft_worker_state_t *state;
 	pgraft_command_t *cmd;
-	
+	int			command_count;
+
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Check if queue is full */
 	if (state->command_count >= MAX_COMMANDS) {
+		SpinLockRelease(&state->mutex);
 		elog(WARNING, "pgraft: command queue is full, cannot queue KV command");
 		return false;
 	}
-	
+
 	/* Get pointer to next slot in circular buffer */
 	cmd = &state->commands[state->command_tail];
-	
+
 	/* Initialize command */
 	cmd->type = type;
 	cmd->node_id = 0;  /* Not applicable for KV commands */
 	cmd->address[0] = '\0';  /* Not applicable for KV commands */
 	cmd->port = 0;  /* Not applicable for KV commands */
 	cmd->cluster_id[0] = '\0';  /* Not applicable for KV commands */
-	
+
 	/* Set KV-specific fields */
 	if (key) {
 		strncpy(cmd->kv_key, key, sizeof(cmd->kv_key) - 1);
@@ -205,31 +226,33 @@ pgraft_queue_kv_command(COMMAND_TYPE type, const char *key, const char *value, c
 	} else {
 		cmd->kv_key[0] = '\0';
 	}
-	
+
 	if (value) {
 		strncpy(cmd->kv_value, value, sizeof(cmd->kv_value) - 1);
 		cmd->kv_value[sizeof(cmd->kv_value) - 1] = '\0';
 	} else {
 		cmd->kv_value[0] = '\0';
 	}
-	
+
 	if (client_id) {
 		strncpy(cmd->kv_client_id, client_id, sizeof(cmd->kv_client_id) - 1);
 		cmd->kv_client_id[sizeof(cmd->kv_client_id) - 1] = '\0';
 	} else {
 		cmd->kv_client_id[0] = '\0';
 	}
-	
-	/* Initialize status tracking */
+
+	/* Initialize status tracking (unique, collision-free command id) */
 	cmd->status = COMMAND_STATUS_PENDING;
 	cmd->error_message[0] = '\0';
-	cmd->timestamp = time(NULL);
-	
+	cmd->timestamp = state->next_command_id++;
+
 	/* Update circular buffer pointers */
 	state->command_tail = (state->command_tail + 1) % MAX_COMMANDS;
-	state->command_count++;
-	
-	elog(LOG, "pgraft: KV command %d queued (key=%s, count=%d)", type, key ? key : "NULL", state->command_count);
+	command_count = ++state->command_count;
+
+	SpinLockRelease(&state->mutex);
+
+	elog(LOG, "pgraft: KV command %d queued (key=%s, count=%d)", type, key ? key : "NULL", command_count);
 	return true;
 }
 
@@ -241,30 +264,38 @@ pgraft_add_command_to_status(pgraft_command_t *cmd)
 {
 	pgraft_worker_state_t *state;
 	pgraft_command_t *status_cmd;
-	
+	bool		dropped_oldest = false;
+
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Check if status buffer is full */
 	if (state->status_count >= MAX_COMMANDS) {
-		elog(WARNING, "pgraft: status buffer is full, removing oldest entry");
 		/* Remove oldest status entry */
 		state->status_head = (state->status_head + 1) % MAX_COMMANDS;
 		state->status_count--;
+		dropped_oldest = true;
 	}
-	
+
 	/* Get pointer to next slot in status circular buffer */
 	status_cmd = &state->status_commands[state->status_tail];
-	
+
 	/* Copy command to status buffer */
 	*status_cmd = *cmd;
-	
+
 	/* Update circular buffer pointers */
 	state->status_tail = (state->status_tail + 1) % MAX_COMMANDS;
 	state->status_count++;
-	
+
+	SpinLockRelease(&state->mutex);
+
+	if (dropped_oldest)
+		elog(WARNING, "pgraft: status buffer is full, removed oldest entry");
+
 	return true;
 }
 
@@ -281,16 +312,21 @@ pgraft_get_command_status(int64_t timestamp, pgraft_command_t *status_cmd)
 	if (state == NULL) {
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Search through status buffer */
 	for (i = 0; i < state->status_count; i++) {
 		int index = (state->status_head + i) % MAX_COMMANDS;
 		if (state->status_commands[index].timestamp == timestamp) {
 			*status_cmd = state->status_commands[index];
+			SpinLockRelease(&state->mutex);
 			return true;
 		}
 	}
-	
+
+	SpinLockRelease(&state->mutex);
+
 	return false;
 }
 
@@ -307,21 +343,26 @@ pgraft_update_command_status(int64_t timestamp, COMMAND_STATUS status, const cha
 	if (state == NULL) {
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Search through status buffer */
 	for (i = 0; i < state->status_count; i++) {
 		int index = (state->status_head + i) % MAX_COMMANDS;
 		if (state->status_commands[index].timestamp == timestamp) {
 			state->status_commands[index].status = status;
 			if (error_message) {
-				strncpy(state->status_commands[index].error_message, error_message, 
+				strncpy(state->status_commands[index].error_message, error_message,
 						sizeof(state->status_commands[index].error_message) - 1);
 				state->status_commands[index].error_message[sizeof(state->status_commands[index].error_message) - 1] = '\0';
 			}
+			SpinLockRelease(&state->mutex);
 			return true;
 		}
 	}
-	
+
+	SpinLockRelease(&state->mutex);
+
 	return false;
 }
 
@@ -339,12 +380,14 @@ pgraft_remove_completed_commands(void)
 	if (state == NULL) {
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Remove completed and failed commands from status buffer */
 	for (i = 0; i < state->status_count; i++) {
 		int index = (state->status_head + i) % MAX_COMMANDS;
 		COMMAND_STATUS status = state->status_commands[index].status;
-		
+
 		if (status == COMMAND_STATUS_COMPLETED || status == COMMAND_STATUS_FAILED) {
 			removed++;
 		} else {
@@ -355,15 +398,17 @@ pgraft_remove_completed_commands(void)
 			}
 		}
 	}
-	
+
 	/* Update status buffer pointers */
 	state->status_head = (state->status_head + removed) % MAX_COMMANDS;
 	state->status_count -= removed;
-	
+
+	SpinLockRelease(&state->mutex);
+
 	if (removed > 0) {
 		elog(LOG, "pgraft: removed %d completed commands from status buffer", removed);
 	}
-	
+
 	return true;
 }
 
@@ -376,45 +421,56 @@ pgraft_enqueue_apply_entry(uint64 raft_index, const char *data, size_t data_len)
 {
 	pgraft_worker_state_t *state;
 	pgraft_apply_entry_t *entry;
-	
+	int			apply_count;
+
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
 		elog(ERROR, "pgraft: failed to get worker state in pgraft_enqueue_apply_entry");
 		return false;
 	}
-	
+
+	/*
+	 * Reject payloads that would not leave room for a NUL terminator.  The
+	 * data is later treated as a C string (data[0] == '{' checks, json-c
+	 * parsing), so it must be terminated; use '>=' against the buffer size.
+	 */
+	if (data_len >= sizeof(((pgraft_apply_entry_t *) 0)->data)) {
+		elog(WARNING, "pgraft: entry data too large (%zu bytes, max %zu), index %lu",
+			 data_len, sizeof(((pgraft_apply_entry_t *) 0)->data) - 1, (unsigned long) raft_index);
+		return false;
+	}
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Check if queue is full */
 	if (state->apply_count >= MAX_APPLY_ENTRIES) {
+		SpinLockRelease(&state->mutex);
 		elog(WARNING, "pgraft: apply queue is full (%d entries), cannot enqueue index %lu",
 			 MAX_APPLY_ENTRIES, (unsigned long) raft_index);
 		return false;
 	}
-	
-	/* Check data length */
-	if (data_len > sizeof(entry->data)) {
-		elog(WARNING, "pgraft: entry data too large (%zu bytes, max %zu), index %lu",
-			 data_len, sizeof(entry->data), (unsigned long) raft_index);
-		return false;
-	}
-	
+
 	/* Get pointer to next slot in circular buffer */
 	entry = &state->apply_queue[state->apply_tail];
-	
-	/* Initialize entry */
+
+	/* Initialize entry (always NUL-terminate so downstream C-string use is safe) */
 	entry->raft_index = raft_index;
 	entry->data_len = data_len;
 	if (data && data_len > 0) {
 		memcpy(entry->data, data, data_len);
 	}
+	entry->data[data_len] = '\0';
 	entry->applied = false;
-	
+
 	/* Update circular buffer pointers */
 	state->apply_tail = (state->apply_tail + 1) % MAX_APPLY_ENTRIES;
-	state->apply_count++;
-	
+	apply_count = ++state->apply_count;
+
+	SpinLockRelease(&state->mutex);
+
 	elog(DEBUG1, "pgraft: enqueued apply entry %lu (count=%d)",
-		 (unsigned long) raft_index, state->apply_count);
-	
+		 (unsigned long) raft_index, apply_count);
+
 	return true;
 }
 
@@ -427,7 +483,8 @@ pgraft_dequeue_apply_entry(pgraft_apply_entry_t *entry)
 {
 	pgraft_worker_state_t *state;
 	pgraft_apply_entry_t *queued_entry;
-	
+	int			apply_count;
+
 	if (entry == NULL) {
 		return false;
 	}
@@ -436,25 +493,30 @@ pgraft_dequeue_apply_entry(pgraft_apply_entry_t *entry)
 	if (state == NULL) {
 		return false;
 	}
-	
+
+	SpinLockAcquire(&state->mutex);
+
 	/* Check if queue is empty */
 	if (state->apply_count == 0) {
+		SpinLockRelease(&state->mutex);
 		return false;
 	}
-	
+
 	/* Get pointer to next entry in circular buffer */
 	queued_entry = &state->apply_queue[state->apply_head];
-	
+
 	/* Copy entry data */
 	*entry = *queued_entry;
-	
+
 	/* Update circular buffer pointers */
 	state->apply_head = (state->apply_head + 1) % MAX_APPLY_ENTRIES;
-	state->apply_count--;
-	
+	apply_count = --state->apply_count;
+
+	SpinLockRelease(&state->mutex);
+
 	elog(DEBUG2, "pgraft: dequeued apply entry %lu (count=%d)",
-		 (unsigned long) entry->raft_index, state->apply_count);
-	
+		 (unsigned long) entry->raft_index, apply_count);
+
 	return true;
 }
 

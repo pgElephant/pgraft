@@ -13,11 +13,18 @@ package main
 
 /*
 #cgo CFLAGS: -I../include
+// On macOS the c-shared linker rejects undefined symbols by default; allow the
+// callback below to be resolved at load time from the globally-loaded pgraft
+// extension. On ELF platforms shared objects permit undefined symbols already.
+#cgo darwin LDFLAGS: -Wl,-undefined,dynamic_lookup
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 
-// No external C callbacks - we'll use file-based IPC or shared memory
+// Callback into the pgraft C extension to enqueue a committed Raft entry for
+// application by the background worker. Defined in pgraft_go_callbacks.c and
+// resolved from the globally-loaded pgraft extension at dlopen time.
+extern int pgraft_enqueue_for_apply_from_go(unsigned long long raft_index, const char *data, unsigned long data_len);
 
 typedef struct pgraft_go_cluster_member {
 	char   *name;
@@ -646,10 +653,17 @@ func pgraft_go_start() C.int {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	logInfo("Go runtime configured: GOMAXPROCS=%d, NumCPU=%d", runtime.GOMAXPROCS(0), runtime.NumCPU())
 
-	// Initialize raftDone channel if not already
-	if raftDone == nil {
-		raftDone = make(chan struct{})
+	// (Re)create the lifecycle channel/context and done channel so that a
+	// start issued after a previous stop() does not launch goroutines against
+	// an already-closed stopChan or a cancelled raftCtx (which would make them
+	// exit immediately). Safe on first start too. Any prior context is
+	// cancelled to release its resources.
+	if raftCancel != nil {
+		raftCancel()
 	}
+	stopChan = make(chan struct{})
+	raftCtx, raftCancel = context.WithCancel(context.Background())
+	raftDone = make(chan struct{})
 
 	// Start only the goroutines that need to run continuously
 	// Ticker is now called from C worker thread via pgraft_go_tick()
@@ -1078,8 +1092,8 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	logInfo("Bootstrap node %d created with %d initial peers", nodeID, len(peers))
 
 	// Initialize applied and committed indices
-	appliedIndex = 0
-	committedIndex = 0
+	atomic.StoreUint64(&appliedIndex, 0)
+	atomic.StoreUint64(&committedIndex, 0)
 
 	logInfo("INFO - Raft node initialized, goroutines will be started separately via pgraft_go_start()")
 
@@ -1233,8 +1247,8 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 	logInfo("INFO - Raft node initialized, goroutines will be started separately")
 
 	// Initialize applied and committed indices
-	appliedIndex = 0
-	committedIndex = 0
+	atomic.StoreUint64(&appliedIndex, 0)
+	atomic.StoreUint64(&committedIndex, 0)
 
 	// Note: Goroutines will be started separately via pgraft_go_start to avoid
 	// multithreading during PostgreSQL startup
@@ -1265,21 +1279,20 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 
 //export pgraft_go_start_background
 func pgraft_go_start_background() C.int {
-	debugLog("start_background: starting Raft background processing")
-
-	raftMutex.Lock()
-	defer raftMutex.Unlock()
-
-	// Start the background processing loop
-	go processRaftReady()
-	debugLog("start_background: background processing started")
-
-	// Start the ticker for Raft operations
-	raftTicker = time.NewTicker(100 * time.Millisecond)
-	go processRaftTicker()
-	debugLog("start_background: Raft ticker started")
-
-	debugLog("start_background: all background processing started")
+	// Intentionally a no-op.
+	//
+	// etcd/raft requires EXACTLY ONE consumer of raftNode.Ready() that
+	// persists -> sends -> applies -> Advance() in order, and a single tick
+	// source. That single consumer is raftProcessingLoop()/processReady()
+	// (started by pgraft_go_start), and the single tick source is
+	// pgraft_go_tick() (driven by the C background worker).
+	//
+	// This function used to additionally launch processRaftReady() (a second
+	// Ready consumer) and processRaftTicker() (a second ticker), which raced
+	// the primary loop for Ready structs and doubled the logical clock. Those
+	// goroutines are no longer started; the function is retained only so the
+	// existing C call site remains valid.
+	debugLog("start_background: no-op (single Ready consumer + single tick source)")
 	return 0
 }
 
@@ -1552,6 +1565,10 @@ func pgraft_go_get_stats() *C.char {
 	raftMutex.RLock()
 	defer raftMutex.RUnlock()
 
+	connMutex.RLock()
+	connectedNodes := len(connections)
+	connMutex.RUnlock()
+
 	stats := map[string]interface{}{
 		"initialized":           atomic.LoadInt32(&initialized) == 1,
 		"running":               atomic.LoadInt32(&running) == 1,
@@ -1560,11 +1577,11 @@ func pgraft_go_get_stats() *C.char {
 		"heartbeats_sent":       atomic.LoadInt64(&heartbeatsSent),
 		"elections_triggered":   atomic.LoadInt64(&electionsTriggered),
 		"error_count":           atomic.LoadInt64(&errorCount),
-		"applied_index":         appliedIndex,
-		"committed_index":       committedIndex,
+		"applied_index":         atomic.LoadUint64(&appliedIndex),
+		"committed_index":       atomic.LoadUint64(&committedIndex),
 		"uptime_seconds":        time.Since(startupTime).Seconds(),
 		"health_status":         healthStatus,
-		"connected_nodes":       len(connections),
+		"connected_nodes":       connectedNodes,
 	}
 
 	jsonData, err := json.Marshal(stats)
@@ -1602,7 +1619,7 @@ func pgraft_go_get_logs() *C.char {
 			"term":      entry.Term,
 			"type":      entry.Type.String(),
 			"data":      string(entry.Data),
-			"committed": entry.Index <= committedIndex,
+			"committed": entry.Index <= atomic.LoadUint64(&committedIndex),
 		}
 
 		logs = append(logs, logEntry)
@@ -1627,7 +1644,7 @@ func pgraft_go_commit_log(index C.long) C.int {
 
 	// In etcd-io/raft, commits happen automatically
 	// This function is mainly for compatibility
-	committedIndex = uint64(index)
+	atomic.StoreUint64(&committedIndex, uint64(index))
 
 	return 0
 }
@@ -1664,8 +1681,12 @@ func pgraft_go_get_network_status() *C.char {
 	raftMutex.RLock()
 	defer raftMutex.RUnlock()
 
+	connMutex.RLock()
+	nodesConnected := len(connections)
+	connMutex.RUnlock()
+
 	networkStatus := map[string]interface{}{
-		"nodes_connected":    len(connections),
+		"nodes_connected":    nodesConnected,
 		"messages_processed": atomic.LoadInt64(&messagesProcessed),
 		"network_latency":    getNetworkLatency(),
 		"connection_status":  "active",
@@ -1782,113 +1803,114 @@ func processReady(rd raft.Ready) {
 		len(rd.Messages), len(rd.Entries), len(rd.CommittedEntries), !raft.IsEmptyHardState(rd.HardState), !raft.IsEmptySnap(rd.Snapshot),
 		status.RaftState.String(), status.Term, status.Lead)
 
-	// CRITICAL: Persist entries BEFORE HardState to ensure consistency
-	// The HardState.Commit index must not reference entries that aren't persisted yet
+	if raftStorage == nil {
+		logInfo("ERROR - raftStorage is nil, cannot process Ready")
+		return
+	}
+
+	// etcd/raft persistence order (see etcd raftexample):
+	//   1. persist snapshot to storage (it compacts/replaces the log),
+	//   2. append new entries,
+	//   3. persist HardState,
+	//   4. send messages,
+	//   5. apply snapshot + committed entries to the state machine,
+	//   6. Advance().
+	// The snapshot MUST be persisted and applied before Advance(), otherwise
+	// raft is told the snapshot is durable while it is not, and appliedIndex
+	// can be clobbered by committed entries.
+
+	// 1. Persist snapshot to storage first (before appending entries).
+	if !raft.IsEmptySnap(rd.Snapshot) {
+		logInfo("Applying snapshot at index %d, term %d to storage", rd.Snapshot.Metadata.Index, rd.Snapshot.Metadata.Term)
+		if err := raftStorage.ApplySnapshot(rd.Snapshot); err != nil {
+			logError("Failed to apply snapshot to storage: %v", err)
+		}
+	}
+
+	// 2. Persist entries BEFORE HardState so HardState.Commit never references
+	//    entries that are not yet on disk.
 	if len(rd.Entries) > 0 {
 		logInfo("About to persist %d entries...", len(rd.Entries))
-		if raftStorage == nil {
-			logInfo("ERROR - raftStorage is nil, cannot append entries")
-			return
-		}
 		raftStorage.Append(rd.Entries)
 		logInfo("Persisted %d entries", len(rd.Entries))
 	}
 
-	// Now persist HardState after entries are safely on disk
+	// 3. Persist HardState after entries are safely on disk.
 	if !raft.IsEmptyHardState(rd.HardState) {
-		if raftStorage == nil {
-			logInfo("ERROR - raftStorage is nil, cannot persist HardState")
-			return
-		}
 		raftStorage.SetHardState(rd.HardState)
+		// Maintain committedIndex from the authoritative commit index. This
+		// is now done here because this is the single Ready consumer.
+		atomic.StoreUint64(&committedIndex, rd.HardState.Commit)
 		logInfo("Persisted HardState: term=%d, vote=%d, commit=%d", rd.HardState.Term, rd.HardState.Vote, rd.HardState.Commit)
 	}
 
+	// 4. Send outgoing messages.
 	logInfo("About to send %d messages...", len(rd.Messages))
 	for _, msg := range rd.Messages {
 		sendMessage(msg)
 	}
 	if len(rd.Messages) > 0 {
 		logInfo("Sent %d messages", len(rd.Messages))
-	} else {
-		logInfo("DEBUG - No messages in Ready batch")
 	}
 
-	// Apply committed entries to the state machine
+	// 5a. Apply the snapshot to the state machine (advance appliedIndex).
+	if !raft.IsEmptySnap(rd.Snapshot) {
+		atomic.StoreUint64(&appliedIndex, rd.Snapshot.Metadata.Index)
+		logInfo("Snapshot applied, appliedIndex updated to %d", rd.Snapshot.Metadata.Index)
+	}
+
+	// 5b. Apply committed entries to the state machine. applyEntry() owns the
+	//     appliedIndex update (atomically) for each entry type.
 	if len(rd.CommittedEntries) > 0 {
-		logInfo("Applying %d committed entries. Current applied index: %d", len(rd.CommittedEntries), appliedIndex)
+		logInfo("Applying %d committed entries. Current applied index: %d", len(rd.CommittedEntries), atomic.LoadUint64(&appliedIndex))
 		for _, entry := range rd.CommittedEntries {
-			logInfo("Committed entry %d: index=%d, term=%d, type=%s, data=%s", entry.Index, entry.Index, entry.Term, entry.Type.String(), string(entry.Data))
-			if entry.Index > appliedIndex { // Only apply if not already applied
+			if entry.Index > atomic.LoadUint64(&appliedIndex) { // Only apply if not already applied
 				applyEntry(entry)
-				appliedIndex = entry.Index // Update applied index
-				logInfo("Applied entry %d. New applied index: %d", entry.Index, appliedIndex)
 			} else {
-				logInfo("Skipping already applied entry: index=%d <= appliedIndex=%d", entry.Index, appliedIndex)
+				logInfo("Skipping already applied entry: index=%d <= appliedIndex=%d", entry.Index, atomic.LoadUint64(&appliedIndex))
 			}
 		}
 		logInfo("Applied %d committed entries", len(rd.CommittedEntries))
 	}
 
-	// After all local processing, advance the Raft node.
-	logInfo("DEBUG - About to call raftNode.Advance()...")
+	// 6. After all local processing, advance the Raft node.
 	raftNode.Advance()
-	logInfo("raft node advanced. new raft status: state=%s, term=%d, lead=%d",
-		raftNode.Status().RaftState.String(), raftNode.Status().Term, raftNode.Status().Lead)
 	status = raftNode.Status() // Get updated status after Advance
 	logInfo("post-advance raft status: state=%s, term=%d, lead=%d",
 		status.RaftState.String(), status.Term, status.Lead)
 
-	// Update clusterState.LeaderID and CurrentTerm based on the current Raft status
-	// If the current node is the leader, its ID is the LeaderID.
+	// Update clusterState.LeaderID and CurrentTerm based on the current Raft status.
 	if status.RaftState == raft.StateLeader {
 		clusterState.LeaderID = status.ID
-		logInfo("Node %d is now the Leader. Updating clusterState.LeaderID to %d", status.ID, clusterState.LeaderID)
 	} else if status.Lead != 0 {
 		clusterState.LeaderID = status.Lead
-		logInfo("Leader identified as %d. Updating clusterState.LeaderID to %d", status.Lead, clusterState.LeaderID)
 	} else {
-		clusterState.LeaderID = 0 // No leader elected yet or unknown, default to 0 (invalid ID)
-		logInfo("INFO - No leader identified (status.Lead is 0 or node is not leader). Setting clusterState.LeaderID to 0")
+		clusterState.LeaderID = 0 // No leader elected yet or unknown
 	}
 	clusterState.CurrentTerm = status.Term
 	clusterState.State = status.RaftState.String()
 	logInfo("Shared memory updated: LeaderID=%d, CurrentTerm=%d, State=%s", clusterState.LeaderID, clusterState.CurrentTerm, clusterState.State)
 
-	// Update clusterState.Nodes based on raftNode.Status().Progress for active followers/learners
+	// Update clusterState.Nodes from Status().Progress. Reads of the shared
+	// 'nodes' map must be done under nodesMutex; add_peer/remove_peer and
+	// updateTransportMembership write it concurrently.
 	currentNodes := make(map[uint64]string)
-	for id, _ := range status.Progress { // Fixed: 'pr' declared and not used
+	nodesMutex.RLock()
+	for id := range status.Progress {
 		if addr, ok := nodes[id]; ok {
 			currentNodes[id] = addr
 		} else {
-			// If the node is in progress but not in our 'nodes' map, log a warning
 			logWarning("Node %d in Raft progress but not in local nodes map", id)
 		}
 	}
-
-	// Also add self if not already present from progress (should always be present)
 	if _, ok := currentNodes[raftConfig.ID]; !ok {
 		if addr, ok := nodes[raftConfig.ID]; ok {
 			currentNodes[raftConfig.ID] = addr
 		}
 	}
+	nodesMutex.RUnlock()
 	clusterState.Nodes = currentNodes
 	logInfo("clusterState.Nodes updated. Current nodes: %v", clusterState.Nodes)
-
-	// If a snapshot exists, apply it and compact storage
-	if !raft.IsEmptySnap(rd.Snapshot) {
-		logInfo("Applying snapshot at index %d, term %d", rd.Snapshot.Metadata.Index, rd.Snapshot.Metadata.Term)
-		// Apply the snapshot to the state machine
-		// Note: MemoryStorage.ApplySnapshot only updates the internal state,
-		// it doesn't apply to the actual replicated state machine directly.
-		// The committed entries should handle state machine updates.
-		if err := raftStorage.ApplySnapshot(rd.Snapshot); err != nil {
-			logError("Failed to apply snapshot to storage: %v", err)
-		}
-		// After applying a snapshot, update appliedIndex and committedIndex
-		appliedIndex = rd.Snapshot.Metadata.Index
-		logInfo("Snapshot applied, appliedIndex updated to %d", appliedIndex)
-	}
 }
 
 // Message receiver routes all messages through main loop
@@ -1962,16 +1984,26 @@ func applyEntry(entry raftpb.Entry) {
 		// Apply to PostgreSQL on ALL nodes (leader + followers)
 		if len(entry.Data) == 0 {
 			logInfo("empty entry at index %d, skipping", entry.Index)
-			appliedIndex = entry.Index
+			atomic.StoreUint64(&appliedIndex, entry.Index)
 			return
 		}
 
-		// Store committed entry data for background worker to apply
-		// The background worker will read from Raft storage and apply to PostgreSQL
+		// Hand the committed entry to the C background worker for application
+		// to the local node. The worker drains this queue and calls
+		// pgraft_apply_entry_to_postgres(). Without this call committed entries
+		// were acknowledged but never actually applied anywhere.
+		cData := C.CString(string(entry.Data))
+		rc := C.pgraft_enqueue_for_apply_from_go(C.ulonglong(entry.Index), cData,
+			C.ulong(len(entry.Data)))
+		C.free(unsafe.Pointer(cData))
+		if rc != 0 {
+			logError("failed to enqueue committed entry %d for application (rc=%d)",
+				entry.Index, int(rc))
+		}
 
 		// Update applied index
-		appliedIndex = entry.Index
-		logInfo("✅ COMMITTED entry %d (len=%d bytes) - READY FOR APPLICATION: %s",
+		atomic.StoreUint64(&appliedIndex, entry.Index)
+		logInfo("✅ COMMITTED entry %d (len=%d bytes) enqueued for application: %s",
 			entry.Index, len(entry.Data), string(entry.Data))
 
 	case raftpb.EntryConfChange:
@@ -1982,7 +2014,7 @@ func applyEntry(entry raftpb.Entry) {
 			return
 		}
 		applyConfChange(cc)
-		appliedIndex = entry.Index
+		atomic.StoreUint64(&appliedIndex, entry.Index)
 
 	case raftpb.EntryConfChangeV2:
 		// Apply configuration change v2
@@ -1992,7 +2024,7 @@ func applyEntry(entry raftpb.Entry) {
 			return
 		}
 		applyConfChangeV2(cc)
-		appliedIndex = entry.Index
+		atomic.StoreUint64(&appliedIndex, entry.Index)
 	}
 }
 
@@ -2146,7 +2178,7 @@ func sendToNode(nodeID uint64, data []byte) {
 
 	if !exists {
 		logInfo("no connection to node %d, requesting reconnection", nodeID)
-		reconnectChan <- nodeID
+		requestReconnect(nodeID)
 		return
 	}
 
@@ -2154,14 +2186,14 @@ func sendToNode(nodeID uint64, data []byte) {
 	if err := writeUint32(conn.Conn, uint32(len(data))); err != nil {
 		logInfo("failed to send message length to node %d: %v", nodeID, err)
 		// Clean up broken connection
-		conn.Mutex.Lock()
+		connMutex.Lock()
 		if existingConn, ok := connections[nodeID]; ok && existingConn == conn {
 			existingConn.Conn.Close()
 			delete(connections, nodeID)
 			logInfo("Cleaned up broken connection for node %d", nodeID)
 		}
-		conn.Mutex.Unlock()
-		reconnectChan <- nodeID // Signal for reconnection
+		connMutex.Unlock()
+		requestReconnect(nodeID) // Signal for reconnection
 		return
 	}
 
@@ -2169,14 +2201,14 @@ func sendToNode(nodeID uint64, data []byte) {
 	if _, err := conn.Conn.Write(data); err != nil {
 		logInfo("failed to send message to node %d: %v", nodeID, err)
 		// Clean up broken connection
-		conn.Mutex.Lock()
+		connMutex.Lock()
 		if existingConn, ok := connections[nodeID]; ok && existingConn == conn {
 			existingConn.Conn.Close()
 			delete(connections, nodeID)
 			logInfo("Cleaned up broken connection for node %d", nodeID)
 		}
-		conn.Mutex.Unlock()
-		reconnectChan <- nodeID // Signal for reconnection
+		connMutex.Unlock()
+		requestReconnect(nodeID) // Signal for reconnection
 		return
 	}
 
@@ -2267,8 +2299,11 @@ func handleIncomingConnection(conn net.Conn) {
 
 	logInfo("Connection from node %d at %s", nodeID, remoteAddr)
 
-	// Store connection
+	// Store connection, closing any existing one first to avoid leaking it.
 	connMutex.Lock()
+	if oldConn, ok := connections[uint64(nodeID)]; ok && oldConn.Conn != nil {
+		oldConn.Conn.Close()
+	}
 	connections[uint64(nodeID)] = &ManagedConnection{Conn: conn}
 	connMutex.Unlock()
 
@@ -2305,7 +2340,7 @@ func handleConnectionMessages(nodeID uint64, conn net.Conn) {
 						logInfo("Cleaned up broken connection for node %d", nodeID)
 					}
 					connMutex.Unlock()
-					reconnectChan <- nodeID // Signal for reconnection
+					requestReconnect(nodeID) // Signal for reconnection
 					return
 				}
 				// Short sleep before retry
@@ -2313,9 +2348,11 @@ func handleConnectionMessages(nodeID uint64, conn net.Conn) {
 				continue
 			}
 
-			// Read message data
+			// Read message data (use io.ReadFull: a single conn.Read may
+			// return fewer than msgLen bytes, leaving the rest of the payload
+			// in the stream to be misread as the next length prefix).
 			data := make([]byte, msgLen)
-			if _, err := conn.Read(data); err != nil {
+			if _, err := io.ReadFull(conn, data); err != nil {
 				connectionErrors++
 				if connectionErrors >= maxConsecutiveErrors {
 					logWarning("Failed to read from node %d after %d errors, closing: %v", nodeID, connectionErrors, err)
@@ -2327,7 +2364,7 @@ func handleConnectionMessages(nodeID uint64, conn net.Conn) {
 						logInfo("Cleaned up broken connection for node %d", nodeID)
 					}
 					connMutex.Unlock()
-					reconnectChan <- nodeID // Signal for reconnection
+					requestReconnect(nodeID) // Signal for reconnection
 					return
 				}
 				time.Sleep(100 * time.Millisecond)
@@ -2625,8 +2662,8 @@ func pgraft_go_get_replication_status() *C.char {
 		"last_snapshot_index": replicationState.lastSnapshotIndex,
 		"replication_lag_ms":  replicationState.replicationLag.Milliseconds(),
 		"is_leader":           pgraft_go_get_leader() != 0,
-		"committed_index":     committedIndex,
-		"applied_index":       appliedIndex,
+		"committed_index":     atomic.LoadUint64(&committedIndex),
+		"applied_index":       atomic.LoadUint64(&appliedIndex),
 	}
 
 	jsonData, err := json.Marshal(status)
@@ -2681,6 +2718,12 @@ func pgraft_go_create_snapshot() *C.char {
 
 //export pgraft_go_apply_snapshot
 func pgraft_go_apply_snapshot(snapshotData *C.char) C.int {
+	defer func() {
+		if r := recover(); r != nil {
+			logError("panic in pgraft_go_apply_snapshot: %v", r)
+		}
+	}()
+
 	raftMutex.RLock()
 	defer raftMutex.RUnlock()
 
@@ -2696,12 +2739,31 @@ func pgraft_go_apply_snapshot(snapshotData *C.char) C.int {
 		return C.int(0)
 	}
 
+	// Validate all fields with checked type assertions rather than blind
+	// assertions, which would panic across the cgo boundary (crashing the
+	// backend) on a malformed or partial snapshot.
+	dataStr, ok := snapshotInfo["data"].(string)
+	if !ok {
+		recordError(fmt.Errorf("snapshot missing/invalid 'data' field"))
+		return C.int(0)
+	}
+	indexF, ok := snapshotInfo["index"].(float64)
+	if !ok {
+		recordError(fmt.Errorf("snapshot missing/invalid 'index' field"))
+		return C.int(0)
+	}
+	termF, ok := snapshotInfo["term"].(float64)
+	if !ok {
+		recordError(fmt.Errorf("snapshot missing/invalid 'term' field"))
+		return C.int(0)
+	}
+
 	// Create snapshot from data
 	snapshot := raftpb.Snapshot{
-		Data: []byte(snapshotInfo["data"].(string)),
+		Data: []byte(dataStr),
 		Metadata: raftpb.SnapshotMetadata{
-			Index: uint64(snapshotInfo["index"].(float64)),
-			Term:  uint64(snapshotInfo["term"].(float64)),
+			Index: uint64(indexF),
+			Term:  uint64(termF),
 		},
 	}
 
@@ -2724,43 +2786,17 @@ func pgraft_go_apply_snapshot(snapshotData *C.char) C.int {
 
 //export pgraft_go_replicate_to_node
 func pgraft_go_replicate_to_node(nodeID C.uint64_t, data *C.char, dataLen C.int) C.int {
-	raftMutex.RLock()
-	defer raftMutex.RUnlock()
-
-	if raftNode == nil {
-		return C.int(0)
-	}
-
-	// Convert C data to Go
-	goData := C.GoBytes(unsafe.Pointer(data), dataLen)
-
-	// Create message for replication
-	msg := raftpb.Message{
-		Type:    raftpb.MsgApp,
-		To:      uint64(nodeID),
-		From:    raftConfig.ID,
-		Term:    getCurrentTerm(),
-		LogTerm: getCurrentTerm(),
-		Index:   committedIndex,
-		Entries: []raftpb.Entry{
-			{
-				Term:  getCurrentTerm(),
-				Index: committedIndex + 1,
-				Type:  raftpb.EntryNormal,
-				Data:  goData,
-			},
-		},
-	}
-
-	// Send message through the message channel
-	select {
-	case messageChan <- msg:
-		logInfo("sent replication message to node %d", nodeID)
-		return C.int(1)
-	default:
-		recordError(fmt.Errorf("message channel full, cannot replicate to node"))
-		return C.int(0)
-	}
+	// Replication of application data MUST go through the leader's Raft log
+	// via Propose (see pgraft_go_replicate_log_entry). This function used to
+	// hand-craft a MsgApp with a fabricated index/term and inject it directly
+	// into the message stream, which bypasses raft's log-matching invariants
+	// and can diverge peer logs. It is unsupported; callers should use
+	// pgraft_go_replicate_log_entry instead.
+	_ = nodeID
+	_ = data
+	_ = dataLen
+	logWarning("pgraft_go_replicate_to_node is unsupported; use pgraft_go_replicate_log_entry (Propose-based)")
+	return C.int(0)
 }
 
 //export pgraft_go_get_replication_lag
@@ -2769,7 +2805,7 @@ func pgraft_go_get_replication_lag() C.double {
 	defer replicationState.replicationMutex.RUnlock()
 
 	// Calculate replication lag based on committed vs applied index
-	lag := float64(committedIndex - replicationState.lastAppliedIndex)
+	lag := float64(atomic.LoadUint64(&committedIndex) - replicationState.lastAppliedIndex)
 
 	// Update replication lag duration
 	replicationState.replicationLag = time.Duration(lag) * time.Millisecond
@@ -2779,36 +2815,15 @@ func pgraft_go_get_replication_lag() C.double {
 
 //export pgraft_go_sync_replication
 func pgraft_go_sync_replication() C.int {
-	raftMutex.RLock()
-	defer raftMutex.RUnlock()
-
-	if raftNode == nil {
-		return C.int(0)
-	}
-
-	// Force a replication sync by processing ready channel
-	select {
-	case rd := <-raftNode.Ready():
-		// Process committed entries for replication
-		for _, entry := range rd.CommittedEntries {
-			if entry.Type == raftpb.EntryNormal {
-				// Apply the entry to state machine
-				appliedIndex = entry.Index
-				replicationState.replicationMutex.Lock()
-				replicationState.lastAppliedIndex = entry.Index
-				replicationState.replicationMutex.Unlock()
-
-				logInfo("applied entry %d for replication", entry.Index)
-			}
-		}
-
-		// Advance the node
-		raftNode.Advance()
-		return C.int(1)
-	default:
-		// No ready data available
-		return C.int(0)
-	}
+	// Intentionally does NOT read raftNode.Ready() or call Advance().
+	//
+	// The single owner of the Ready() channel is processReady() (see
+	// pgraft_go_start). This function previously stole a Ready struct here and
+	// called Advance() for it, corrupting raft's unstable-log bookkeeping and
+	// dropping the messages/entries that the real loop never saw. Replication
+	// is driven entirely by the normal Ready-processing loop, so this is now a
+	// no-op retained for API compatibility.
+	return C.int(1)
 }
 
 // Helper functions for replication
@@ -2990,6 +3005,19 @@ func getCurrentTerm() uint64 {
 	return hs.Term
 }
 
+// requestReconnect enqueues a reconnection request without ever blocking the
+// caller. The Ready-processing loop calls sendMessage (which requests
+// reconnects); a blocking send on a full reconnectChan would stall Raft
+// entirely, so drop the request instead (the connection monitor's periodic
+// pass will retry).
+func requestReconnect(nodeID uint64) {
+	select {
+	case reconnectChan <- nodeID:
+	default:
+		logWarning("reconnect channel full, dropping reconnect request for node %d", nodeID)
+	}
+}
+
 // sendMessage sends a Raft message to a peer
 func sendMessage(msg raftpb.Message) {
 	logInfo("Sending message to node %d: type=%s", msg.To, msg.Type)
@@ -3017,7 +3045,7 @@ func sendMessage(msg raftpb.Message) {
 	if !connExists || managedConn.Conn == nil {
 		// Connection doesn't exist or is closed, request a reconnection.
 		logInfo("Connection to node %d (%s) not found or closed. Requesting reconnection.", msg.To, address)
-		reconnectChan <- msg.To
+		requestReconnect(msg.To)
 		return
 	}
 
@@ -3037,7 +3065,7 @@ func sendMessage(msg raftpb.Message) {
 		connMutex.Lock()
 		delete(connections, msg.To)
 		connMutex.Unlock()
-		reconnectChan <- msg.To
+		requestReconnect(msg.To)
 		return
 	}
 
@@ -3048,7 +3076,7 @@ func sendMessage(msg raftpb.Message) {
 		connMutex.Lock()
 		delete(connections, msg.To)
 		connMutex.Unlock()
-		reconnectChan <- msg.To
+		requestReconnect(msg.To)
 		return
 	}
 
@@ -3162,22 +3190,23 @@ func pgraft_go_trigger_heartbeat() C.int {
 		return -1
 	}
 
-	// Propose an empty entry to trigger a heartbeat
-	err := raftNode.Propose(raftCtx, []byte("heartbeat"))
-	if err != nil {
-		logError("Failed to propose heartbeat: %v", err)
-		return -1
-	}
-
-	logInfo("INFO - Heartbeat triggered successfully")
+	// NOTE: Do NOT Propose() a data entry here. etcd/raft already emits
+	// heartbeats to followers automatically on each Tick() while this node is
+	// leader. Proposing a "heartbeat" byte string would append a bogus entry
+	// to the replicated log on every call (~1/sec), which now that committed
+	// entries are actually applied would spam parse failures and bloat the
+	// log. Leadership is confirmed above; heartbeats are handled by the tick.
 	return 0
 }
 
 // New connection monitor goroutine
 func connectionMonitor() {
 	logInfo("Connection monitor started")
-	// Map to track ongoing reconnection attempts and their backoff timers
+	// Map to track ongoing reconnection attempts and their backoff timers.
+	// Accessed by both this loop and the reconnection goroutines it spawns, so
+	// it has its own dedicated mutex (connMutex guards 'connections', not this).
 	reconnectingNodes := make(map[uint64]*time.Timer)
+	var reconnectMu sync.Mutex
 
 	for {
 		select {
@@ -3188,50 +3217,66 @@ func connectionMonitor() {
 			logInfo("Connection monitor stopping (stop signal)")
 			return
 		case nodeID := <-reconnectChan:
-			// Only attempt to reconnect if not already trying or if backoff expired
-			if _, ok := reconnectingNodes[nodeID]; !ok {
-				logInfo("Initiating reconnection for node %d", nodeID)
-				go func(id uint64) {
-					// Use a backoff strategy for reconnection attempts
-					for i := 0; i < 5; i++ { // Try 5 times
-						// Check if connection is already established (e.g. by another goroutine)
-						connMutex.RLock()
-						_, exists := connections[id]
-						connMutex.RUnlock()
-						if exists {
-							logInfo("Connection to node %d re-established by another process, stopping retry", id)
-							break
-						}
-
-						logInfo("Attempting reconnection to node %d (attempt %d)", id, i+1)
-						if err := connectToPeer(id, nodes[id]); err == nil {
-							logInfo("Reconnected to node %d successfully", id)
-							break
-						} else {
-							logInfo("Failed to reconnect to node %d (attempt %d): %v", id, i+1, err)
-							if i < 4 { // Don't sleep after last attempt
-								time.Sleep(time.Duration(i+1) * 500 * time.Millisecond) // Exponential backoff
-							}
-						}
-					}
-					// After all retries, if still not connected, clean up map entry
-					connMutex.Lock()
-					delete(reconnectingNodes, id)
-					connMutex.Unlock()
-				}(nodeID)
+			// Only attempt to reconnect if not already trying.
+			reconnectMu.Lock()
+			_, inProgress := reconnectingNodes[nodeID]
+			if !inProgress {
 				reconnectingNodes[nodeID] = time.NewTimer(5 * time.Second) // Prevent immediate retry
 			}
+			reconnectMu.Unlock()
+			if inProgress {
+				continue
+			}
+
+			logInfo("Initiating reconnection for node %d", nodeID)
+			go func(id uint64) {
+				// Use a backoff strategy for reconnection attempts
+				for i := 0; i < 5; i++ { // Try 5 times
+					// Check if connection is already established (e.g. by another goroutine)
+					connMutex.RLock()
+					_, exists := connections[id]
+					connMutex.RUnlock()
+					if exists {
+						logInfo("Connection to node %d re-established by another process, stopping retry", id)
+						break
+					}
+
+					// Read the peer address under nodesMutex (concurrent writers).
+					nodesMutex.RLock()
+					addr, known := nodes[id]
+					nodesMutex.RUnlock()
+					if !known {
+						logWarning("No address known for node %d, aborting reconnection", id)
+						break
+					}
+
+					logInfo("Attempting reconnection to node %d (attempt %d)", id, i+1)
+					if err := connectToPeer(id, addr); err == nil {
+						logInfo("Reconnected to node %d successfully", id)
+						break
+					} else {
+						logInfo("Failed to reconnect to node %d (attempt %d): %v", id, i+1, err)
+						if i < 4 { // Don't sleep after last attempt
+							time.Sleep(time.Duration(i+1) * 500 * time.Millisecond) // Exponential backoff
+						}
+					}
+				}
+				// After all retries, clean up the map entry.
+				reconnectMu.Lock()
+				delete(reconnectingNodes, id)
+				reconnectMu.Unlock()
+			}(nodeID)
 		case <-time.After(1 * time.Second): // Clean up expired timers for reconnection attempts
+			reconnectMu.Lock()
 			for nodeID, timer := range reconnectingNodes {
 				select {
 				case <-timer.C:
-					connMutex.Lock()
 					delete(reconnectingNodes, nodeID)
-					connMutex.Unlock()
 				default:
 					// Timer not expired yet
 				}
 			}
+			reconnectMu.Unlock()
 		}
 	}
 }

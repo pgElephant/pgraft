@@ -442,10 +442,26 @@ pgraft_core_get_shared_memory(void)
 		cluster = (pgraft_cluster_t *) ShmemInitStruct("pgraft_cluster",
 													   sizeof(pgraft_cluster_t),
 													   &found);
-		if (!found)
+		if (!found && cluster)
 		{
-			/* Initialize shared memory when first accessed */
-			pgraft_core_init_shared_memory();
+			/*
+			 * We are the first to touch the segment.  Initialize it in place.
+			 * Do NOT delegate to pgraft_core_init_shared_memory() here: that
+			 * would call ShmemInitStruct() a second time, observe found==true,
+			 * and skip SpinLockInit(), leaving the mutex uninitialized.
+			 */
+			memset(cluster, 0, sizeof(pgraft_cluster_t));
+			SpinLockInit(&cluster->mutex);
+			cluster->initialized = false;
+			cluster->node_id = -1;
+			cluster->current_term = 0;
+			cluster->leader_id = -1;
+			strncpy(cluster->state, "stopped", sizeof(cluster->state) - 1);
+			cluster->state[sizeof(cluster->state) - 1] = '\0';
+			cluster->num_nodes = 0;
+			cluster->messages_processed = 0;
+			cluster->heartbeats_sent = 0;
+			cluster->elections_triggered = 0;
 		}
 	}
 	return cluster;

@@ -273,8 +273,19 @@ pgraft_state_save_cluster_nodes(int32_t num_nodes, int32_t* node_ids,
         return;
     }
     
+    /* Never store more nodes than the fixed-size arrays can hold, and never
+     * record a count larger than what we actually copied, otherwise a later
+     * restore would read uninitialized node slots. */
+    if (num_nodes > 16)
+    {
+        elog(WARNING, "pgraft: clamping saved cluster node count from %d to 16", num_nodes);
+        num_nodes = 16;
+    }
+    if (num_nodes < 0)
+        num_nodes = 0;
+
     SpinLockAcquire(&state->mutex);
-    
+
     state->num_nodes = num_nodes;
     for (int i = 0; i < num_nodes && i < 16; i++) {
         state->node_ids[i] = node_ids[i];
@@ -282,9 +293,9 @@ pgraft_state_save_cluster_nodes(int32_t num_nodes, int32_t* node_ids,
         state->node_addresses[i][sizeof(state->node_addresses[i]) - 1] = '\0';
         state->node_ports[i] = node_ports[i];
     }
-    
+
     SpinLockRelease(&state->mutex);
-    
+
     elog(DEBUG1, "pgraft: Saved %d cluster nodes", num_nodes);
 }
 

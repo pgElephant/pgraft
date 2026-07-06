@@ -650,7 +650,7 @@ pgraft_validate_configuration(void)
 			char	   *url_part;
 			
 			/* Trim whitespace */
-			while (*member_str && isspace(*member_str))
+			while (*member_str && isspace((unsigned char) *member_str))
 				member_str++;
 			
 			if (*member_str == '\0')
@@ -866,7 +866,7 @@ pgraft_parse_url_list(const char *url_str, pgraft_url_list_t *url_list)
 	while (url_token != NULL)
 	{
 		/* Trim whitespace */
-		while (*url_token && isspace(*url_token))
+		while (*url_token && isspace((unsigned char) *url_token))
 			url_token++;
 		
 		if (*url_token != '\0')
@@ -893,7 +893,7 @@ pgraft_parse_url_list(const char *url_str, pgraft_url_list_t *url_list)
 	while (url_token != NULL && i < url_count)
 	{
 		/* Trim whitespace */
-		while (*url_token && isspace(*url_token))
+		while (*url_token && isspace((unsigned char) *url_token))
 			url_token++;
 		
 		if (*url_token != '\0')
@@ -936,7 +936,7 @@ pgraft_parse_initial_cluster(const char *cluster_str, pgraft_cluster_member_t **
 	while (member_token != NULL)
 	{
 		/* Trim whitespace */
-		while (*member_token && isspace(*member_token))
+		while (*member_token && isspace((unsigned char) *member_token))
 			member_token++;
 		
 		if (*member_token != '\0')
@@ -968,7 +968,7 @@ pgraft_parse_initial_cluster(const char *cluster_str, pgraft_cluster_member_t **
 		char	   *url_part;
 		
 		/* Trim whitespace */
-		while (*member_token && isspace(*member_token))
+		while (*member_token && isspace((unsigned char) *member_token))
 			member_token++;
 		
 		if (*member_token == '\0')
@@ -992,9 +992,9 @@ pgraft_parse_initial_cluster(const char *cluster_str, pgraft_cluster_member_t **
 		url_part = equals_pos + 1;
 		
 		/* Trim whitespace from parts */
-		while (*name_part && isspace(*name_part))
+		while (*name_part && isspace((unsigned char) *name_part))
 			name_part++;
-		while (*url_part && isspace(*url_part))
+		while (*url_part && isspace((unsigned char) *url_part))
 			url_part++;
 		
 		/* Store member */

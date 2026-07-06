@@ -452,10 +452,16 @@ pgraft_main(Datum main_arg)
 						{
 							/* Create JSON data for Raft replication using json-c */
 							if (pgraft_json_create_kv_operation(PGRAFT_KV_PUT, cmd.kv_key, cmd.kv_value, cmd.kv_client_id, json_data, sizeof(json_data)) != 0) {
-								elog(ERROR, "pgraft: failed to create JSON for KV PUT operation");
-								continue;
+								/* Fail just this command; do NOT elog(ERROR) here,
+								 * which would abort (and restart) the whole worker. */
+								cmd.status = COMMAND_STATUS_FAILED;
+								snprintf(cmd.error_message, sizeof(cmd.error_message),
+										"Failed to create JSON for KV PUT operation");
+								elog(WARNING, "pgraft: %s", cmd.error_message);
+								pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
+								break;
 							}
-							
+
 							elog(LOG, "pgraft: calling pgraft_go_append_log with data=%s", json_data);
 							
 							/* Replicate through Raft */
@@ -498,10 +504,16 @@ pgraft_main(Datum main_arg)
 						{
 							/* Create JSON data for Raft replication using json-c */
 							if (pgraft_json_create_kv_operation(PGRAFT_KV_DELETE, cmd.kv_key, NULL, cmd.kv_client_id, json_data, sizeof(json_data)) != 0) {
-								elog(ERROR, "pgraft: failed to create JSON for KV DELETE operation");
-								continue;
+								/* Fail just this command; do NOT elog(ERROR) here,
+								 * which would abort (and restart) the whole worker. */
+								cmd.status = COMMAND_STATUS_FAILED;
+								snprintf(cmd.error_message, sizeof(cmd.error_message),
+										"Failed to create JSON for KV DELETE operation");
+								elog(WARNING, "pgraft: %s", cmd.error_message);
+								pgraft_update_command_status(cmd.timestamp, cmd.status, cmd.error_message);
+								break;
 							}
-							
+
 							elog(LOG, "pgraft: calling pgraft_go_append_log with data=%s", json_data);
 							
 							/* Replicate through Raft */
@@ -550,6 +562,45 @@ pgraft_main(Datum main_arg)
 			}
 		}
 
+		/*
+		 * Apply committed Raft entries that the Go layer has replicated to
+		 * this node.  applyEntry() in the Go library enqueues every committed
+		 * EntryNormal via pgraft_enqueue_for_apply_from_go(); here we drain
+		 * that queue and apply each entry locally.  Each apply is wrapped in
+		 * PG_TRY so that a single malformed entry cannot abort (and thereby
+		 * restart) the whole background worker.
+		 *
+		 * NOTE: this worker holds BGWORKER_SHMEM_ACCESS only (no database
+		 * connection), so only shared-memory key/value operations are applied
+		 * here.  SQL/DDL replication would additionally require
+		 * BackgroundWorkerInitializeConnection() and a transaction.
+		 */
+		{
+			pgraft_apply_entry_t apply_entry;
+			MemoryContext apply_loop_ctx = CurrentMemoryContext;
+
+			while (pgraft_dequeue_apply_entry(&apply_entry))
+			{
+				PG_TRY();
+				{
+					pgraft_apply_entry_to_postgres(apply_entry.raft_index,
+												   apply_entry.data,
+												   apply_entry.data_len);
+				}
+				PG_CATCH();
+				{
+					/* Recover and keep the worker alive; the entry is dropped
+					 * but the error is reported to the log. */
+					MemoryContextSwitchTo(apply_loop_ctx);
+					EmitErrorReport();
+					FlushErrorState();
+					elog(WARNING, "pgraft: error applying raft entry %lu, skipping",
+						 (unsigned long) apply_entry.raft_index);
+				}
+				PG_END_TRY();
+			}
+		}
+
 		pg_usleep(100000);
 		sleep_count++;
 		
@@ -562,6 +613,14 @@ pgraft_main(Datum main_arg)
 
 	state->status = WORKER_STATUS_STOPPED;
 	elog(LOG, "pgraft: background worker stopped");
+
+	/*
+	 * Exit cleanly (status 0) in response to an explicit shutdown command.
+	 * A background worker that exits with status 0 is de-registered and NOT
+	 * restarted by the postmaster, so the shutdown is durable.  (bgw_restart_time
+	 * remains a finite interval so that an actual *crash* is still recovered.)
+	 */
+	proc_exit(0);
 }
 
 /*
@@ -583,7 +642,11 @@ pgraft_worker_get_state(void)
 			worker_state->port = 0;
 			strlcpy(worker_state->address, "127.0.0.1", sizeof(worker_state->address));
 			worker_state->status = WORKER_STATUS_STOPPED;
-			
+
+			/* Initialize the queue spinlock and command id source */
+			SpinLockInit(&worker_state->mutex);
+			worker_state->next_command_id = 1;
+
 			/* Initialize circular buffers */
 			worker_state->command_head = 0;
 			worker_state->command_tail = 0;
@@ -591,6 +654,12 @@ pgraft_worker_get_state(void)
 			worker_state->status_head = 0;
 			worker_state->status_tail = 0;
 			worker_state->status_count = 0;
+
+			/* Initialize apply queue */
+			worker_state->apply_head = 0;
+			worker_state->apply_tail = 0;
+			worker_state->apply_count = 0;
+			worker_state->last_applied_index = 0;
 		}
 	}
 	return worker_state;
@@ -839,6 +908,8 @@ pgraft_update_shared_memory_from_go(void)
 			elog(LOG, "pgraft: DEBUG - Got nodes JSON from Go: '%s'", nodes_json ? nodes_json : "NULL");
 			if (nodes_json && strcmp(nodes_json, "[]") != 0)
 			{
+				/* NOTE: nodes_json is freed unconditionally below (see the
+				 * matching pgraft_go_free_string after this block). */
 				/* Parse JSON using separate module */
 				int node_count;
 				int32_t node_ids[16];
@@ -870,9 +941,13 @@ pgraft_update_shared_memory_from_go(void)
 				{
 					elog(LOG, "pgraft: DEBUG - No valid nodes parsed from JSON");
 				}
-				
-				pgraft_go_free_string(nodes_json);
 			}
+
+			/* Free the Go-allocated string in ALL cases (including the common
+			 * "[]" steady-state path), otherwise the worker leaks one string
+			 * every iteration. */
+			if (nodes_json)
+				pgraft_go_free_string(nodes_json);
 		}
 	}
 	

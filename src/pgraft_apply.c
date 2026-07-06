@@ -48,6 +48,15 @@ pgraft_apply_entry_to_postgres(uint64 raft_index, const char *data, size_t len)
 
 	elog(LOG, "pgraft: applying raft entry %lu to PostgreSQL (len=%zu)", raft_index, len);
 
+	/* Defensive: nothing to apply for empty/NULL payloads (e.g. Raft no-op
+	 * entries committed on leader election).  Avoid dereferencing data[0]. */
+	if (data == NULL || len == 0)
+	{
+		elog(DEBUG1, "pgraft: skipping empty raft entry %lu", raft_index);
+		pgraft_record_applied_index(raft_index);
+		return 0;
+	}
+
 	/* Create a memory context for this operation */
 	apply_context = AllocSetContextCreate(CurrentMemoryContext,
 										  "PgRaft Apply Context",
@@ -236,9 +245,9 @@ pgraft_serialize_log_entry(PgRaftLogEntry *entry, size_t *out_len)
 	result = (char *) palloc(8192);
 
 	/* Format: index|term|op|database|schema|sql */
-	len = snprintf(result, 8192, "%lu|%lu|%d|%s|%s|%s",
-				   (unsigned long) entry->index,
-				   (unsigned long) entry->term,
+	len = snprintf(result, 8192, UINT64_FORMAT "|" UINT64_FORMAT "|%d|%s|%s|%s",
+				   entry->index,
+				   entry->term,
 				   entry->op,
 				   entry->database,
 				   entry->schema,
@@ -257,26 +266,19 @@ void
 pgraft_record_applied_index(uint64 index)
 {
 	pgraft_worker_state_t *worker_state;
-	pgraft_cluster_t *shm_cluster;
-	
-	/* Get shared memory references */
-	shm_cluster = pgraft_core_get_shared_memory();
-	if (!shm_cluster) {
-		elog(WARNING, "pgraft: failed to get cluster state for recording applied index");
-		return;
-	}
-	
+
 	worker_state = pgraft_worker_get_state();
 	if (!worker_state) {
 		elog(WARNING, "pgraft: failed to get worker state for recording applied index");
 		return;
 	}
-	
-	/* Update the last applied index in shared memory */
-	SpinLockAcquire(&shm_cluster->mutex);
+
+	/* Guard the worker-state field with the worker state's OWN mutex (not the
+	 * cluster mutex, which lives in a different shared-memory struct). */
+	SpinLockAcquire(&worker_state->mutex);
 	worker_state->last_applied_index = index;
-	SpinLockRelease(&shm_cluster->mutex);
-	
+	SpinLockRelease(&worker_state->mutex);
+
 	elog(DEBUG2, "pgraft: recorded applied index %lu in shared memory", index);
 }
 
@@ -287,27 +289,19 @@ uint64
 pgraft_get_applied_index(void)
 {
 	pgraft_worker_state_t *worker_state;
-	pgraft_cluster_t *shm_cluster;
 	uint64 last_applied;
-	
-	/* Get shared memory references */
-	shm_cluster = pgraft_core_get_shared_memory();
-	if (!shm_cluster) {
-		elog(WARNING, "pgraft: failed to get cluster state for getting applied index");
-		return 0;
-	}
-	
+
 	worker_state = pgraft_worker_get_state();
 	if (!worker_state) {
 		elog(WARNING, "pgraft: failed to get worker state for getting applied index");
 		return 0;
 	}
-	
-	/* Get the last applied index from shared memory */
-	SpinLockAcquire(&shm_cluster->mutex);
+
+	/* Guard with the worker state's own mutex (matches pgraft_record_applied_index). */
+	SpinLockAcquire(&worker_state->mutex);
 	last_applied = worker_state->last_applied_index;
-	SpinLockRelease(&shm_cluster->mutex);
-	
+	SpinLockRelease(&worker_state->mutex);
+
 	return last_applied;
 }
 

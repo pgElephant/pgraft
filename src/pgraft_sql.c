@@ -329,51 +329,51 @@ pgraft_add_node(PG_FUNCTION_ARGS)
 	/* Validate parameters */
 	if (node_id < 1 || node_id > 1000) {
 		elog(ERROR, "pgraft: invalid node_id %d, must be between 1 and 1000", node_id);
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
-	
+
 	if (!address || strlen(address) == 0) {
 		elog(ERROR, "pgraft: address cannot be empty");
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
-	
+
 	if (port < 1024 || port > 65535) {
 		elog(ERROR, "pgraft: invalid port %d, must be between 1024 and 65535", port);
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
-	
+
 	/* Check if Go library is loaded */
 	if (!pgraft_go_is_loaded()) {
 		elog(ERROR, "pgraft: go library not loaded. Initialize cluster first with pgraft_init()");
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
-	
+
 	leader_status = pgraft_go_is_leader();
 	if (leader_status < 0)
 	{
 		elog(ERROR, "pgraft: cannot add node - raft consensus not ready");
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
 	if (leader_status == 0)
 	{
 		elog(ERROR, "pgraft: cannot add node - this node is not the leader");
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
-	
+
 	add_peer_func = pgraft_go_get_add_peer_func();
 	if (add_peer_func == NULL)
 	{
 		elog(ERROR, "pgraft: failed to get add_peer function");
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
-	
+
 	result = add_peer_func(node_id, address, port);
 	if (result != 0)
 	{
 		elog(ERROR, "pgraft: failed to add node %d", node_id);
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
-    return 0;
+    PG_RETURN_BOOL(true);
 }
 
 /*
@@ -390,20 +390,20 @@ pgraft_remove_node(PG_FUNCTION_ARGS)
 	if (pgraft_core_remove_node(node_id) != 0)
 	{
 		elog(ERROR, "pgraft: failed to remove node from core system");
-        return -1;
+        PG_RETURN_BOOL(false);
     }
-    
+
 	if (pgraft_go_is_loaded())
 	{
 		remove_peer_func = pgraft_go_get_remove_peer_func();
 		if (remove_peer_func && remove_peer_func(node_id) != 0)
 		{
 			elog(ERROR, "pgraft: failed to remove node from Go library");
-            return -1;
+            PG_RETURN_BOOL(false);
         }
     }
-    
-    return 0;
+
+    PG_RETURN_BOOL(true);
 }
 
 
@@ -657,11 +657,11 @@ pgraft_test(PG_FUNCTION_ARGS)
     if (pgraft_go_is_loaded()) {
         pgraft_go_test_func test_func = pgraft_go_get_test_func();
         if (test_func && test_func() == 0) {
-            return 0;
+            PG_RETURN_BOOL(true);
         }
     }
-    
-    return -1;
+
+    PG_RETURN_BOOL(false);
 }
 
 /*
@@ -678,8 +678,8 @@ pgraft_set_debug(PG_FUNCTION_ARGS)
             set_debug_func(debug_enabled ? 1 : 0);
         }
     }
-    
-    return 0;
+
+    PG_RETURN_BOOL(true);
 }
 
 /*
@@ -700,10 +700,10 @@ pgraft_log_append(PG_FUNCTION_ARGS)
     /* Queue LOG_APPEND command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_APPEND, data, (int)term)) {
         elog(ERROR, "pgraft: failed to queue LOG_APPEND command");
-        return -1;
+        PG_RETURN_BOOL(false);
     }
-    
-    return 0;
+
+    PG_RETURN_BOOL(true);
 }
 
 /*
@@ -718,10 +718,10 @@ pgraft_log_commit(PG_FUNCTION_ARGS)
     /* Queue LOG_COMMIT command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_COMMIT, NULL, (int)index)) {
         elog(ERROR, "pgraft: failed to queue LOG_COMMIT command");
-        return -1;
+        PG_RETURN_BOOL(false);
     }
-    
-    return 0;
+
+    PG_RETURN_BOOL(true);
 }
 
 /*
@@ -736,10 +736,10 @@ pgraft_log_apply(PG_FUNCTION_ARGS)
     /* Queue LOG_APPLY command for worker to process */
     if (!pgraft_queue_log_command(COMMAND_LOG_APPLY, NULL, (int)index)) {
         elog(ERROR, "pgraft: failed to queue LOG_APPLY command");
-        return -1;
+        PG_RETURN_BOOL(false);
     }
-    
-    return 0;
+
+    PG_RETURN_BOOL(true);
 }
 
 /*
@@ -923,10 +923,10 @@ pgraft_log_sync_with_leader_sql(PG_FUNCTION_ARGS)
 {
     if (pgraft_log_sync_with_leader() != 0) {
         elog(ERROR, "pgraft: failed to sync with leader");
-        return -1;
+        PG_RETURN_BOOL(false);
     }
-    
-    return 0;
+
+    PG_RETURN_BOOL(true);
 }
 
 /*
@@ -954,24 +954,24 @@ pgraft_replicate_entry_func(PG_FUNCTION_ARGS)
 			result = replicate_func(data, data_len);
 			if (result == 1)
 			{
-				return 0;
+				PG_RETURN_BOOL(true);
 			}
 			else
 			{
 				elog(WARNING, "pgraft: failed to replicate log entry");
-				return -1;
+				PG_RETURN_BOOL(false);
 			}
 		}
 		else
 		{
 			elog(ERROR, "pgraft: replicate function not available");
-			return -1;
+			PG_RETURN_BOOL(false);
 		}
 	}
 	else
 	{
 		elog(ERROR, "pgraft: go library not loaded");
-		return -1;
+		PG_RETURN_BOOL(false);
 	}
 }
 
