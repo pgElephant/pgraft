@@ -23,7 +23,7 @@ Follow the [Building from Source](building.md) guide to set up your development 
 
 ### Prerequisites
 
-- PostgreSQL 17+
+- PostgreSQL 17 or 18
 - Go 1.21+
 - GCC/Clang
 - Make

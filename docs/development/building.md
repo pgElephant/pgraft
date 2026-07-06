@@ -6,7 +6,7 @@ This guide covers building pgraft from source for development and contributing.
 
 Ensure you have all required dependencies:
 
-- **PostgreSQL 17+**: With development headers
+- **PostgreSQL 17 or 18**: With development headers
 - **Go 1.21+**: For Raft implementation
 - **GCC**: C compiler
 - **Make**: Build system

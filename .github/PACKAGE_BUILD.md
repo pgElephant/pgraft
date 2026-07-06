@@ -11,7 +11,7 @@
 
 2. **Fill in parameters**:
    - Version: `1.0.0` (your package version)
-   - PostgreSQL Version: Select from dropdown (17, 16, 15, 14)
+   - PostgreSQL Version: Select from dropdown (18, 17, 16, 15, 14)
    - Release: `1` (package release number)
 
 3. **Wait for completion** (~15-20 minutes)
@@ -24,14 +24,14 @@
 
 | Distribution | PostgreSQL Versions | Package Type |
 |--------------|---------------------|--------------|
-| CentOS 9 | 17, 16, 15, 14 | RPM |
-| Rocky Linux 9 | 17, 16, 15, 14 | RPM |
-| AlmaLinux 9 | 17, 16, 15, 14 | RPM |
-| Fedora Latest | 17, 16, 15, 14 | RPM |
-| Ubuntu 22.04 | 17, 16, 15, 14 | DEB |
-| Ubuntu 24.04 | 17, 16, 15, 14 | DEB |
-| Debian 11 | 17, 16, 15, 14 | DEB |
-| Debian 12 | 17, 16, 15, 14 | DEB |
+| CentOS 9 | 18, 17, 16, 15, 14 | RPM |
+| Rocky Linux 9 | 18, 17, 16, 15, 14 | RPM |
+| AlmaLinux 9 | 18, 17, 16, 15, 14 | RPM |
+| Fedora Latest | 18, 17, 16, 15, 14 | RPM |
+| Ubuntu 22.04 | 18, 17, 16, 15, 14 | DEB |
+| Ubuntu 24.04 | 18, 17, 16, 15, 14 | DEB |
+| Debian 11 | 18, 17, 16, 15, 14 | DEB |
+| Debian 12 | 18, 17, 16, 15, 14 | DEB |
 
 ## Manual Builds
 

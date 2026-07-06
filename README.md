@@ -1,15 +1,18 @@
-# pgraft — PostgreSQL Raft Consensus Extension
-
 <div align="center">
 
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-blue.svg)](https://postgresql.org/)
-[![Go](https://img.shields.io/badge/Go-1.15+-00ADD8.svg)](https://golang.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://pgelephant.github.io/pgraft/)
+# pgraft
 
-**Production-ready Raft consensus for distributed PostgreSQL clusters**
+**Raft consensus for distributed PostgreSQL clusters**
 
-[📚 Documentation](https://pgelephant.github.io/pgraft/) • [🚀 Quick Start](https://pgelephant.github.io/pgraft/getting-started/quick-start/) • [📦 Releases](https://github.com/pgelephant/pgraft/releases) • [💬 Discussions](https://github.com/pgelephant/pgraft/discussions)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%20%E2%80%93%2018-336791.svg?logo=postgresql&logoColor=white)](https://postgresql.org/)
+[![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8.svg?logo=go&logoColor=white)](https://golang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-336791.svg)](https://pgelephant.github.io/pgraft/)
+
+[Documentation](https://pgelephant.github.io/pgraft/) ·
+[Quick Start](https://pgelephant.github.io/pgraft/getting-started/quick-start/) ·
+[Releases](https://github.com/pgelephant/pgraft/releases) ·
+[Discussions](https://github.com/pgelephant/pgraft/discussions)
 
 </div>
 
@@ -17,558 +20,410 @@
 
 ## Overview
 
-**pgraft** is a PostgreSQL extension that implements the Raft consensus algorithm for distributed PostgreSQL clusters. It provides automatic leader election, crash-safe log replication, and 100% split-brain prevention.
+**pgraft** is a PostgreSQL extension that brings the [Raft consensus
+algorithm](https://raft.github.io/) to distributed PostgreSQL clusters. It
+provides automatic leader election, crash-safe log replication, and provable
+split-brain prevention, built on the production-grade
+[etcd-io/raft](https://github.com/etcd-io/raft) library and integrated through a
+native background worker — no external agents or dependencies.
 
-### Key Features
+| | Feature | Description |
+|---|---|---|
+| **Consensus** | Automatic leader election | Quorum-based, deterministic, fully automated |
+| **Durability** | Crash-safe replication | State changes replicated and persisted across nodes |
+| **Safety** | Split-brain prevention | Guaranteed by the Raft quorum protocol |
+| **Availability** | Automatic failover | Sub-second detection and recovery |
+| **Integration** | Native PostgreSQL | Background-worker architecture, managed via SQL |
+| **Storage** | etcd-compatible KV store | Raft-replicated key/value storage included |
+| **Observability** | Status & metrics | Cluster status, replication stats, structured logging |
 
-- ✅ **Automatic Leader Election** — Quorum-based, deterministic, fully automated
-- ✅ **Crash-Safe Replication** — All state changes replicated and persisted across nodes
-- ✅ **100% Split-Brain Prevention** — Mathematical guarantee via Raft consensus protocol
-- ✅ **Zero-Downtime Failover** — Sub-second detection and automatic recovery
-- ✅ **Production-Grade Raft** — Built on proven [etcd-io/raft](https://github.com/etcd-io/raft) library
-- ✅ **Native PostgreSQL Integration** — Background worker architecture, no external dependencies
-- ✅ **Comprehensive SQL API** — Full cluster management via SQL functions
-- ✅ **Built-in Observability** — Status functions, metrics, and detailed logging
-- ✅ **etcd-Compatible KV Store** — Raft-replicated key-value storage included
+### Supported platforms
 
-### Supported Platforms
+| Platform | PostgreSQL | Status |
+|---|---|:---:|
+| Linux — RHEL / Rocky / AlmaLinux | 14 – 18 | Supported |
+| Linux — Ubuntu / Debian | 14 – 18 | Supported |
+| macOS | 14 – 18 | Supported |
 
-| Platform | PostgreSQL Versions | Status |
-|----------|---------------------|---------|
-| Linux (RHEL/Rocky/AlmaLinux) | 14, 15, 16, 17 | ✅ Supported |
-| Linux (Ubuntu/Debian) | 14, 15, 16, 17 | ✅ Supported |
-| macOS | 14, 15, 16, 17 | ✅ Supported |
+> [!NOTE]
+> Official release packages are published for PostgreSQL 16, 17, and 18; the
+> extension also builds from source on PostgreSQL 14 and 15.
 
 ---
 
-## Quick Start
+## Installation
 
-### Installation
-
-#### From Source
+<details>
+<summary><strong>From source</strong></summary>
 
 ```bash
-# Prerequisites: PostgreSQL 14+, Go 1.15+, json-c
+# Prerequisites: PostgreSQL 14+, Go 1.21+, json-c, pkg-config
 git clone https://github.com/pgelephant/pgraft.git
 cd pgraft
 make
 sudo make install
 ```
 
-#### Pre-built Packages
+Build against a specific PostgreSQL installation:
 
-Download from [Releases](https://github.com/pgelephant/pgraft/releases):
-
-**RPM (RHEL/Rocky/AlmaLinux):**
 ```bash
-sudo dnf install pgraft_17-1.0.0-1.el9.x86_64.rpm
+make PG_CONFIG=/usr/pgsql-17/bin/pg_config
+sudo make install PG_CONFIG=/usr/pgsql-17/bin/pg_config
 ```
 
-**DEB (Ubuntu/Debian):**
+</details>
+
+<details>
+<summary><strong>Pre-built packages</strong></summary>
+
+Download the appropriate package from the
+[Releases](https://github.com/pgelephant/pgraft/releases) page.
+
 ```bash
+# RHEL / Rocky / AlmaLinux
+sudo dnf install pgraft_17-1.0.0-1.el9.x86_64.rpm
+
+# Ubuntu / Debian
 sudo apt install ./postgresql-17-pgraft_1.0.0-1_amd64.deb
 ```
 
-📖 **[Complete Installation Guide →](https://pgelephant.github.io/pgraft/getting-started/installation/)**
+</details>
 
-### Configuration
+<details>
+<summary><strong>Build prerequisites by platform</strong></summary>
 
-Add to `postgresql.conf` on each node:
+```bash
+# Ubuntu / Debian
+sudo apt update
+sudo apt install build-essential postgresql-server-dev-17 golang-go \
+                 libjson-c-dev pkg-config git
+
+# RHEL / Rocky / AlmaLinux
+sudo dnf install gcc make postgresql17-devel golang json-c-devel \
+                 pkg-config git
+
+# macOS
+brew install postgresql@17 go json-c pkg-config
+```
+
+</details>
+
+> [!TIP]
+> See the [complete installation guide](https://pgelephant.github.io/pgraft/getting-started/installation/)
+> for detailed, platform-specific instructions.
+
+---
+
+## Configuration
+
+Add the following to `postgresql.conf` on **every** node, adjusting `pgraft.name`
+and the addresses per node:
 
 ```ini
 shared_preload_libraries = 'pgraft'
 
-# Cluster identification and networking
-pgraft.name = 'node1'                    # Unique node name
-pgraft.listen_address = '0.0.0.0:7001'   # Raft communication port
-pgraft.initial_cluster = 'node1=10.0.1.11:7001,node2=10.0.1.12:7002,node3=10.0.1.13:7003'
+# Node identity (must be unique and appear in initial_cluster)
+pgraft.name = 'node1'
 
-# Storage
+# Cluster membership — identical on all nodes
+pgraft.initial_cluster = 'node1=http://10.0.1.11:7001,node2=http://10.0.1.12:7001,node3=http://10.0.1.13:7001'
+pgraft.initial_cluster_state = 'new'
+pgraft.initial_cluster_token = 'pgraft-cluster-1'
+
+# Local Raft transport endpoint
+pgraft.listen_peer_urls = 'http://0.0.0.0:7001'
+
+# Persistent storage for logs, snapshots, and HardState
 pgraft.data_dir = '/var/lib/postgresql/pgraft'
 
-# Consensus settings (optional)
-pgraft.election_timeout = 1000           # milliseconds
-pgraft.heartbeat_interval = 100          # milliseconds
+# Consensus timing (optional)
+pgraft.election_timeout = 1000     # milliseconds
+pgraft.heartbeat_interval = 100    # milliseconds
 ```
 
-**Important:**
-- `pgraft.name` must be unique and match a name in `initial_cluster`
-- `pgraft.initial_cluster` must be identical on all nodes
-- Node IDs are automatically assigned based on position in `initial_cluster`
+> [!IMPORTANT]
+> - `pgraft.name` must be unique and match a member name in `pgraft.initial_cluster`.
+> - `pgraft.initial_cluster` and `pgraft.initial_cluster_token` must be **identical** on all nodes.
+> - Node IDs are assigned automatically from each member's position in `initial_cluster`.
+> - Changes to `shared_preload_libraries` require a PostgreSQL restart.
 
-Restart PostgreSQL after configuration changes.
-
-📖 **[Configuration Reference →](https://pgelephant.github.io/pgraft/user-guide/configuration/)**
-
-### Initialize Cluster
-
-On each node:
-
-```sql
--- Create extension (automatically initializes from postgresql.conf)
-CREATE EXTENSION pgraft;
-
--- Check cluster status
-SELECT * FROM pgraft_get_cluster_status();
-
--- View all nodes
-SELECT * FROM pgraft_get_nodes();
-```
-
-The cluster automatically forms based on the `initial_cluster` configuration!
-
-🚀 **[Quick Start Guide →](https://pgelephant.github.io/pgraft/getting-started/quick-start/)**
+See the [configuration reference](https://pgelephant.github.io/pgraft/user-guide/configuration/)
+for the full list of parameters.
 
 ---
 
-## Usage Examples
+## Quick start
 
-### Check Cluster Status
+Create the extension on each node — the cluster forms automatically from the
+`initial_cluster` configuration:
 
 ```sql
--- Check if current node is the leader
-SELECT pgraft_is_leader();
+CREATE EXTENSION pgraft;
 
--- Get current leader ID
-SELECT pgraft_get_leader();
-
--- Full cluster status
+-- Cluster state, leadership, and membership
 SELECT * FROM pgraft_get_cluster_status();
-
--- List all nodes
 SELECT * FROM pgraft_get_nodes();
 ```
 
-### Monitor Health
+> [!NOTE]
+> Leader election completes within a few seconds of the cluster starting. Query
+> `pgraft_get_leader()` to confirm a leader has been elected before issuing
+> leader-only operations.
+
+Follow the [quick start guide](https://pgelephant.github.io/pgraft/getting-started/quick-start/)
+for a complete walkthrough.
+
+---
+
+## Usage
+
+### Cluster status and health
 
 ```sql
--- Quick health check
-SELECT 
-    node_id,
-    state,
-    leader_id,
-    current_term,
-    num_nodes
-FROM pgraft_get_cluster_status();
+SELECT pgraft_is_leader();                        -- is this node the leader?
+SELECT pgraft_get_leader();                        -- current leader id
+SELECT * FROM pgraft_get_cluster_status();         -- full status
+SELECT * FROM pgraft_get_nodes();                  -- all members
 
--- Check log replication status
-SELECT * FROM pgraft_log_get_replication_status();
-
--- Get log statistics
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft_log_get_replication_status(); -- replication progress
+SELECT * FROM pgraft_log_get_stats();              -- log statistics
 ```
 
-### Key-Value Store (etcd-compatible)
+### Key/value store (etcd-compatible)
 
 ```sql
--- Store configuration (must run on leader)
-SELECT pgraft_kv_put('app/config', '{"timeout":30,"retries":3}');
-
--- Retrieve configuration (works on any node)
-SELECT pgraft_kv_get('app/config');
-
--- List all keys
+SELECT pgraft_kv_put('app/config', '{"timeout":30,"retries":3}');  -- leader only
+SELECT pgraft_kv_get('app/config');                                -- any node
 SELECT pgraft_kv_list_keys();
-
--- Delete key (must run on leader)
-SELECT pgraft_kv_delete('app/config');
+SELECT pgraft_kv_delete('app/config');                             -- leader only
 ```
 
-### Dynamic Node Management
+### Dynamic membership
 
 ```sql
--- Add a node (must run on leader)
-SELECT pgraft_add_node(4, '10.0.1.14', 7004);
-
--- Remove a node (must run on leader)
-SELECT pgraft_remove_node(4);
-
--- Check if operation is allowed
-DO $$
-BEGIN
-    IF NOT pgraft_is_leader() THEN
-        RAISE EXCEPTION 'Must run on leader node';
-    END IF;
-    PERFORM pgraft_add_node(4, '10.0.1.14', 7004);
-END $$;
+SELECT pgraft_add_node(4, '10.0.1.14', 7004);   -- leader only
+SELECT pgraft_remove_node(4);                     -- leader only
 ```
 
-📖 **[SQL Functions Reference →](https://pgelephant.github.io/pgraft/user-guide/sql-functions/)**
+> [!WARNING]
+> Write operations — `pgraft_kv_put`, `pgraft_kv_delete`, `pgraft_add_node`, and
+> `pgraft_remove_node` — must be issued on the **leader**. Guard automated jobs
+> with `pgraft_is_leader()` to avoid errors on followers.
+
+See the [SQL function reference](https://pgelephant.github.io/pgraft/user-guide/sql-functions/)
+for the complete API.
 
 ---
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    subgraph PG["PostgreSQL process"]
+        direction TB
+        BW["Background worker (C)<br/>ticks every 100&nbsp;ms"]
+        API["SQL API (C)<br/>cluster · status · KV · log"]
+    end
+
+    BW -->|pgraft_go_tick| GO["Go Raft engine<br/>(etcd-io/raft)"]
+    API -.->|manage / query| GO
+
+    GO --> ELECT["Leader election"]
+    GO --> REPL["Log replication"]
+    GO --> STORE["Persistent storage<br/>logs · snapshots · HardState"]
+    GO --> NET["TCP transport"]
+
+    NET <-->|Raft RPC| PEERS["Peer nodes"]
 ```
-PostgreSQL Process
-│
-├─ Background Worker (C)
-│  └─ Tick every 100ms
-│     └─ pgraft_go_tick()
-│        └─ Go Raft Engine (etcd-io/raft)
-│           ├─ Leader Election
-│           ├─ Log Replication
-│           ├─ Persistent Storage
-│           └─ Network Communication
-│
-└─ SQL API (C)
-   ├─ Cluster Management Functions
-   ├─ Status & Monitoring Functions
-   ├─ Key-Value Store Functions
-   └─ Log Replication Functions
-```
 
-### Components
+| Layer | Responsibility |
+|---|---|
+| **C layer** | PostgreSQL integration, SQL functions, background worker |
+| **Go layer** | Raft consensus engine (etcd-io/raft) |
+| **Storage** | Durable logs, snapshots, and HardState on disk |
+| **Network** | TCP transport for inter-node Raft communication |
 
-| Component | Description |
-|-----------|-------------|
-| **C Layer** | PostgreSQL integration, SQL functions, background worker |
-| **Go Layer** | Raft consensus engine using etcd-io/raft library |
-| **Storage** | Persistent logs, snapshots, HardState on disk |
-| **Network** | TCP server for inter-node Raft communication |
+The background worker ticks the Raft state machine every 100 ms. The Go engine
+handles elections, log replication, and consensus; committed entries are applied
+locally on every node, and all state is persisted for crash safety. Management
+and monitoring are exposed entirely through SQL.
 
-### How It Works
-
-1. **Background Worker** ticks every 100ms, driving Raft state machine
-2. **Go Raft Engine** handles leader election, log replication, and consensus
-3. **Persistent Storage** ensures crash safety with durable logs and snapshots
-4. **SQL Functions** provide management API accessible via standard SQL
-
-📐 **[Architecture Details →](https://pgelephant.github.io/pgraft/concepts/architecture/)**
-🛡️ **[Split-Brain Protection →](https://pgelephant.github.io/pgraft/concepts/split-brain/)**
+Further reading:
+[architecture](https://pgelephant.github.io/pgraft/concepts/architecture/) ·
+[automatic replication](https://pgelephant.github.io/pgraft/concepts/automatic-replication/) ·
+[split-brain protection](https://pgelephant.github.io/pgraft/concepts/split-brain/).
 
 ---
 
-## Docker Quick Start
+## Testing with Docker
 
-The `pgraft_cluster.py` script provides an easy way to test pgraft:
+The `pgraft_cluster.py` helper provisions a multi-node cluster for local testing:
 
 ```bash
 cd examples
 
-# Start 3-node cluster (1 primary + 2 replicas)
-./pgraft_cluster.py --docker --init --nodes 3
-
-# Check status
-./pgraft_cluster.py --docker --status
-
-# Destroy cluster
-./pgraft_cluster.py --docker --destroy
+./pgraft_cluster.py --docker --init --nodes 3   # start a 3-node cluster
+./pgraft_cluster.py --docker --status           # inspect status
+./pgraft_cluster.py --docker --destroy          # tear down
 ```
 
-🐳 **[Docker Cluster Guide →](https://pgelephant.github.io/pgraft/user-guide/pgraft-cluster-script/)**
+See the [cluster script guide](https://pgelephant.github.io/pgraft/user-guide/pgraft-cluster-script/).
 
 ---
 
-## Documentation
+## Performance characteristics
 
-### Getting Started
-
-- [**Installation**](https://pgelephant.github.io/pgraft/getting-started/installation/) — Install pgraft on your system
-- [**Quick Start**](https://pgelephant.github.io/pgraft/getting-started/quick-start/) — Get running in 5 minutes
-
-### User Guide
-
-- [**Configuration**](https://pgelephant.github.io/pgraft/user-guide/configuration/) — Complete GUC parameter reference
-- [**SQL Functions**](https://pgelephant.github.io/pgraft/user-guide/sql-functions/) — All SQL functions and tables
-- [**Cluster Operations**](https://pgelephant.github.io/pgraft/user-guide/cluster-operations/) — Add/remove nodes, failover
-- [**Tutorial**](https://pgelephant.github.io/pgraft/user-guide/tutorial/) — Step-by-step complete guide
-- [**Docker Cluster Script**](https://pgelephant.github.io/pgraft/user-guide/pgraft-cluster-script/) — Test with Docker
-
-### Core Concepts
-
-- [**Architecture**](https://pgelephant.github.io/pgraft/concepts/architecture/) — How pgraft works internally
-- [**Automatic Replication**](https://pgelephant.github.io/pgraft/concepts/automatic-replication/) — Raft log replication explained
-- [**Split-Brain Protection**](https://pgelephant.github.io/pgraft/concepts/split-brain/) — Consensus guarantees
-
-### Operations
-
-- [**Monitoring**](https://pgelephant.github.io/pgraft/operations/monitoring/) — Health checks and metrics
-- [**Troubleshooting**](https://pgelephant.github.io/pgraft/operations/troubleshooting/) — Common issues and solutions
-- [**Best Practices**](https://pgelephant.github.io/pgraft/operations/best-practices/) — Production deployment guide
-
-### Development
-
-- [**Building from Source**](https://pgelephant.github.io/pgraft/development/building/) — Developer setup
-- [**Testing**](https://pgelephant.github.io/pgraft/development/testing/) — Test suite and procedures
-- [**Contributing**](https://pgelephant.github.io/pgraft/development/contributing/) — How to contribute
-
-📚 **[View All Documentation →](https://pgelephant.github.io/pgraft/)**
+| Metric | Typical value | Notes |
+|---|---|---|
+| Tick interval | 100 ms | Background-worker frequency |
+| Election timeout | 1000 ms | Configurable (500 – 3000 ms recommended) |
+| Heartbeat interval | 100 ms | Configurable (50 – 500 ms recommended) |
+| Memory per node | ~50 MB | Go runtime and Raft state |
+| CPU (idle) | < 1 % | Background-worker overhead |
+| Failover time | 1 – 3 s | Election timeout plus detection |
 
 ---
 
-## Performance Characteristics
+## Production deployment
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Tick Interval | 100ms | Background worker execution frequency |
-| Election Timeout | 1000ms | Default, configurable (500-3000ms recommended) |
-| Heartbeat Interval | 100ms | Default, configurable (50-500ms recommended) |
-| Memory per Node | ~50MB | Includes Go runtime and Raft state |
-| CPU (Idle) | <1% | Background worker overhead |
-| CPU (Election) | <5% | During leader election |
-| Network Overhead | ~1KB/s | Heartbeats and small messages |
-| Failover Time | 1-3s | Election timeout + detection |
+<details>
+<summary><strong>System requirements</strong></summary>
 
----
+| Resource | Minimum (testing) | Recommended (production) |
+|---|---|---|
+| CPU | 2 cores | 4+ cores |
+| Memory | 2 GB / node | 8 GB+ / node |
+| Disk | 10 GB | 50 GB+ SSD |
+| Network | 100 Mbps | 1 Gbps+, < 10 ms latency |
 
-## Production Deployment
+</details>
 
-### System Requirements
+Recommended practices:
 
-**Minimum (Testing):**
-- CPU: 2 cores
-- RAM: 2GB per node
-- Disk: 10GB
-- Network: 100 Mbps
+- Run an **odd number of nodes** (3, 5, or 7) for a stable quorum.
+- Keep inter-node latency **below 10 ms**.
+- Use a **dedicated network** for Raft traffic where possible.
+- **Monitor** leader changes and replication lag, and alert on them.
+- Maintain regular **PostgreSQL backups** alongside Raft logs.
+- **Test failover** thoroughly before going to production.
 
-**Recommended (Production):**
-- CPU: 4+ cores
-- RAM: 8GB+ per node
-- Disk: 50GB+ SSD
-- Network: 1 Gbps+ with <10ms latency
-
-### Best Practices
-
-1. **Odd Number of Nodes**: Always use 3, 5, or 7 nodes for optimal quorum
-2. **Network Latency**: Keep inter-node latency <10ms for best performance
-3. **Separate Networks**: Use dedicated network for Raft communication
-4. **Monitoring**: Set up alerts for leader changes and replication lag
-5. **Backups**: Regular PostgreSQL backups in addition to Raft logs
-6. **Testing**: Test failover scenarios before production deployment
-
-📖 **[Best Practices Guide →](https://pgelephant.github.io/pgraft/operations/best-practices/)**
+See the [best-practices guide](https://pgelephant.github.io/pgraft/operations/best-practices/).
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+<details>
+<summary><strong>Background worker not starting</strong></summary>
 
-**Background worker not starting:**
 ```sql
--- Check if pgraft is loaded
-SHOW shared_preload_libraries;
-
--- Must include 'pgraft' and require PostgreSQL restart
+SHOW shared_preload_libraries;   -- must include 'pgraft'
 ```
 
-**No leader elected:**
-```bash
-# Wait 10 seconds after creating extension
-sleep 10
+`shared_preload_libraries` changes require a PostgreSQL restart.
 
-# Check leader status
-psql -c "SELECT pgraft_get_leader(), pgraft_is_leader();"
+</details>
+
+<details>
+<summary><strong>No leader elected</strong></summary>
+
+```sql
+SELECT pgraft_get_leader(), pgraft_is_leader();
 ```
 
-**Node cannot join cluster:**
+Allow a few seconds after cluster start. Confirm that `pgraft.initial_cluster`
+and `pgraft.initial_cluster_token` are identical on every node and that the peer
+ports are reachable.
+
+</details>
+
+<details>
+<summary><strong>A node cannot join</strong></summary>
+
 ```sql
--- Verify configuration
 SELECT name, setting FROM pg_settings WHERE name LIKE 'pgraft.%';
-
--- Check pgraft.initial_cluster matches on all nodes
 ```
 
-**High CPU usage:**
+Verify that this node's `pgraft.name` appears in `pgraft.initial_cluster` and
+that its `listen_peer_urls` endpoint is reachable from the other nodes.
+
+</details>
+
+<details>
+<summary><strong>High CPU usage</strong></summary>
+
 ```sql
--- Check if too many elections
 SELECT elections_triggered FROM pgraft_get_cluster_status();
-
--- Increase election_timeout if needed
 ```
 
-⚠️ **[Full Troubleshooting Guide →](https://pgelephant.github.io/pgraft/operations/troubleshooting/)**
+Repeated elections usually indicate network instability or an
+`election_timeout` that is too low for the link latency; increase it.
+
+</details>
+
+See the full [troubleshooting guide](https://pgelephant.github.io/pgraft/operations/troubleshooting/).
 
 ---
 
-## Building from Source
+## Documentation
 
-### Prerequisites
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install build-essential postgresql-server-dev-17 golang-go \
-                 libjson-c-dev pkg-config git
-```
-
-**RHEL/Rocky/AlmaLinux:**
-```bash
-sudo dnf install gcc make postgresql17-devel golang json-c-devel \
-                 pkg-config git
-```
-
-**macOS:**
-```bash
-brew install postgresql@17 go json-c pkg-config
-```
-
-### Compile & Install
-
-```bash
-# Clone repository
-git clone https://github.com/pgelephant/pgraft.git
-cd pgraft
-
-# Build
-make clean
-make
-
-# Install (requires sudo)
-sudo make install
-```
-
-### Build for Specific PostgreSQL Version
-
-```bash
-# PostgreSQL 16
-make PG_CONFIG=/usr/pgsql-16/bin/pg_config
-
-# PostgreSQL 17
-make PG_CONFIG=/usr/local/pgsql.17/bin/pg_config
-```
-
-🛠️ **[Development Guide →](https://pgelephant.github.io/pgraft/development/building/)**
+| Section | Topics |
+|---|---|
+| [Getting started](https://pgelephant.github.io/pgraft/getting-started/installation/) | Installation, quick start |
+| [User guide](https://pgelephant.github.io/pgraft/user-guide/configuration/) | Configuration, SQL functions, cluster operations, tutorial |
+| [Concepts](https://pgelephant.github.io/pgraft/concepts/architecture/) | Architecture, automatic replication, split-brain protection |
+| [Operations](https://pgelephant.github.io/pgraft/operations/monitoring/) | Monitoring, troubleshooting, best practices |
+| [Development](https://pgelephant.github.io/pgraft/development/building/) | Building, testing, contributing |
 
 ---
 
 ## Contributing
 
-We welcome contributions from the community! Whether it's:
+Contributions are welcome — bug reports, feature requests, documentation, and
+code. A typical workflow:
 
-- 🐛 Bug reports
-- 💡 Feature requests
-- 📝 Documentation improvements
-- 🔧 Code contributions
+1. Search existing [issues](https://github.com/pgelephant/pgraft/issues) and
+   [discussions](https://github.com/pgelephant/pgraft/discussions).
+2. Open an issue describing the problem or proposal.
+3. Fork the repository and develop on a feature branch.
+4. Submit a pull request with tests and documentation.
 
-### How to Contribute
-
-1. **Check existing issues** — See if your idea/bug is already discussed
-2. **Open an issue** — Describe the problem or enhancement
-3. **Fork & develop** — Make your changes in a feature branch
-4. **Submit PR** — Include tests and documentation updates
-5. **Code review** — Collaborate with maintainers
-
-📝 **[Contributing Guidelines →](https://pgelephant.github.io/pgraft/development/contributing/)**
-
-### Quick Links
-
-- [Report a Bug](https://github.com/pgelephant/pgraft/issues/new?labels=bug)
-- [Request a Feature](https://github.com/pgelephant/pgraft/issues/new?labels=enhancement)
-- [Ask Questions](https://github.com/pgelephant/pgraft/discussions)
-- [View Roadmap](https://github.com/pgelephant/pgraft/projects)
-
----
-
-## Testing
+Please read the
+[contributing guidelines](https://pgelephant.github.io/pgraft/development/contributing/)
+before opening a pull request.
 
 ```bash
-# Run regression tests
-make installcheck
-
-# Run Docker cluster test
-cd examples
-./pgraft_cluster.py --docker --init --nodes 3
+make installcheck   # regression tests
 ```
 
-🧪 **[Testing Guide →](https://pgelephant.github.io/pgraft/development/testing/)**
-
 ---
 
-## Project Status
-
-**Current Version:** 1.0.0  
-**Status:** ✅ Production Ready
-
-### Quality Standards
-
-- ✅ **Zero compilation errors/warnings**
-- ✅ **100% PostgreSQL C coding standards compliant**
-- ✅ **C89/C90 compatible** (variables at function start)
-- ✅ **Comprehensive error handling**
-- ✅ **Complete test coverage**
-- ✅ **Full documentation**
-- ✅ **Multi-platform support** (Linux, macOS)
-- ✅ **Multi-version support** (PostgreSQL 14-17)
-
-### Roadmap
-
-- [ ] Windows support
-- [ ] PostgreSQL 18 support
-- [ ] Kubernetes operator
-- [ ] Prometheus exporter
-- [ ] Grafana dashboards
-- [ ] Performance benchmarks
-- [ ] Additional replication modes
-
----
-
-## Technology Stack
+## Technology stack
 
 | Component | Technology |
-|-----------|-----------|
-| **Core Language** | C (PostgreSQL extension) |
-| **Consensus Engine** | Go (etcd-io/raft) |
-| **Build System** | PostgreSQL PGXS, GNU Make |
-| **JSON Parsing** | json-c library |
-| **Documentation** | MkDocs with Material theme |
-| **CI/CD** | GitHub Actions |
-| **Packaging** | RPM (RHEL/Rocky), DEB (Ubuntu/Debian) |
-
----
-
-## Related Projects
-
-- **[etcd-io/raft](https://github.com/etcd-io/raft)** — Raft consensus algorithm implementation (used by pgraft)
-- **[PostgreSQL](https://www.postgresql.org/)** — The world's most advanced open source database
-- **[Patroni](https://github.com/zalando/patroni)** — HA solution for PostgreSQL (complementary to pgraft)
-- **[Stolon](https://github.com/sorintlab/stolon)** — PostgreSQL cloud native HA replication manager
+|---|---|
+| Core language | C (PostgreSQL extension) |
+| Consensus engine | Go — [etcd-io/raft](https://github.com/etcd-io/raft) |
+| Build system | PostgreSQL PGXS, GNU Make |
+| JSON parsing | json-c |
+| Documentation | MkDocs (Material theme) |
+| CI/CD | GitHub Actions |
+| Packaging | RPM (RHEL/Rocky), DEB (Ubuntu/Debian) |
 
 ---
 
 ## License
 
-**MIT License**
-
-Copyright (c) 2024-2025 pgElephant
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-See [LICENSE](LICENSE) file for full text.
-
----
-
-## Support
-
-### Community Support
-
-- **Documentation**: [https://pgelephant.github.io/pgraft/](https://pgelephant.github.io/pgraft/)
-- **GitHub Issues**: [Report bugs or request features](https://github.com/pgelephant/pgraft/issues)
-- **GitHub Discussions**: [Ask questions and share ideas](https://github.com/pgelephant/pgraft/discussions)
-
-### Professional Support
-
-For enterprise support, custom development, or consulting services, please contact the maintainers.
-
----
-
-## Acknowledgments
-
-- **PostgreSQL Community** — For the amazing database system
-- **etcd-io/raft** — For the production-grade Raft implementation
-- **Contributors** — Everyone who has contributed code, documentation, or feedback
+Released under the [MIT License](LICENSE). Copyright &copy; 2024–2025 pgElephant.
 
 ---
 
 <div align="center">
 
-**Made with ❤️ for the PostgreSQL community**
+Built for the PostgreSQL community.
 
-[⭐ Star us on GitHub](https://github.com/pgelephant/pgraft) • [📚 Read the Docs](https://pgelephant.github.io/pgraft/) • [💬 Join Discussions](https://github.com/pgelephant/pgraft/discussions)
+[Documentation](https://pgelephant.github.io/pgraft/) ·
+[Issues](https://github.com/pgelephant/pgraft/issues) ·
+[Discussions](https://github.com/pgelephant/pgraft/discussions)
 
 </div>
