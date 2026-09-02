@@ -5,7 +5,10 @@
  */
 
 #include "postgres.h"
+
 #include <json-c/json.h>
+#include <stdlib.h>
+#include <string.h>
 #include "utils/timestamp.h"
 
 #include "../include/pgraft_core.h"
@@ -18,7 +21,8 @@
  * Returns number of nodes parsed, -1 on error
  */
 int
-pgraft_parse_nodes_json(const char *nodes_json, int32_t *node_ids, char **addresses, int max_nodes)
+pgraft_parse_nodes_json(const char *nodes_json, int32_t *node_ids, char **addresses,
+						int32_t *ports, int max_nodes)
 {
 	struct json_object *root;
 	int node_count = 0;
@@ -62,11 +66,31 @@ pgraft_parse_nodes_json(const char *nodes_json, int32_t *node_ids, char **addres
 			json_object_is_type(addr_obj, json_type_string))
 		{
 			const char *address = json_object_get_string(addr_obj);
+
 			if (address && node_id > 0)
 			{
-				node_ids[node_count] = (int32_t)node_id;
+				node_ids[node_count] = (int32_t) node_id;
 				strncpy(addresses[node_count], address, 255);
 				addresses[node_count][255] = '\0';
+
+				/*
+				 * The Go layer reports each member as "host:port".  Split the
+				 * port off so callers can keep it; the caller's shared-memory
+				 * node array has a separate port field that would otherwise
+				 * be left at zero.
+				 */
+				if (ports != NULL)
+				{
+					char	   *colon = strrchr(addresses[node_count], ':');
+
+					ports[node_count] = 0;
+					if (colon != NULL && colon[1] != '\0')
+					{
+						ports[node_count] = (int32_t) strtol(colon + 1, NULL, 10);
+						*colon = '\0';	/* leave a bare host in the address */
+					}
+				}
+
 				node_count++;
 			}
 		}

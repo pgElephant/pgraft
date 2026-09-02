@@ -33,6 +33,9 @@
 
 /* JSON parsing functions are now in pgraft_json.c */
 
+/* Upper bound on a pipe-delimited serialized entry (see pgraft_serialize_log_entry). */
+#define PGRAFT_SERIALIZED_ENTRY_MAX 8192
+
 /*
  * Apply a committed Raft entry to local PostgreSQL
  * Called on BOTH leader and followers after Raft commits
@@ -154,8 +157,7 @@ pgraft_parse_log_entry(const char *data, size_t len)
 	PgRaftLogEntry *entry;
 	char	   *copy;
 	char	   *token;
-	char	   *saveptr;
-	int			field = 0;
+	int			field;
 
 	if (data == NULL || len == 0)
 	{
@@ -177,10 +179,37 @@ pgraft_parse_log_entry(const char *data, size_t len)
 	memcpy(copy, data, len);
 	copy[len] = '\0';
 
-	/* Parse fields separated by '|' */
-	token = strtok_r(copy, "|", &saveptr);
-	while (token != NULL && field < 6)
+	/*
+	 * Split on '|' by hand rather than with strtok_r.
+	 *
+	 * strtok_r treats a run of delimiters as one, so an empty database or
+	 * schema field silently shifted every later field left and the SQL ended
+	 * up parsed as the schema.  It also stops at the first delimiter inside
+	 * the SQL text; the last field therefore has to take the entire remainder
+	 * of the buffer, separators included.
+	 */
+	token = copy;
+	for (field = 0; field < 6; field++)
 	{
+		char	   *sep;
+
+		if (field == 5)
+		{
+			/* Final field: everything that is left, '|' characters included. */
+			strlcpy(entry->sql, token, sizeof(entry->sql));
+			break;
+		}
+
+		sep = strchr(token, '|');
+		if (sep == NULL)
+		{
+			pfree(copy);
+			elog(WARNING, "pgraft: incomplete log entry (only %d of 6 fields)", field);
+			pfree(entry);
+			return NULL;
+		}
+		*sep = '\0';
+
 		switch (field)
 		{
 			case 0:				/* index */
@@ -193,27 +222,17 @@ pgraft_parse_log_entry(const char *data, size_t len)
 				entry->op = atoi(token);
 				break;
 			case 3:				/* database */
-				strncpy(entry->database, token, sizeof(entry->database) - 1);
+				strlcpy(entry->database, token, sizeof(entry->database));
 				break;
 			case 4:				/* schema */
-				strncpy(entry->schema, token, sizeof(entry->schema) - 1);
-				break;
-			case 5:				/* sql */
-				strncpy(entry->sql, token, sizeof(entry->sql) - 1);
+				strlcpy(entry->schema, token, sizeof(entry->schema));
 				break;
 		}
-		field++;
-		token = strtok_r(NULL, "|", &saveptr);
+
+		token = sep + 1;
 	}
 
 	pfree(copy);
-
-	if (field < 6)
-	{
-		elog(WARNING, "pgraft: incomplete log entry (only %d fields)", field);
-		pfree(entry);
-		return NULL;
-	}
 
 	return entry;
 }
@@ -242,10 +261,11 @@ pgraft_serialize_log_entry(PgRaftLogEntry *entry, size_t *out_len)
 	}
 
 	/* Allocate buffer for serialized entry */
-	result = (char *) palloc(8192);
+	result = (char *) palloc(PGRAFT_SERIALIZED_ENTRY_MAX);
 
 	/* Format: index|term|op|database|schema|sql */
-	len = snprintf(result, 8192, UINT64_FORMAT "|" UINT64_FORMAT "|%d|%s|%s|%s",
+	len = snprintf(result, PGRAFT_SERIALIZED_ENTRY_MAX,
+				   UINT64_FORMAT "|" UINT64_FORMAT "|%d|%s|%s|%s",
 				   entry->index,
 				   entry->term,
 				   entry->op,
@@ -253,8 +273,27 @@ pgraft_serialize_log_entry(PgRaftLogEntry *entry, size_t *out_len)
 				   entry->schema,
 				   entry->sql);
 
+	/*
+	 * snprintf reports what it *would* have written, so clamp before handing
+	 * the length back; otherwise a truncated entry reports a length past the
+	 * end of the buffer.
+	 */
+	if (len < 0)
+	{
+		pfree(result);
+		if (out_len)
+			*out_len = 0;
+		return NULL;
+	}
+	if (len >= PGRAFT_SERIALIZED_ENTRY_MAX)
+	{
+		elog(WARNING, "pgraft: serialized log entry truncated (%d bytes needed, %d available)",
+			 len, PGRAFT_SERIALIZED_ENTRY_MAX);
+		len = PGRAFT_SERIALIZED_ENTRY_MAX - 1;
+	}
+
 	if (out_len)
-		*out_len = len;
+		*out_len = (size_t) len;
 
 	return result;
 }

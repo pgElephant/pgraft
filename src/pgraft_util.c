@@ -134,13 +134,18 @@ bool
 pgraft_queue_is_empty(void)
 {
 	pgraft_worker_state_t *state;
-	
+	bool		empty;
+
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
 		return true;
 	}
-	
-	return (state->command_count == 0);
+
+	SpinLockAcquire(&state->mutex);
+	empty = (state->command_count == 0);
+	SpinLockRelease(&state->mutex);
+
+	return empty;
 }
 
 /*
@@ -389,9 +394,10 @@ bool
 pgraft_remove_completed_commands(void)
 {
 	pgraft_worker_state_t *state;
-	int removed = 0;
-	int i;
-	
+	int			removed = 0;
+	int			kept = 0;
+	int			i;
+
 	state = pgraft_worker_get_state();
 	if (state == NULL) {
 		return false;
@@ -399,25 +405,32 @@ pgraft_remove_completed_commands(void)
 
 	SpinLockAcquire(&state->mutex);
 
-	/* Remove completed and failed commands from status buffer */
+	/*
+	 * Compact in place, keeping the ring's head where it is.
+	 *
+	 * "kept" is the number of survivors written so far, so the destination
+	 * slot for the next survivor is head + kept.  The head must NOT be
+	 * advanced afterwards: the survivors were compacted to start at the
+	 * existing head, and moving the head past them would hide exactly the
+	 * entries we meant to keep (and expose the stale slots behind them).
+	 */
 	for (i = 0; i < state->status_count; i++) {
-		int index = (state->status_head + i) % MAX_COMMANDS;
+		int			index = (state->status_head + i) % MAX_COMMANDS;
 		COMMAND_STATUS status = state->status_commands[index].status;
 
 		if (status == COMMAND_STATUS_COMPLETED || status == COMMAND_STATUS_FAILED) {
 			removed++;
 		} else {
-			/* Move command to front if we removed some */
 			if (removed > 0) {
-				int new_index = (state->status_head + i - removed) % MAX_COMMANDS;
+				int			new_index = (state->status_head + kept) % MAX_COMMANDS;
+
 				state->status_commands[new_index] = state->status_commands[index];
 			}
+			kept++;
 		}
 	}
 
-	/* Update status buffer pointers */
-	state->status_head = (state->status_head + removed) % MAX_COMMANDS;
-	state->status_count -= removed;
+	state->status_count = kept;
 
 	SpinLockRelease(&state->mutex);
 

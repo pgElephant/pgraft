@@ -971,41 +971,45 @@ pgraft_update_shared_memory_from_go(void)
 		if (get_nodes_func)
 		{
 			char *nodes_json = get_nodes_func();
-			elog(LOG, "pgraft: DEBUG - Got nodes JSON from Go: '%s'", nodes_json ? nodes_json : "NULL");
+			elog(DEBUG2, "pgraft: nodes JSON from Go: %s", nodes_json ? nodes_json : "(null)");
 			if (nodes_json && strcmp(nodes_json, "[]") != 0)
 			{
 				/* NOTE: nodes_json is freed unconditionally below (see the
 				 * matching pgraft_go_free_string after this block). */
 				/* Parse JSON using separate module */
-				int node_count;
-				int32_t node_ids[16];
-				char *addresses[16];
-				char address_buf[16][256];
-				int i;
-				
+				int			node_count;
+				int32_t		node_ids[PGRAFT_MAX_NODES];
+				int32_t		node_ports[PGRAFT_MAX_NODES];
+				char	   *addresses[PGRAFT_MAX_NODES];
+				char		address_buf[PGRAFT_MAX_NODES][256];
+				int			i;
+
 				/* Keep a copy for persistence file */
 				nodes_json_for_file = pstrdup(nodes_json);
-				
+
 				/* Initialize */
-				for (i = 0; i < 16; i++) {
+				for (i = 0; i < PGRAFT_MAX_NODES; i++) {
 					addresses[i] = address_buf[i];
 					address_buf[i][0] = '\0';
+					node_ids[i] = 0;
+					node_ports[i] = 0;
 				}
-				
-				node_count = pgraft_parse_nodes_json(nodes_json, node_ids, addresses, 16);
+
+				node_count = pgraft_parse_nodes_json(nodes_json, node_ids, addresses,
+													 node_ports, PGRAFT_MAX_NODES);
 				
 				if (node_count > 0)
 				{
-					elog(LOG, "pgraft: DEBUG - Parsed %d nodes, calling pgraft_core_update_nodes", node_count);
-					pgraft_core_update_nodes(node_count, node_ids, addresses);
+					elog(DEBUG2, "pgraft: parsed %d nodes from Go layer", node_count);
+					pgraft_core_update_nodes(node_count, node_ids, addresses, node_ports);
 				}
 				else if (node_count == -1)
 				{
-					elog(LOG, "pgraft: DEBUG - Failed to parse JSON");
+					elog(DEBUG1, "pgraft: could not parse node list from Go layer");
 				}
 				else
 				{
-					elog(LOG, "pgraft: DEBUG - No valid nodes parsed from JSON");
+					elog(DEBUG2, "pgraft: Go layer reported no valid nodes");
 				}
 			}
 

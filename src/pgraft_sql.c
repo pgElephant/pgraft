@@ -1013,24 +1013,26 @@ pgraft_get_nodes_from_raft(PG_FUNCTION_ARGS)
 	/* Parse the file to extract the "nodes" field */
 	while (fgets(line, sizeof(line), fp) != NULL)
 	{
-		char *nodes_pos = strstr(line, "\"nodes\":");
-		if (nodes_pos)
+		char	   *nodes_pos = strstr(line, "\"nodes\":");
+		char	   *end;
+
+		if (nodes_pos == NULL)
+			continue;
+
+		/* Skip "nodes": */
+		nodes_start = nodes_pos + 8;
+		/* Skip whitespace */
+		while (*nodes_start == ' ' || *nodes_start == '\t')
+			nodes_start++;
+
+		/* Find the end of the JSON array (before the trailing comma) */
+		end = strrchr(nodes_start, ',');
+		if (end)
 		{
-			/* Skip "nodes": */
-			nodes_start = nodes_pos + 8;
-			/* Skip whitespace */
-			while (*nodes_start == ' ' || *nodes_start == '\t')
-				nodes_start++;
-			
-			/* Find the end of the JSON array (before the comma) */
-			char *end = strrchr(nodes_start, ',');
-			if (end)
-			{
-				*end = '\0';
-				result = pstrdup(nodes_start);
-			}
-			break;
+			*end = '\0';
+			result = pstrdup(nodes_start);
 		}
+		break;
 	}
 	
 	fclose(fp);

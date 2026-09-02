@@ -83,7 +83,8 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 {
 	pgraft_cluster_t *cluster;
 	pgraft_node_t *node;
-	
+	int32_t		total_nodes;
+
 	cluster = pgraft_core_get_shared_memory();
 	if (!cluster)
 	{
@@ -99,10 +100,10 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 		return -1;
 	}
 	
-	if (cluster->num_nodes >= 16)
+	if (cluster->num_nodes >= PGRAFT_MAX_NODES)
 	{
 		SpinLockRelease(&cluster->mutex);
-		elog(ERROR, "pgraft: maximum number of nodes (16) reached");
+		elog(ERROR, "pgraft: maximum number of nodes (%d) reached", PGRAFT_MAX_NODES);
 		return -1;
 	}
 	
@@ -113,12 +114,12 @@ pgraft_core_add_node(int32_t node_id, const char *address, int32_t port)
 	node->port = port;
 	node->is_leader = false;
 	
-	cluster->num_nodes++;
-	
+	total_nodes = ++cluster->num_nodes;
+
 	SpinLockRelease(&cluster->mutex);
-	
+
 	elog(INFO, "pgraft: added node %d at %s:%d", node_id, address, port);
-	elog(INFO, "pgraft: total nodes in cluster: %d", cluster->num_nodes);
+	elog(INFO, "pgraft: total nodes in cluster: %d", total_nodes);
 	return 0;
 }
 
@@ -269,38 +270,72 @@ pgraft_core_update_cluster_state(int64_t leader_id, int64_t current_term, const 
  * Update nodes array in shared memory
  */
 int
-pgraft_core_update_nodes(int32_t num_nodes, int32_t *node_ids, char **addresses)
+pgraft_core_update_nodes(int32_t num_nodes, int32_t *node_ids, char **addresses,
+						 int32_t *ports)
 {
 	pgraft_cluster_t *cluster;
-	int i;
-	
-	/* Get shared memory */
+	pgraft_node_t previous[PGRAFT_MAX_NODES];
+	int32_t		previous_count;
+	int			i;
+	int			j;
+
 	cluster = pgraft_core_get_shared_memory();
 	if (!cluster)
 		return -1;
-	
+
 	SpinLockAcquire(&cluster->mutex);
 	if (!cluster->initialized)
 	{
 		SpinLockRelease(&cluster->mutex);
 		return -1;
 	}
-	
-	/* Clear existing nodes */
+
+	/*
+	 * Snapshot what we already know before clearing.  This function is called
+	 * on every worker iteration from the node list the Go layer reports, which
+	 * carries only id and address; rebuilding the array from that alone used
+	 * to zero out every node's port and is_leader flag, permanently discarding
+	 * the values registered by pgraft_core_add_node().  So carry the fields
+	 * the refresh does not supply over from the matching previous entry.
+	 */
+	previous_count = cluster->num_nodes;
+	if (previous_count > PGRAFT_MAX_NODES)
+		previous_count = PGRAFT_MAX_NODES;
+	memcpy(previous, cluster->nodes, sizeof(previous));
+
 	memset(cluster->nodes, 0, sizeof(cluster->nodes));
 	cluster->num_nodes = 0;
-	
-	/* Copy up to 16 nodes */
-	for (i = 0; i < num_nodes && i < 16; i++)
+
+	for (i = 0; i < num_nodes && i < PGRAFT_MAX_NODES; i++)
 	{
-		cluster->nodes[i].id = node_ids[i];
-		strncpy(cluster->nodes[i].address, addresses[i], sizeof(cluster->nodes[i].address) - 1);
-		cluster->nodes[i].address[sizeof(cluster->nodes[i].address) - 1] = '\0';
+		pgraft_node_t *node = &cluster->nodes[i];
+
+		node->id = node_ids[i];
+		strncpy(node->address, addresses[i], sizeof(node->address) - 1);
+		node->address[sizeof(node->address) - 1] = '\0';
+		node->port = ports ? ports[i] : 0;
+		node->is_leader = (cluster->leader_id == (int64_t) node_ids[i]);
+
+		/* Recover anything the caller could not tell us. */
+		for (j = 0; j < previous_count; j++)
+		{
+			if (previous[j].id != node_ids[i])
+				continue;
+			if (node->port == 0)
+				node->port = previous[j].port;
+			if (node->address[0] == '\0')
+			{
+				strncpy(node->address, previous[j].address, sizeof(node->address) - 1);
+				node->address[sizeof(node->address) - 1] = '\0';
+			}
+			break;
+		}
+
 		cluster->num_nodes++;
 	}
-	
+
 	SpinLockRelease(&cluster->mutex);
-	
+
 	return 0;
 }
 
