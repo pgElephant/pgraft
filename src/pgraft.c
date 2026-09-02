@@ -256,13 +256,34 @@ pgraft_main(Datum main_arg)
 {
 	pgraft_worker_state_t *state;
 	pgraft_command_t cmd;
-	int sleep_count;
-	int tick_result;
-	
+	int			sleep_count;
+	int			tick_result;
+	int			last_tick_result;
+
 	sleep_count = 0;
+	last_tick_result = 0;
 	
 	elog(LOG, "pgraft: background worker main function started");
-	
+
+	/*
+	 * Accept signals before doing anything slow.  Everything below - the
+	 * startup delays, loading the Go library, initializing Raft - used to run
+	 * with signals still blocked, so a shutdown request during those several
+	 * seconds was ignored and the postmaster had to wait us out.
+	 */
+	pqsignal(SIGTERM, die);
+	pqsignal(SIGHUP, SignalHandlerForConfigReload);
+	BackgroundWorkerUnblockSignals();
+
+	/*
+	 * Publish the apply queue before the Go library can start producing into
+	 * it.  The Go raft goroutine reaches pgraft_enqueue_apply_entry() directly
+	 * and cannot safely resolve shared memory itself, so the pointer has to be
+	 * in place first.
+	 */
+	state = pgraft_worker_get_state();
+	pgraft_apply_queue_attach(state);
+
 	/* Wait for PostgreSQL to be fully ready before initializing Raft */
 	/* On standbys, wait for them to reach consistent hot standby state */
 	elog(LOG, "pgraft: waiting for PostgreSQL to be ready (primary or stable standby)...");
@@ -350,19 +371,20 @@ pgraft_main(Datum main_arg)
 
 	while (state->status != WORKER_STATUS_STOPPED)
 	{
-		if (sleep_count % 5 == 0)
+		CHECK_FOR_INTERRUPTS();
+
+		if (ConfigReloadPending)
 		{
-			elog(LOG, "pgraft: worker loop - command_count=%d, head=%d, tail=%d", 
-				 state->command_count, state->command_head, state->command_tail);
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
 		}
-		
+
 		if (pgraft_go_is_loaded())
 		{
 			tick_result = pgraft_go_tick();
-			if (sleep_count % 20 == 0)
-			{
-				elog(LOG, "pgraft: calling tick... result=%d", tick_result);
-			}
+			if (tick_result != 0 && tick_result != last_tick_result)
+				elog(LOG, "pgraft: raft tick returning %d", tick_result);
+			last_tick_result = tick_result;
 		}
 		
 		/* Update shared memory with current Go library state every 5 iterations */
@@ -636,13 +658,31 @@ pgraft_main(Datum main_arg)
 			}
 		}
 
-		pg_usleep(100000);
+		/*
+		 * Sleep on the latch rather than pg_usleep() so a shutdown request or
+		 * a newly queued command wakes us immediately instead of after the
+		 * remainder of a fixed delay.
+		 */
+		(void) WaitLatch(MyLatch,
+						 WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH,
+						 PGRAFT_WORKER_NAP_MS,
+						 PG_WAIT_EXTENSION);
+		ResetLatch(MyLatch);
+
 		sleep_count++;
-		
-		if (sleep_count >= 10)
+
+		/*
+		 * Report producer-side apply-queue drops and a liveness line roughly
+		 * once a minute.  This loop runs ten times a second, so the old
+		 * unconditional elog(LOG) calls on every iteration (and every fifth)
+		 * produced hundreds of log lines a minute forever.
+		 */
+		if (sleep_count >= PGRAFT_WORKER_REPORT_TICKS)
 		{
-			elog(LOG, "pgraft: background worker running... (alive check)");
 			sleep_count = 0;
+			pgraft_apply_queue_report_drops();
+			elog(DEBUG1, "pgraft: background worker running (applied through " UINT64_FORMAT ")",
+				 pgraft_get_applied_index());
 		}
 	}
 
