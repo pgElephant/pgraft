@@ -92,7 +92,7 @@ jobs:
           rpm -qpl ~/rpmbuild/RPMS/*/pgraft_${{ inputs.pg_version }}-*.rpm | grep pgraft
       
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rpm-pg${{ inputs.pg_version }}
           path: |

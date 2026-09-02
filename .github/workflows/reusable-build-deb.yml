@@ -100,7 +100,7 @@ jobs:
           dpkg -I /tmp/postgresql-${{ inputs.pg_version }}-pgraft_*.deb | grep Depends
       
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deb-pg${{ inputs.pg_version }}
           path: /tmp/postgresql-${{ inputs.pg_version }}-pgraft*.deb

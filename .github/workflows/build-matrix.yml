@@ -222,7 +222,7 @@ jobs:
           make installcheck PG_CONFIG=$PG_CONFIG || echo "Tests not yet implemented"
       
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pgraft-${{ matrix.platform }}-pg${{ matrix.pg_version }}
           path: ~/release/${{ matrix.platform }}/pg${{ matrix.pg_version }}/*
