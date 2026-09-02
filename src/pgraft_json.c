@@ -88,9 +88,11 @@ pgraft_parse_kv_json_entry(const char *data, size_t len)
 	struct json_object *type_obj, *key_obj, *value_obj;
 	const char *type_str, *key_str, *value_str;
 	char	   *sql_cmd;
+	char	   *quoted_key;
+	char	   *quoted_value;
 	size_t		sql_len;
 	
-	elog(LOG, "pgraft: parsing JSON entry: %.*s", (int)len, data);
+	elog(DEBUG1, "pgraft: parsing JSON entry: %.*s", (int) len, data);
 	
 	/* Parse JSON using json-c library */
 	json_obj = json_tokener_parse(data);
@@ -145,20 +147,35 @@ pgraft_parse_kv_json_entry(const char *data, size_t len)
 		
 		key_str = json_object_get_string(key_obj);
 		value_str = json_object_get_string(value_obj);
-		
-		/* Build SQL command */
-		sql_len = strlen(key_str) + strlen(value_str) + 100;
+
+		/*
+		 * Build the SQL with the key and value as properly quoted literals.
+		 *
+		 * These strings arrive from the Raft log, i.e. from whatever any node
+		 * proposed, so interpolating them raw (as this used to do) let a key
+		 * like  a'); DROP TABLE t; --  execute arbitrary SQL under
+		 * SPI_execute() on every member of the cluster.  pgraft_quote_literal()
+		 * escapes embedded quotes and backslashes and adds the delimiters.
+		 */
+		quoted_key = pgraft_quote_literal(key_str);
+		quoted_value = pgraft_quote_literal(value_str);
+
+		sql_len = strlen(quoted_key) + strlen(quoted_value) + 64;
 		sql_cmd = palloc(sql_len);
-		snprintf(sql_cmd, sql_len, "SELECT pgraft_kv_put_local('%s', '%s')", key_str, value_str);
-		
+		snprintf(sql_cmd, sql_len, "SELECT pgraft_kv_put_local(%s, %s)",
+				 quoted_key, quoted_value);
+
 		/* Set up entry */
 		entry->op = 1; /* PUT operation */
 		strncpy(entry->database, "postgres", sizeof(entry->database) - 1);
 		strncpy(entry->schema, "public", sizeof(entry->schema) - 1);
 		strncpy(entry->sql, sql_cmd, sizeof(entry->sql) - 1);
-		
-		elog(LOG, "pgraft: parsed kv_put operation: key=%s, value=%s, sql=%s", key_str, value_str, sql_cmd);
-		
+		entry->sql[sizeof(entry->sql) - 1] = '\0';
+
+		elog(DEBUG1, "pgraft: parsed kv_put operation for key %s", quoted_key);
+
+		pfree(quoted_value);
+		pfree(quoted_key);
 		pfree(sql_cmd);
 		
 	} else if (strcmp(type_str, "kv_delete") == 0) {
@@ -178,20 +195,24 @@ pgraft_parse_kv_json_entry(const char *data, size_t len)
 		}
 		
 		key_str = json_object_get_string(key_obj);
-		
-		/* Build SQL command */
-		sql_len = strlen(key_str) + 100;
+
+		/* Quote the replicated key; see the comment in the kv_put branch. */
+		quoted_key = pgraft_quote_literal(key_str);
+
+		sql_len = strlen(quoted_key) + 64;
 		sql_cmd = palloc(sql_len);
-		snprintf(sql_cmd, sql_len, "SELECT pgraft_kv_delete_local('%s')", key_str);
-		
+		snprintf(sql_cmd, sql_len, "SELECT pgraft_kv_delete_local(%s)", quoted_key);
+
 		/* Set up entry */
 		entry->op = 2; /* DELETE operation */
 		strncpy(entry->database, "postgres", sizeof(entry->database) - 1);
 		strncpy(entry->schema, "public", sizeof(entry->schema) - 1);
 		strncpy(entry->sql, sql_cmd, sizeof(entry->sql) - 1);
-		
-		elog(LOG, "pgraft: parsed kv_delete operation: key=%s, sql=%s", key_str, sql_cmd);
-		
+		entry->sql[sizeof(entry->sql) - 1] = '\0';
+
+		elog(DEBUG1, "pgraft: parsed kv_delete operation for key %s", quoted_key);
+
+		pfree(quoted_key);
 		pfree(sql_cmd);
 		
 	} else {

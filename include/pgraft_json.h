@@ -33,4 +33,10 @@ int pgraft_json_create_key_list(pgraft_kv_store_t *store, char *json_buffer, siz
 /* Parse log entry from JSON using json-c library */
 PgRaftLogEntry *pgraft_json_parse_log_entry(const char *json_data, size_t len);
 
+/*
+ * SQL literal quoting, implemented in pgraft_util.c (see the note there for
+ * why it is not called directly from this module).
+ */
+extern char *pgraft_quote_literal(const char *rawstr);
+
 #endif /* PGRAFT_JSON_H */

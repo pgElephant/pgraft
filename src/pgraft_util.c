@@ -5,12 +5,28 @@
 
 #include "postgres.h"
 #include "fmgr.h"
+#include "utils/builtins.h"
 #include "utils/palloc.h"
 #include "lib/ilist.h"
 #include "nodes/pg_list.h"
 #include "../include/pgraft_core.h"
+#include "../include/pgraft_json.h"
 
 #include <time.h>
+
+/*
+ * Quote a string as a SQL literal.
+ *
+ * Thin wrapper around quote_literal_cstr(), which lives here rather than in
+ * pgraft_json.c because that file cannot include utils/builtins.h: json-c
+ * defines a `json_object` type and fmgrprotos.h declares a json_object()
+ * function, and the two collide.
+ */
+char *
+pgraft_quote_literal(const char *rawstr)
+{
+	return quote_literal_cstr(rawstr);
+}
 
 /*
  * Add command to queue (called by SQL functions)
