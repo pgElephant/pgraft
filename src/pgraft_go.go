@@ -841,9 +841,13 @@ func cleanup_pgraft() {
 	logInfo("INFO - Cleanup completed")
 }
 
+// pgraftVersion must match PGRAFT_VERSION in pgraft.c; pgraft_go_check_version()
+// compares the two at load time and warns on a mismatch.
+const pgraftVersion = "2.0.0"
+
 //export pgraft_go_version
 func pgraft_go_version() *C.char {
-	return C.CString("1.0.0")
+	return C.CString(pgraftVersion)
 }
 
 //export pgraft_go_test

@@ -15,16 +15,24 @@
 #include "miscadmin.h"
 #include "storage/shmem.h"
 #include "storage/ipc.h"
+#include "storage/lwlock.h"
 #include "utils/elog.h"
 #include "utils/builtins.h"
 #include "postmaster/bgworker.h"
+#include "postmaster/interrupt.h"
+#include "tcop/tcopprot.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "storage/proc.h"
+#include "storage/latch.h"
+#include "libpq/pqsignal.h"
+#include "utils/guc.h"
 #include "utils/ps_status.h"
+#include "utils/wait_event.h"
 #include <time.h>
 #include <unistd.h>
 
+#include "../include/pgraft.h"
 #include "../include/pgraft_core.h"
 #include "../include/pgraft_go.h"
 #include "../include/pgraft_state.h"
@@ -50,8 +58,11 @@ void _PG_fini(void);
 
 PG_MODULE_MAGIC;
 
-/* Extension version */
-#define PGRAFT_VERSION "1.0.0"
+/* Worker loop cadence: one Raft tick every 100ms (matches the Go tick math). */
+#define PGRAFT_WORKER_NAP_MS 100
+
+/* Emit periodic worker diagnostics roughly once a minute. */
+#define PGRAFT_WORKER_REPORT_TICKS 600
 
 /* Shared memory request hook (PG15+) */
 #if PG_VERSION_NUM >= 150000

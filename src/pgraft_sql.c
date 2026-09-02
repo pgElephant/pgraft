@@ -19,6 +19,7 @@
 #include "utils/tuplestore.h"
 #include "utils/guc.h"
 
+#include "../include/pgraft.h"
 #include "../include/pgraft_sql.h"
 #include "../include/pgraft_core.h"
 #include "../include/pgraft_go.h"
@@ -645,7 +646,7 @@ pgraft_get_version(PG_FUNCTION_ARGS)
         }
     }
     
-    PG_RETURN_TEXT_P(cstring_to_text("pgraft-1.0.0"));
+    PG_RETURN_TEXT_P(cstring_to_text("pgraft-" PGRAFT_VERSION));
 }
 
 /*

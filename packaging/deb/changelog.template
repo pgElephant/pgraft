@@ -1,4 +1,4 @@
-pgraft-postgresql-PGVERSION (1.0.0-1) unstable; urgency=medium
+pgraft-postgresql-PGVERSION (2.0.0-1) unstable; urgency=medium
 
   * Initial release for PostgreSQL PGVERSION
   * Raft consensus with automatic leader election

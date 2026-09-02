@@ -16,6 +16,7 @@
 #include <dlfcn.h>
 #include <unistd.h>
 
+#include "../include/pgraft.h"
 #include "../include/pgraft_go.h"
 #include "../include/pgraft_state.h"
 #include "../include/pgraft_guc.h"
@@ -708,7 +709,7 @@ static int
 pgraft_go_check_version(void)
 {
 	const char *version;
-	char *expected_version = "1.0.0";
+	const char *expected_version = PGRAFT_VERSION;
 	
 	if (pgraft_go_version_ptr == NULL)
 	{

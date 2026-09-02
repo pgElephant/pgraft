@@ -81,10 +81,10 @@ Download the appropriate package from the
 
 ```bash
 # RHEL / Rocky / AlmaLinux
-sudo dnf install pgraft_17-1.0.0-1.el9.x86_64.rpm
+sudo dnf install pgraft_17-2.0.0-1.el9.x86_64.rpm
 
 # Ubuntu / Debian
-sudo apt install ./postgresql-17-pgraft_1.0.0-1_amd64.deb
+sudo apt install ./postgresql-17-pgraft_2.0.0-1_amd64.deb
 ```
 
 </details>
