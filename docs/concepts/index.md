@@ -65,9 +65,9 @@ pgraft uses the **Raft consensus algorithm** to ensure all nodes agree on the cl
 │         PostgreSQL Process              │
 ├─────────────────────────────────────────┤
 │  SQL Interface (C)                      │
-│  ├─ pgraft_init()                       │
-│  ├─ pgraft_add_node()                   │
-│  └─ pgraft_get_cluster_status()         │
+│  ├─ pgraft.init()                       │
+│  ├─ pgraft.add_node()                   │
+│  └─ pgraft.get_cluster_status()         │
 ├─────────────────────────────────────────┤
 │  Background Worker (C)                  │
 │  └─ Drives Raft ticks every 100ms       │
@@ -84,7 +84,7 @@ pgraft uses the **Raft consensus algorithm** to ensure all nodes agree on the cl
 
 ### Message Flow
 
-1. **SQL function called** (e.g., `pgraft_add_node()`)
+1. **SQL function called** (e.g., `pgraft.add_node()`)
 2. **Command queued** in shared memory
 3. **Background worker** processes queue
 4. **Go layer** proposes to Raft

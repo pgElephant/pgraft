@@ -120,13 +120,13 @@ pgraft.max_log_entries = 10000
 
 ```sql
 -- 1. Check if leader
-SELECT pgraft_is_leader();
+SELECT pgraft.is_leader();
 
 -- 2. If not leader, find and connect to leader
-SELECT pgraft_get_leader();
+SELECT pgraft.get_leader();
 
 -- 3. Add node
-SELECT pgraft_add_node(4, '192.168.1.14', 7004);
+SELECT pgraft.add_node(4, '192.168.1.14', 7004);
 ```
 
 **Best practice:** Add one node at a time, wait for it to catch up before adding next.
@@ -137,10 +137,10 @@ SELECT pgraft_add_node(4, '192.168.1.14', 7004);
 
 ```sql
 -- 1. Verify cluster health
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 
 -- 2. Remove node (on leader)
-SELECT pgraft_remove_node(4);
+SELECT pgraft.remove_node(4);
 
 -- 3. Shutdown removed node's PostgreSQL
 -- On node 4:
@@ -182,13 +182,13 @@ Monitor these continuously:
 
 ```sql
 -- Leader exists (should always be true)
-SELECT pgraft_get_leader() > 0;
+SELECT pgraft.get_leader() > 0;
 
 -- Worker running (should always be RUNNING)
-SELECT pgraft_get_worker_state() = 'RUNNING';
+SELECT pgraft.get_worker_state() = 'RUNNING';
 
 -- Term stable (should not increase frequently)
-SELECT pgraft_get_term();
+SELECT pgraft.get_term();
 ```
 
 ### Set Up Alerts
@@ -233,12 +233,12 @@ cp $PGDATA/postgresql.conf /backup/
 2. **Initialize new cluster:**
 ```sql
 CREATE EXTENSION pgraft;
-SELECT pgraft_init();
+SELECT pgraft.init();
 ```
 3. **Add other nodes:**
 ```sql
-SELECT pgraft_add_node(2, '192.168.1.12', 7002);
-SELECT pgraft_add_node(3, '192.168.1.13', 7003);
+SELECT pgraft.add_node(2, '192.168.1.12', 7002);
+SELECT pgraft.add_node(3, '192.168.1.13', 7003);
 ```
 
 ## Security
@@ -306,7 +306,7 @@ iptables -A INPUT -p tcp --dport 7003 -s node1_ip -j ACCEPT
 pg_ctl stop -D /data/leader -m immediate
 
 # Verify new leader elected
-psql -h follower1 -c "SELECT pgraft_get_leader();"
+psql -h follower1 -c "SELECT pgraft.get_leader();"
 
 # Restart failed node
 pg_ctl start -D /data/leader

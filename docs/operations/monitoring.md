@@ -8,10 +8,10 @@ Run this query on any node to get a quick overview:
 
 ```sql
 SELECT 
-    pgraft_is_leader() as is_leader,
-    pgraft_get_term() as term,
-    pgraft_get_leader() as leader_id,
-    pgraft_get_worker_state() as worker;
+    pgraft.is_leader() as is_leader,
+    pgraft.get_term() as term,
+    pgraft.get_leader() as leader_id,
+    pgraft.get_worker_state() as worker;
 ```
 
 **Expected output:**
@@ -26,7 +26,7 @@ SELECT
 ### Get Detailed Cluster Status
 
 ```sql
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 ```
 
 **Output includes:**
@@ -38,7 +38,7 @@ SELECT * FROM pgraft_get_cluster_status();
 ### List All Nodes
 
 ```sql
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 **Sample output:**
@@ -57,7 +57,7 @@ SELECT * FROM pgraft_get_nodes();
 The background worker is responsible for driving the Raft consensus:
 
 ```sql
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 ```
 
 **Possible states:**
@@ -84,7 +84,7 @@ SHOW shared_preload_libraries;
 ### Get Log Statistics
 
 ```sql
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 ```
 
 **Output:**
@@ -109,7 +109,7 @@ SELECT * FROM pgraft_log_get_stats();
 On the leader:
 
 ```sql
-SELECT * FROM pgraft_log_get_replication_status();
+SELECT * FROM pgraft.log_get_replication_status();
 ```
 
 Shows replication progress for each follower.
@@ -120,10 +120,10 @@ Shows replication progress for each follower.
 
 | Metric | SQL Query | Normal Range | Alert If |
 |--------|-----------|--------------|----------|
-| Term stability | `SELECT pgraft_get_term();` | Stable | Frequent changes |
-| Leader stability | `SELECT pgraft_get_leader();` | Stable | Frequent changes |
-| Worker state | `SELECT pgraft_get_worker_state();` | RUNNING | Not RUNNING |
-| Log lag | `SELECT * FROM pgraft_log_get_stats();` | commit_index ≈ last_index | Large difference |
+| Term stability | `SELECT pgraft.get_term();` | Stable | Frequent changes |
+| Leader stability | `SELECT pgraft.get_leader();` | Stable | Frequent changes |
+| Worker state | `SELECT pgraft.get_worker_state();` | RUNNING | Not RUNNING |
+| Log lag | `SELECT * FROM pgraft.log_get_stats();` | commit_index ≈ last_index | Large difference |
 
 ### Monitoring Script
 
@@ -138,10 +138,10 @@ Create a monitoring script that runs periodically:
 
 SELECT 
     now() as timestamp,
-    pgraft_is_leader() as is_leader,
-    pgraft_get_term() as term,
-    pgraft_get_leader() as leader_id,
-    pgraft_get_worker_state() as worker_state;
+    pgraft.is_leader() as is_leader,
+    pgraft.get_term() as term,
+    pgraft.get_leader() as leader_id,
+    pgraft.get_worker_state() as worker_state;
 
 \pset tuples_only off
 ```
@@ -201,13 +201,13 @@ tail -f /path/to/postgresql/log/postgresql-*.log | grep pgraft
 Enable debug logging:
 
 ```sql
-SELECT pgraft_set_debug(true);
+SELECT pgraft.set_debug(true);
 ```
 
 Disable debug logging:
 
 ```sql
-SELECT pgraft_set_debug(false);
+SELECT pgraft.set_debug(false);
 ```
 
 ### Important Log Messages
@@ -242,19 +242,19 @@ Set up alerts for these conditions:
 
 **No Leader:**
 ```sql
-SELECT pgraft_get_leader() = 0;
+SELECT pgraft.get_leader() = 0;
 -- Alert if true for > 10 seconds
 ```
 
 **Worker Not Running:**
 ```sql
-SELECT pgraft_get_worker_state() != 'RUNNING';
+SELECT pgraft.get_worker_state() != 'RUNNING';
 -- Alert immediately
 ```
 
 **Frequent Leader Changes:**
 ```sql
--- Monitor pgraft_get_term()
+-- Monitor pgraft.get_term()
 -- Alert if changes > 3 times per minute
 ```
 
@@ -263,13 +263,13 @@ SELECT pgraft_get_worker_state() != 'RUNNING';
 **Log Lag:**
 ```sql
 SELECT last_index - commit_index > 100 
-FROM pgraft_log_get_stats();
+FROM pgraft.log_get_stats();
 -- Alert if true
 ```
 
 **Term Increasing:**
 ```sql
--- Monitor pgraft_get_term()
+-- Monitor pgraft.get_term()
 -- Warn if increases (indicates elections happening)
 ```
 
@@ -284,10 +284,10 @@ DECLARE
     result json;
 BEGIN
     SELECT json_build_object(
-        'healthy', pgraft_get_worker_state() = 'RUNNING',
-        'is_leader', pgraft_is_leader(),
-        'leader_id', pgraft_get_leader(),
-        'term', pgraft_get_term()
+        'healthy', pgraft.get_worker_state() = 'RUNNING',
+        'is_leader', pgraft.is_leader(),
+        'leader_id', pgraft.get_leader(),
+        'term', pgraft.get_term()
     ) INTO result;
     
     RETURN result;
@@ -336,32 +336,32 @@ Here's a sample SQL script for a monitoring dashboard:
 \echo '================'
 SELECT 
     'Leader ID' as metric, 
-    pgraft_get_leader()::text as value
+    pgraft.get_leader()::text as value
 UNION ALL
 SELECT 
     'Current Term', 
-    pgraft_get_term()::text
+    pgraft.get_term()::text
 UNION ALL
 SELECT 
     'Worker State', 
-    pgraft_get_worker_state();
+    pgraft.get_worker_state();
 
 \echo ''
 \echo 'Cluster Nodes'
 \echo '============='
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 
 \echo ''
 \echo 'Log Statistics'
 \echo '=============='
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 
 \echo ''
 \echo 'Node Status'
 \echo '==========='
 SELECT 
-    CASE WHEN pgraft_is_leader() THEN 'LEADER' ELSE 'FOLLOWER' END as role,
-    pgraft_get_worker_state() as worker;
+    CASE WHEN pgraft.is_leader() THEN 'LEADER' ELSE 'FOLLOWER' END as role,
+    pgraft.get_worker_state() as worker;
 ```
 
 Run it:

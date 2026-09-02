@@ -167,7 +167,7 @@ cd examples
 ./run.sh --status
 
 # 4. Run manual tests
-psql -p 5432 -c "SELECT pgraft_test();"
+psql -p 5432 -c "SELECT pgraft.test();"
 # ... test your feature ...
 
 # 5. Check logs for errors

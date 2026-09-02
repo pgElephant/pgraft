@@ -204,10 +204,10 @@ docker logs -f pgraft-primary
 
 ```bash
 # On primary
-docker exec pgraft-primary psql -U postgres -c "SELECT * FROM pgraft_get_cluster_status();"
+docker exec pgraft-primary psql -U postgres -c "SELECT * FROM pgraft.get_cluster_status();"
 
 # On replica
-docker exec pgraft-replica1 psql -U postgres -c "SELECT pgraft_is_leader();"
+docker exec pgraft-replica1 psql -U postgres -c "SELECT pgraft.is_leader();"
 ```
 
 ---
@@ -244,7 +244,7 @@ docker exec pgraft-replica1 psql -U postgres -c "SELECT * FROM test;"
 docker network disconnect pgraft-network pgraft-replica2
 
 # Check Raft status
-docker exec pgraft-primary psql -U postgres -c "SELECT * FROM pgraft_get_nodes();"
+docker exec pgraft-primary psql -U postgres -c "SELECT * FROM pgraft.get_nodes();"
 
 # Reconnect
 docker network connect pgraft-network pgraft-replica2
@@ -281,7 +281,7 @@ docker exec pgraft-replica1 psql -U postgres -c "SELECT pg_is_in_recovery();"
 
 ```bash
 # Check pgraft status on all nodes
-docker exec pgraft-primary psql -U postgres -c "SELECT * FROM pgraft_get_cluster_status();"
+docker exec pgraft-primary psql -U postgres -c "SELECT * FROM pgraft.get_cluster_status();"
 
 # Check pgraft logs
 docker exec pgraft-primary tail -100 /var/log/postgresql/postgresql-17-main.log
@@ -349,7 +349,7 @@ The script expects a Dockerfile in the repository root that:
 
 4. **Monitor Raft status** regularly:
    ```sql
-   SELECT * FROM pgraft_get_cluster_status();
+   SELECT * FROM pgraft.get_cluster_status();
    ```
 
 5. **Clean up** when done:

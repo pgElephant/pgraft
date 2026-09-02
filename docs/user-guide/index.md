@@ -17,11 +17,11 @@ This section contains detailed documentation for operating pgraft clusters, from
 ## Quick Links
 
 **Common Tasks:**
-- **Initialize a node**: `SELECT pgraft_init();`
-- **Check if leader**: `SELECT pgraft_is_leader();`
-- **Add a node**: `SELECT pgraft_add_node(node_id, address, port);`
-- **Get cluster status**: `SELECT * FROM pgraft_get_cluster_status();`
-- **View all nodes**: `SELECT * FROM pgraft_get_nodes();`
+- **Initialize a node**: `SELECT pgraft.init();`
+- **Check if leader**: `SELECT pgraft.is_leader();`
+- **Add a node**: `SELECT pgraft.add_node(node_id, address, port);`
+- **Get cluster status**: `SELECT * FROM pgraft.get_cluster_status();`
+- **View all nodes**: `SELECT * FROM pgraft.get_nodes();`
 
 **Key Configuration Parameters:**
 - `pgraft.cluster_id` — Cluster identifier (must match on all nodes)
@@ -36,20 +36,20 @@ Three-node cluster setup:
 ```sql
 -- On each node
 CREATE EXTENSION pgraft;
-SELECT pgraft_init();
+SELECT pgraft.init();
 
 -- On leader (after 10 seconds)
-SELECT pgraft_add_node(2, '192.168.1.12', 7002);
-SELECT pgraft_add_node(3, '192.168.1.13', 7003);
+SELECT pgraft.add_node(2, '192.168.1.12', 7002);
+SELECT pgraft.add_node(3, '192.168.1.13', 7003);
 ```
 
 Health check:
 ```sql
 SELECT 
-    pgraft_is_leader() as is_leader,
-    pgraft_get_term() as term,
-    pgraft_get_leader() as leader_id,
-    pgraft_get_worker_state() as worker;
+    pgraft.is_leader() as is_leader,
+    pgraft.get_term() as term,
+    pgraft.get_leader() as leader_id,
+    pgraft.get_worker_state() as worker;
 ```
 
 ## Best Practices

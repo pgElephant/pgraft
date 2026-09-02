@@ -63,7 +63,7 @@ replicate_kv_operation(pgraft_kv_op_type_t op_type, const char *key, const char 
 
 /*
  * PUT operation - store a key/value pair
- * Usage: SELECT pgraft_kv_put('mykey', 'myvalue');
+ * Usage: SELECT pgraft.kv_put('mykey', 'myvalue');
  */
 Datum
 pgraft_kv_put_sql(PG_FUNCTION_ARGS)
@@ -127,7 +127,7 @@ pgraft_kv_put_sql(PG_FUNCTION_ARGS)
 
 /*
  * GET operation - retrieve value for a key
- * Usage: SELECT pgraft_kv_get('mykey');
+ * Usage: SELECT pgraft.kv_get('mykey');
  */
 Datum
 pgraft_kv_get_sql(PG_FUNCTION_ARGS)
@@ -170,7 +170,7 @@ pgraft_kv_get_sql(PG_FUNCTION_ARGS)
 
 /*
  * DELETE operation - delete a key
- * Usage: SELECT pgraft_kv_delete('mykey');
+ * Usage: SELECT pgraft.kv_delete('mykey');
  */
 Datum
 pgraft_kv_delete_sql(PG_FUNCTION_ARGS)
@@ -218,7 +218,7 @@ pgraft_kv_delete_sql(PG_FUNCTION_ARGS)
 
 /*
  * EXISTS operation - check if key exists
- * Usage: SELECT pgraft_kv_exists('mykey');
+ * Usage: SELECT pgraft.kv_exists('mykey');
  */
 Datum
 pgraft_kv_exists_sql(PG_FUNCTION_ARGS)
@@ -255,7 +255,7 @@ pgraft_kv_exists_sql(PG_FUNCTION_ARGS)
 
 /*
  * LIST_KEYS operation - list all keys as JSON array
- * Usage: SELECT pgraft_kv_list_keys();
+ * Usage: SELECT pgraft.kv_list_keys();
  */
 Datum
 pgraft_kv_list_keys_sql(PG_FUNCTION_ARGS)
@@ -272,7 +272,7 @@ pgraft_kv_list_keys_sql(PG_FUNCTION_ARGS)
 
 /*
  * Get key/value store statistics as JSON
- * Usage: SELECT pgraft_kv_stats();
+ * Usage: SELECT pgraft.kv_stats();
  */
 Datum
 pgraft_kv_stats_sql(PG_FUNCTION_ARGS)
@@ -301,7 +301,7 @@ pgraft_kv_stats_sql(PG_FUNCTION_ARGS)
 
 /*
  * Get key/value store statistics as table
- * Usage: SELECT * FROM pgraft_kv_get_stats();
+ * Usage: SELECT * FROM pgraft.kv_get_stats();
  */
 Datum
 pgraft_kv_get_stats_table(PG_FUNCTION_ARGS)
@@ -355,7 +355,7 @@ pgraft_kv_get_stats_table(PG_FUNCTION_ARGS)
 
 /*
  * COMPACT operation - remove deleted entries and optimize storage
- * Usage: SELECT pgraft_kv_compact();
+ * Usage: SELECT pgraft.kv_compact();
  */
 Datum
 pgraft_kv_compact_sql(PG_FUNCTION_ARGS)
@@ -370,7 +370,7 @@ pgraft_kv_compact_sql(PG_FUNCTION_ARGS)
 
 /*
  * RESET operation - clear all key/value pairs
- * Usage: SELECT pgraft_kv_reset();
+ * Usage: SELECT pgraft.kv_reset();
  */
 Datum
 pgraft_kv_reset_sql(PG_FUNCTION_ARGS)

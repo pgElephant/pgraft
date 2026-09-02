@@ -33,33 +33,33 @@ Production-tested recommendations for configuration, deployment, and maintenance
 **Quick health check:**
 ```sql
 SELECT 
-    pgraft_is_leader() as is_leader,
-    pgraft_get_term() as term,
-    pgraft_get_leader() as leader_id,
-    pgraft_get_worker_state() as worker;
+    pgraft.is_leader() as is_leader,
+    pgraft.get_term() as term,
+    pgraft.get_leader() as leader_id,
+    pgraft.get_worker_state() as worker;
 ```
 
 **Detailed status:**
 ```sql
-SELECT * FROM pgraft_get_cluster_status();
-SELECT * FROM pgraft_get_nodes();
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.get_cluster_status();
+SELECT * FROM pgraft.get_nodes();
+SELECT * FROM pgraft.log_get_stats();
 ```
 
 ### Common Issues
 
 | Issue | Quick Check | Solution |
 |-------|-------------|----------|
-| Worker not running | `SELECT pgraft_get_worker_state();` | Check `shared_preload_libraries`, restart PostgreSQL |
-| No leader elected | `SELECT pgraft_get_leader();` | Wait 10 seconds, check network connectivity |
-| Cannot add node | `SELECT pgraft_is_leader();` | Run on leader node only |
-| Frequent elections | `SELECT pgraft_get_term();` | Increase election timeout, check network |
+| Worker not running | `SELECT pgraft.get_worker_state();` | Check `shared_preload_libraries`, restart PostgreSQL |
+| No leader elected | `SELECT pgraft.get_leader();` | Wait 10 seconds, check network connectivity |
+| Cannot add node | `SELECT pgraft.is_leader();` | Run on leader node only |
+| Frequent elections | `SELECT pgraft.get_term();` | Increase election timeout, check network |
 
 ### Key Metrics to Monitor
 
 **Critical (alert if failing):**
-- Leader exists: `pgraft_get_leader() > 0`
-- Worker running: `pgraft_get_worker_state() = 'RUNNING'`
+- Leader exists: `pgraft.get_leader() > 0`
+- Worker running: `pgraft.get_worker_state() = 'RUNNING'`
 - Node reachable: Network connectivity
 
 **Important (monitor trends):**
@@ -80,7 +80,7 @@ SELECT * FROM pgraft_log_get_stats();
 1. Restore nodes from backup
 2. Start all PostgreSQL instances
 3. Wait 10 seconds for election
-4. Verify leader elected: `SELECT pgraft_get_leader();`
+4. Verify leader elected: `SELECT pgraft.get_leader();`
 
 ## Production Checklist
 
@@ -124,11 +124,11 @@ SELECT * FROM pgraft_log_get_stats();
 
 pgraft provides SQL functions for monitoring:
 
-- `pgraft_get_cluster_status()` - Overall cluster state
-- `pgraft_get_nodes()` - All cluster members
-- `pgraft_log_get_stats()` - Log statistics
-- `pgraft_get_worker_state()` - Background worker status
-- `pgraft_is_leader()` - Leadership status
+- `pgraft.get_cluster_status()` - Overall cluster state
+- `pgraft.get_nodes()` - All cluster members
+- `pgraft.log_get_stats()` - Log statistics
+- `pgraft.get_worker_state()` - Background worker status
+- `pgraft.is_leader()` - Leadership status
 
 ### External Monitoring
 
@@ -150,7 +150,7 @@ tail -f $PGDATA/log/postgresql-*.log | grep pgraft:
 #!/bin/bash
 # Check cluster health every 60 seconds
 while true; do
-    psql -c "SELECT * FROM pgraft_get_cluster_status();"
+    psql -c "SELECT * FROM pgraft.get_cluster_status();"
     sleep 60
 done
 ```

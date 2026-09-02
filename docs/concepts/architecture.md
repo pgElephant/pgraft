@@ -79,17 +79,17 @@ sequenceDiagram
     participant N2 as Node 2
     participant N3 as Node 3
     
-    U->>N1: SELECT pgraft_init()
+    U->>N1: SELECT pgraft.init()
     N1->>N1: Start background worker
     N1->>N1: Initialize Raft node
     N1->>N1: Start network server
     
-    U->>N2: SELECT pgraft_add_node('node2:5433')
+    U->>N2: SELECT pgraft.add_node('node2:5433')
     N1->>N2: Connect to node 2
     N2->>N2: Start background worker
     N2->>N2: Join cluster
     
-    U->>N3: SELECT pgraft_add_node('node3:5433')
+    U->>N3: SELECT pgraft.add_node('node3:5433')
     N1->>N3: Connect to node 3
     N3->>N3: Start background worker
     N3->>N3: Join cluster

@@ -159,7 +159,7 @@ cd examples
 
 ```bash
 # Enable debug logging
-psql -c "SELECT pgraft_set_debug(true);"
+psql -c "SELECT pgraft.set_debug(true);"
 
 # Check logs
 tail -f $PGDATA/log/postgresql-*.log | grep pgraft:

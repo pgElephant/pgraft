@@ -75,7 +75,7 @@ SELECT * FROM pgraft.member_list();
 SELECT pgraft.is_leader();
 
 -- View Raft statistics
-SELECT * FROM pgraft.cluster_statistics();
+SELECT * FROM pgraft_cluster_statistics();
 ```
 
 #### 5. Destroy the Cluster

@@ -48,17 +48,17 @@
 CREATE EXTENSION pgraft;
 
 -- Check cluster status
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 
 -- Check if current node is leader
-SELECT pgraft_is_leader();
+SELECT pgraft.is_leader();
 
 -- If leader, add other nodes to the cluster
-SELECT pgraft_add_node(2, 'node2.example.com', 7002);
-SELECT pgraft_add_node(3, 'node3.example.com', 7003);
+SELECT pgraft.add_node(2, 'node2.example.com', 7002);
+SELECT pgraft.add_node(3, 'node3.example.com', 7003);
 
 -- View all cluster nodes
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 ## Architecture at a Glance

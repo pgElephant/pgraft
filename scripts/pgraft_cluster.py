@@ -208,7 +208,7 @@ cat /tmp/pgraft_replica.conf >> /var/lib/postgresql/data/postgresql.conf
         # 2. Call pgraft_init_from_gucs() to initialize Raft
         # 3. Start the Raft consensus protocol
         # 4. Update shared memory and persistence files
-        # No manual pgraft_init() calls needed!
+        # No manual pgraft.init() calls needed!
         
         self.log("Background workers will automatically initialize pgraft Raft cluster...")
         
@@ -220,7 +220,7 @@ cat /tmp/pgraft_replica.conf >> /var/lib/postgresql/data/postgresql.conf
         leader_elected = False
         for attempt in range(30):  # 30 attempts * 2 seconds = 60 seconds max
             try:
-                result = self.run_cmd(f"PGPASSWORD=postgres psql -h localhost -p {primary['pg_port']} -U postgres -t -c \"SELECT pgraft_get_leader();\"", check=False)
+                result = self.run_cmd(f"PGPASSWORD=postgres psql -h localhost -p {primary['pg_port']} -U postgres -t -c \"SELECT pgraft.get_leader();\"", check=False)
                 if result and result.stdout:
                     leader_id = result.stdout.strip()
                     if leader_id and leader_id.isdigit() and leader_id != "0":

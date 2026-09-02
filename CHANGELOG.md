@@ -9,9 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0] - 2026-09-02
 
-Correctness and security release.  No SQL signatures changed, so upgrading is
+Correctness and security release, with one breaking change: every SQL object
+moves into the `pgraft` schema.  Upgrading is
 `ALTER EXTENSION pgraft UPDATE TO '2.0.0'` followed by a restart (the C and Go
-libraries must be reloaded together).
+libraries must be reloaded together), but callers have to be updated too.
+
+### Changed - SQL namespace (breaking)
+
+- Every function, view and table now lives in the `pgraft` schema, without the
+  redundant `pgraft_` prefix: `pgraft_get_cluster_status()` is
+  `pgraft.get_cluster_status()`, `pgraft_add_node()` is `pgraft.add_node()`,
+  and so on for all 34 functions and 19 views.  Nothing is created in `public`
+  any more.  Argument lists and result columns are unchanged, so the rename is
+  the only edit a caller needs.
+- The `pgraft_kv_status` view is `pgraft.kv_store_status`, because
+  `pgraft.kv_status` was already taken by the etcd-style summary view.
+- The upgrade script drops the old unqualified objects, views before the
+  functions they select from, and without `CASCADE` - so an object of yours
+  that depends on a pgraft function stops the upgrade instead of disappearing
+  with it.
 
 ### Fixed - data durability and Raft safety
 
@@ -77,13 +93,13 @@ libraries must be reloaded together).
 
 - Every SQL function was executable by PUBLIC, PostgreSQL's default for a new
   function.  Any logged-in role could rewrite cluster membership with
-  `pgraft_remove_node()`, push entries into the replicated log with
-  `pgraft_replicate_entry()`, or wipe the key/value store.  Mutating functions
+  `pgraft.remove_node()`, push entries into the replicated log with
+  `pgraft.replicate_entry()`, or wipe the key/value store.  Mutating functions
   are now revoked from PUBLIC; read-only introspection is granted back
   explicitly.
 - SQL injection in the replicated log-entry parser.  `pgraft_parse_kv_json_entry()`
   interpolated the replicated key and value straight into
-  `SELECT pgraft_kv_put_local('%s', '%s')`, which then ran through
+  `SELECT pgraft.kv_put_local('%s', '%s')`, which then ran through
   `SPI_execute()` - so a key containing a quote executed arbitrary SQL on every
   node in the cluster.  Both are now passed through `quote_literal_cstr()`.
 - Peer frame lengths were unbounded.  The 4-byte length prefix from an

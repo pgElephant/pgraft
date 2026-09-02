@@ -46,19 +46,19 @@ The test harness creates a 3-node cluster:
 CREATE EXTENSION pgraft;
 
 -- Test initialization
-SELECT pgraft_init();
+SELECT pgraft.init();
 -- Expected: t
 
 -- Test worker status
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 -- Expected: RUNNING
 
 -- Test leader election (wait 10 seconds first)
-SELECT pgraft_get_leader();
+SELECT pgraft.get_leader();
 -- Expected: 1 (or another node ID)
 
 -- Test leadership check
-SELECT pgraft_is_leader();
+SELECT pgraft.is_leader();
 -- Expected: t or f
 ```
 
@@ -66,19 +66,19 @@ SELECT pgraft_is_leader();
 
 ```sql
 -- Add node (must be on leader)
-SELECT pgraft_add_node(2, '127.0.0.1', 7002);
+SELECT pgraft.add_node(2, '127.0.0.1', 7002);
 -- Expected: t
 
 -- List nodes
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 -- Expected: Table with all nodes
 
 -- Cluster status
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 -- Expected: Status information
 
 -- Get current term
-SELECT pgraft_get_term();
+SELECT pgraft.get_term();
 -- Expected: Integer term number
 ```
 
@@ -86,11 +86,11 @@ SELECT pgraft_get_term();
 
 ```sql
 -- Replicate entry
-SELECT pgraft_replicate_entry('{"test": "data"}');
+SELECT pgraft.replicate_entry('{"test": "data"}');
 -- Expected: t (if quorum reached)
 
 -- Get log stats
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 -- Expected: Table with statistics
 ```
 
@@ -100,22 +100,22 @@ SELECT * FROM pgraft_log_get_stats();
 
 ```bash
 # 1. Identify leader
-psql -p 5432 -c "SELECT pgraft_get_leader();"
+psql -p 5432 -c "SELECT pgraft.get_leader();"
 
 # 2. Stop leader (e.g., if node 1 is leader)
 pg_ctl stop -D examples/data/primary1 -m immediate
 
 # 3. Verify new leader elected (check on remaining nodes)
 sleep 2
-psql -p 5433 -c "SELECT pgraft_get_leader();"
-psql -p 5434 -c "SELECT pgraft_get_leader();"
+psql -p 5433 -c "SELECT pgraft.get_leader();"
+psql -p 5434 -c "SELECT pgraft.get_leader();"
 
 # 4. Restart failed node
 pg_ctl start -D examples/data/primary1
 
 # 5. Verify it rejoins as follower
 sleep 2
-psql -p 5432 -c "SELECT pgraft_is_leader();"
+psql -p 5432 -c "SELECT pgraft.is_leader();"
 ```
 
 ### Test Network Partition
@@ -131,12 +131,12 @@ sudo iptables -A OUTPUT -p tcp --dport 7001 -j DROP
 sudo iptables -A OUTPUT -p tcp --dport 7002 -j DROP
 
 # Verify node 3 cannot elect itself leader
-psql -p 5434 -c "SELECT pgraft_is_leader();"
+psql -p 5434 -c "SELECT pgraft.is_leader();"
 # Should return false
 
 # Verify nodes 1 and 2 continue with leader
-psql -p 5432 -c "SELECT pgraft_get_leader();"
-psql -p 5433 -c "SELECT pgraft_get_leader();"
+psql -p 5432 -c "SELECT pgraft.get_leader();"
+psql -p 5433 -c "SELECT pgraft.get_leader();"
 
 # Restore network
 sudo iptables -D INPUT -p tcp --sport 7001 -j DROP
@@ -146,7 +146,7 @@ sudo iptables -D OUTPUT -p tcp --dport 7002 -j DROP
 
 # Verify node 3 rejoins
 sleep 2
-psql -p 5434 -c "SELECT * FROM pgraft_get_cluster_status();"
+psql -p 5434 -c "SELECT * FROM pgraft.get_cluster_status();"
 ```
 
 ## Performance Testing
@@ -164,7 +164,7 @@ BEGIN
     start_time := clock_timestamp();
     
     FOR i IN 1..1000 LOOP
-        PERFORM pgraft_replicate_entry('{"test": "data"}');
+        PERFORM pgraft.replicate_entry('{"test": "data"}');
     END LOOP;
     
     end_time := clock_timestamp();
@@ -179,7 +179,7 @@ END $$;
 ```sql
 -- Measure single entry replication latency
 \timing on
-SELECT pgraft_replicate_entry('{"test": "data"}');
+SELECT pgraft.replicate_entry('{"test": "data"}');
 \timing off
 ```
 
@@ -190,12 +190,12 @@ SELECT pgraft_replicate_entry('{"test": "data"}');
 ```bash
 # Terminal 1: Continuous writes on leader
 while true; do
-    psql -p 5432 -c "SELECT pgraft_replicate_entry(now()::text);" 2>&1 | grep -v "replicate"
+    psql -p 5432 -c "SELECT pgraft.replicate_entry(now()::text);" 2>&1 | grep -v "replicate"
     sleep 0.1
 done
 
 # Terminal 2: Monitor cluster status
-watch -n 1 "psql -p 5432 -c 'SELECT * FROM pgraft_get_cluster_status();'"
+watch -n 1 "psql -p 5432 -c 'SELECT * FROM pgraft.get_cluster_status();'"
 
 # Terminal 3: Simulate failures
 # Stop/start nodes randomly
@@ -206,7 +206,7 @@ watch -n 1 "psql -p 5432 -c 'SELECT * FROM pgraft_get_cluster_status();'"
 ```bash
 # Generate sustained load
 for i in {1..10000}; do
-    psql -p 5432 -c "SELECT pgraft_replicate_entry('entry_$i');" &
+    psql -p 5432 -c "SELECT pgraft.replicate_entry('entry_$i');" &
     if [ $((i % 100)) -eq 0 ]; then
         wait  # Wait every 100 to avoid overwhelming
     fi
@@ -228,23 +228,23 @@ echo "Testing cluster operations..."
 # Test on all nodes
 for PORT in 5432 5433 5434; do
     echo "Node on port $PORT:"
-    psql -p $PORT -c "SELECT pgraft_is_leader(), pgraft_get_term();" -t
+    psql -p $PORT -c "SELECT pgraft.is_leader(), pgraft.get_term();" -t
 done
 
 # Get leader
-LEADER_PORT=$(psql -p 5432 -c "SELECT pgraft_get_leader();" -t | tr -d ' ')
+LEADER_PORT=$(psql -p 5432 -c "SELECT pgraft.get_leader();" -t | tr -d ' ')
 LEADER_PORT=$((5431 + LEADER_PORT))
 
 echo "Leader is on port $LEADER_PORT"
 
 # Add and remove node on leader
 echo "Testing add/remove node on leader..."
-psql -p $LEADER_PORT -c "SELECT pgraft_add_node(4, '127.0.0.1', 7004);"
+psql -p $LEADER_PORT -c "SELECT pgraft.add_node(4, '127.0.0.1', 7004);"
 sleep 1
-psql -p $LEADER_PORT -c "SELECT * FROM pgraft_get_nodes();"
-psql -p $LEADER_PORT -c "SELECT pgraft_remove_node(4);"
+psql -p $LEADER_PORT -c "SELECT * FROM pgraft.get_nodes();"
+psql -p $LEADER_PORT -c "SELECT pgraft.remove_node(4);"
 sleep 1
-psql -p $LEADER_PORT -c "SELECT * FROM pgraft_get_nodes();"
+psql -p $LEADER_PORT -c "SELECT * FROM pgraft.get_nodes();"
 
 echo "Test completed!"
 ```
@@ -260,40 +260,40 @@ Create `regression_tests.sql`:
 CREATE EXTENSION IF NOT EXISTS pgraft;
 
 -- Test 2: Initialization
-SELECT pgraft_init();
+SELECT pgraft.init();
 
 -- Wait for leader election
 SELECT pg_sleep(2);
 
 -- Test 3: Worker running
-SELECT pgraft_get_worker_state() = 'RUNNING' AS worker_ok;
+SELECT pgraft.get_worker_state() = 'RUNNING' AS worker_ok;
 
 -- Test 4: Leader elected
-SELECT pgraft_get_leader() > 0 AS leader_elected;
+SELECT pgraft.get_leader() > 0 AS leader_elected;
 
 -- Test 5: Get term
-SELECT pgraft_get_term() > 0 AS term_ok;
+SELECT pgraft.get_term() > 0 AS term_ok;
 
 -- Test 6: Cluster status
-SELECT node_id, term, state FROM pgraft_get_cluster_status();
+SELECT node_id, term, state FROM pgraft.get_cluster_status();
 
 -- Test 7: Log operations (on leader only)
 DO $$
 BEGIN
-    IF pgraft_is_leader() THEN
-        PERFORM pgraft_replicate_entry('test_entry');
+    IF pgraft.is_leader() THEN
+        PERFORM pgraft.replicate_entry('test_entry');
     END IF;
 END $$;
 
 -- Test 8: Log statistics
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 
 -- Test 9: Version
-SELECT pgraft_get_version();
+SELECT pgraft.get_version();
 
 -- Test 10: Debug mode
-SELECT pgraft_set_debug(true);
-SELECT pgraft_set_debug(false);
+SELECT pgraft.set_debug(true);
+SELECT pgraft.set_debug(false);
 ```
 
 Run tests:
@@ -333,12 +333,12 @@ done
 
 # Failover test
 echo "Testing failover..."
-LEADER=$(psql -p 5432 -t -c "SELECT pgraft_get_leader();" | tr -d ' ')
+LEADER=$(psql -p 5432 -t -c "SELECT pgraft.get_leader();" | tr -d ' ')
 LEADER_PORT=$((5431 + LEADER))
 
 pg_ctl stop -D data/node$LEADER -m immediate
 sleep 3
-NEW_LEADER=$(psql -p $((LEADER_PORT + 1)) -t -c "SELECT pgraft_get_leader();" | tr -d ' ')
+NEW_LEADER=$(psql -p $((LEADER_PORT + 1)) -t -c "SELECT pgraft.get_leader();" | tr -d ' ')
 
 if [ "$NEW_LEADER" != "$LEADER" ]; then
     echo "✓ Failover successful"
@@ -376,7 +376,7 @@ Key areas to test:
 ### Enable Debug Logging
 
 ```sql
-SELECT pgraft_set_debug(true);
+SELECT pgraft.set_debug(true);
 ```
 
 ### Check Logs

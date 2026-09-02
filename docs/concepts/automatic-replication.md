@@ -16,7 +16,7 @@ You only need to run **ONE command on the leader**. The Raft consensus protocol 
 ┌──────────────────────────────────────────────────────────────┐
 │                                                              │
 │  1. User runs ONE command on leader                          │
-│     Leader$ SELECT pgraft_add_node(4, '192.168.1.14', 7004);│
+│     Leader$ SELECT pgraft.add_node(4, '192.168.1.14', 7004);│
 │                                                              │
 └────────────────────┬─────────────────────────────────────────┘
                      │
@@ -94,7 +94,7 @@ Membership on ALL nodes: {1, 2, 3}
 
 ```sql
 -- Run on Node 1 (leader) ONLY
-SELECT pgraft_add_node(4, '192.168.1.14', 7004);
+SELECT pgraft.add_node(4, '192.168.1.14', 7004);
 
 -- Result
  pgraft_add_node 
@@ -127,7 +127,7 @@ Check membership on ANY node:
 
 ```sql
 -- On Node 1 (leader)
-node1$ SELECT * FROM pgraft_get_nodes();
+node1$ SELECT * FROM pgraft.get_nodes();
  node_id |   address    | port 
 ---------+--------------+------
        1 | 127.0.0.1    | 7001
@@ -136,7 +136,7 @@ node1$ SELECT * FROM pgraft_get_nodes();
        4 | 192.168.1.14 | 7004  ← New node!
 
 -- On Node 2 (follower - was NOT manually updated)
-node2$ SELECT * FROM pgraft_get_nodes();
+node2$ SELECT * FROM pgraft.get_nodes();
  node_id |   address    | port 
 ---------+--------------+------
        1 | 127.0.0.1    | 7001
@@ -145,7 +145,7 @@ node2$ SELECT * FROM pgraft_get_nodes();
        4 | 192.168.1.14 | 7004  ← SAME! Automatic!
 
 -- On Node 3 (follower - was NOT manually updated)
-node3$ SELECT * FROM pgraft_get_nodes();
+node3$ SELECT * FROM pgraft.get_nodes();
  node_id |   address    | port 
 ---------+--------------+------
        1 | 127.0.0.1    | 7001
@@ -164,14 +164,14 @@ node3$ SELECT * FROM pgraft_get_nodes();
 
 ```sql
 -- Step 1: Find the leader
-SELECT pgraft_get_leader();
+SELECT pgraft.get_leader();
 -- Returns: 1
 
 -- Step 2: Connect to the leader (Node 1)
 psql -h node1 -p 5432
 
 -- Step 3: Add the new node
-SELECT pgraft_add_node(4, '192.168.1.14', 7004);
+SELECT pgraft.add_node(4, '192.168.1.14', 7004);
 -- Returns: t
 
 -- DONE! That's all!
@@ -228,9 +228,9 @@ systemctl restart postgresql@node3
 
 ```sql
 -- DON'T DO THIS:
-node1$ SELECT pgraft_add_node(4, ...);  -- OK (on leader)
-node2$ SELECT pgraft_add_node(4, ...);  -- WRONG! Don't do this!
-node3$ SELECT pgraft_add_node(4, ...);  -- WRONG! Don't do this!
+node1$ SELECT pgraft.add_node(4, ...);  -- OK (on leader)
+node2$ SELECT pgraft.add_node(4, ...);  -- WRONG! Don't do this!
+node3$ SELECT pgraft.add_node(4, ...);  -- WRONG! Don't do this!
 ```
 
 ---
@@ -318,7 +318,7 @@ Node 3 recovery:
 
 ```c
 // File: src/pgraft_sql.c
-Datum pgraft_add_node(PG_FUNCTION_ARGS) {
+Datum pgraft.add_node(PG_FUNCTION_ARGS) {
     int node_id = PG_GETARG_INT32(0);
     char *address = text_to_cstring(PG_GETARG_TEXT_PP(1));
     int port = PG_GETARG_INT32(2);
@@ -397,7 +397,7 @@ func pgraft_go_add_peer(nodeID, address, port) {
 ### Automatic Replication (pgraft)
 
 **Steps Required**:
-1. `SELECT pgraft_add_node(4, '192.168.1.14', 7004);`
+1. `SELECT pgraft.add_node(4, '192.168.1.14', 7004);`
 
 **That's it!**
 
@@ -452,7 +452,7 @@ Risk: HIGH (cluster downtime, split-brain possible)
 psql -h 192.168.1.11 -p 5432
 
 -- 2. Add node
-SELECT pgraft_add_node(6, '192.168.1.16', 7006);
+SELECT pgraft.add_node(6, '192.168.1.16', 7006);
 
 -- Done!
 
@@ -463,7 +463,7 @@ Risk: ZERO (no downtime, split-brain impossible)
 **Verification**:
 ```sql
 -- Check on ANY node
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
  node_id |   address    | port 
 ---------+--------------+------
        1 | 192.168.1.11 | 7001

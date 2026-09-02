@@ -49,26 +49,26 @@ CREATE TABLE IF NOT EXISTS pgraft.log_index_mapping (
 -- ============================================================================
 
 -- Initialize pgraft using GUC variables
-CREATE OR REPLACE FUNCTION pgraft_init()
+CREATE OR REPLACE FUNCTION pgraft.init()
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_init';
 
 
 -- Add a node to the cluster
-CREATE OR REPLACE FUNCTION pgraft_add_node(node_id integer, address text, port integer)
+CREATE OR REPLACE FUNCTION pgraft.add_node(node_id integer, address text, port integer)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_add_node';
 
 -- Remove a node from the cluster
-CREATE OR REPLACE FUNCTION pgraft_remove_node(node_id integer)
+CREATE OR REPLACE FUNCTION pgraft.remove_node(node_id integer)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_remove_node';
 
 -- Get cluster status as table with individual columns
-CREATE OR REPLACE FUNCTION pgraft_get_cluster_status()
+CREATE OR REPLACE FUNCTION pgraft.get_cluster_status()
 RETURNS TABLE(
     node_id integer,
     current_term bigint,
@@ -83,7 +83,7 @@ LANGUAGE C
 AS 'pgraft', 'pgraft_get_cluster_status_table';
 
 -- Get nodes information
-CREATE OR REPLACE FUNCTION pgraft_get_nodes()
+CREATE OR REPLACE FUNCTION pgraft.get_nodes()
 RETURNS TABLE(
     node_id integer,
     address text,
@@ -94,38 +94,38 @@ LANGUAGE C
 AS 'pgraft', 'pgraft_get_nodes_table';
 
 -- Get nodes directly from Raft cluster (works on replicas)
-CREATE OR REPLACE FUNCTION pgraft_get_nodes_from_raft()
+CREATE OR REPLACE FUNCTION pgraft.get_nodes_from_raft()
 RETURNS text
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_nodes_from_raft';
 
 -- Check if current node is leader
-CREATE OR REPLACE FUNCTION pgraft_is_leader()
+CREATE OR REPLACE FUNCTION pgraft.is_leader()
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_is_leader';
 
 -- Get background worker state
-CREATE OR REPLACE FUNCTION pgraft_get_worker_state()
+CREATE OR REPLACE FUNCTION pgraft.get_worker_state()
 RETURNS text
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_worker_state';
 
 
 -- Get version information
-CREATE OR REPLACE FUNCTION pgraft_get_version()
+CREATE OR REPLACE FUNCTION pgraft.get_version()
 RETURNS text
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_version';
 
 -- Test pgraft functionality
-CREATE OR REPLACE FUNCTION pgraft_test()
+CREATE OR REPLACE FUNCTION pgraft.test()
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_test';
 
 -- Set debug mode
-CREATE OR REPLACE FUNCTION pgraft_set_debug(enabled boolean)
+CREATE OR REPLACE FUNCTION pgraft.set_debug(enabled boolean)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_set_debug';
@@ -135,31 +135,31 @@ AS 'pgraft', 'pgraft_set_debug';
 -- ============================================================================
 
 -- Append log entry
-CREATE OR REPLACE FUNCTION pgraft_log_append(term bigint, data text)
+CREATE OR REPLACE FUNCTION pgraft.log_append(term bigint, data text)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_log_append';
 
 -- Commit log entry
-CREATE OR REPLACE FUNCTION pgraft_log_commit(index bigint)
+CREATE OR REPLACE FUNCTION pgraft.log_commit(index bigint)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_log_commit';
 
 -- Apply log entry
-CREATE OR REPLACE FUNCTION pgraft_log_apply(index bigint)
+CREATE OR REPLACE FUNCTION pgraft.log_apply(index bigint)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_log_apply';
 
 -- Get log entry
-CREATE OR REPLACE FUNCTION pgraft_log_get_entry(index bigint)
+CREATE OR REPLACE FUNCTION pgraft.log_get_entry(index bigint)
 RETURNS text
 LANGUAGE C
 AS 'pgraft', 'pgraft_log_get_entry_sql';
 
 -- Get log statistics as table with individual columns
-CREATE OR REPLACE FUNCTION pgraft_log_get_stats()
+CREATE OR REPLACE FUNCTION pgraft.log_get_stats()
 RETURNS TABLE(
     log_size bigint,
     last_index bigint,
@@ -174,7 +174,7 @@ LANGUAGE C
 AS 'pgraft', 'pgraft_log_get_stats_table';
 
 -- Get replication status as table with individual columns
-CREATE OR REPLACE FUNCTION pgraft_log_get_replication_status()
+CREATE OR REPLACE FUNCTION pgraft.log_get_replication_status()
 RETURNS TABLE(
     log_size bigint,
     last_index bigint,
@@ -189,19 +189,19 @@ LANGUAGE C
 AS 'pgraft', 'pgraft_log_get_replication_status_table';
 
 -- Sync with leader
-CREATE OR REPLACE FUNCTION pgraft_log_sync_with_leader()
+CREATE OR REPLACE FUNCTION pgraft.log_sync_with_leader()
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_log_sync_with_leader_sql';
 
 -- Get current leader ID
-CREATE OR REPLACE FUNCTION pgraft_get_leader()
+CREATE OR REPLACE FUNCTION pgraft.get_leader()
 RETURNS bigint
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_leader';
 
 -- Get current term
-CREATE OR REPLACE FUNCTION pgraft_get_term()
+CREATE OR REPLACE FUNCTION pgraft.get_term()
 RETURNS bigint
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_term';
@@ -218,10 +218,10 @@ SELECT
     (node->>'address')::text as "clientURLs",
     CASE 
         WHEN (node->>'active')::boolean = false THEN 'unavailable'
-        WHEN (node->>'id')::int = pgraft_get_leader() THEN 'leader'
+        WHEN (node->>'id')::int = pgraft.get_leader() THEN 'leader'
         ELSE 'follower'
     END as "status"
-FROM json_array_elements(pgraft_get_nodes_from_raft()::json) AS node
+FROM json_array_elements(pgraft.get_nodes_from_raft()::json) AS node
 ORDER BY (node->>'id')::int;
 
 -- Legacy view using C function (deprecated, kept for compatibility)
@@ -231,7 +231,7 @@ SELECT
     COALESCE(current_setting('listen_peer_urls', true), address || ':2380') as "peerURLs",
     COALESCE(current_setting('listen_client_urls', true), address || ':2379') as "clientURLs",
     CASE WHEN is_leader THEN 'leader' ELSE 'follower' END as "status"
-FROM pgraft_get_nodes()
+FROM pgraft.get_nodes()
 ORDER BY node_id;
 
 -- View that matches 'etcdctl endpoint status' output format
@@ -246,10 +246,10 @@ SELECT
     COALESCE(current_setting('log_level', true), 'info') as "leader",
     COALESCE(current_setting('heartbeat_interval', true), '100') as "leaderIndex",
     COALESCE(current_setting('election_timeout', true), '1000') as "uptime"
-FROM pgraft_get_nodes() n
+FROM pgraft.get_nodes() n
 JOIN LATERAL (
     SELECT current_term, leader_id
-    FROM pgraft_get_cluster_status()
+    FROM pgraft.get_cluster_status()
 ) cs ON (cs.leader_id = n.node_id OR NOT n.is_leader)
 ORDER BY node_id;
 
@@ -259,7 +259,7 @@ SELECT
     address || ':' || port::text as "endpoint",
     CASE WHEN is_leader THEN 'true' ELSE 'false' END as "health",
     CASE WHEN is_leader THEN 'true' ELSE 'false' END as "took"
-FROM pgraft_get_nodes()
+FROM pgraft.get_nodes()
 ORDER BY node_id;
 
 -- View that matches 'etcdctl cluster-health' output format
@@ -269,7 +269,7 @@ SELECT
     CASE WHEN is_leader THEN 'true' ELSE 'false' END as "isLeader",
     CASE WHEN is_leader THEN 'true' ELSE 'false' END as "isLearner",
     'true' as "health"
-FROM pgraft_get_nodes()
+FROM pgraft.get_nodes()
 WHERE is_leader = true
 UNION ALL
 SELECT 
@@ -277,7 +277,7 @@ SELECT
     'false' as "isLeader", 
     'false' as "isLearner",
     'true' as "health"
-FROM pgraft_get_nodes()
+FROM pgraft.get_nodes()
 WHERE is_leader = false;
 
 -- View that provides etcd-style cluster information
@@ -289,7 +289,7 @@ SELECT
     cs.state as "raftTerm",
     cs.messages_processed::text as "raftIndex",
     cs.heartbeats_sent::text as "raftAppliedIndex"
-FROM pgraft_get_cluster_status() cs;
+FROM pgraft.get_cluster_status() cs;
 
 -- View for etcd-style key-value operations (if needed for compatibility)
 CREATE OR REPLACE VIEW pgraft.kv_status AS
@@ -299,7 +299,7 @@ SELECT
     '0' as "version",
     '0' as "create_revision",
     '0' as "mod_revision"
-WHERE pgraft_is_leader();
+WHERE pgraft.is_leader();
 
 -- Additional etcd-compatible views for comprehensive compatibility
 
@@ -309,17 +309,17 @@ SELECT
     address || ':' || port::text as "endpoint",
     '0' as "hash",
     '0' as "hash_revision"
-FROM pgraft_get_nodes()
+FROM pgraft.get_nodes()
 ORDER BY node_id;
 
 -- View that provides etcd-style watch status
 CREATE OR REPLACE VIEW pgraft.watch_status AS
 SELECT 
-    'pgraft_watch' as "watcher_id",
+    'pgraft.watch' as "watcher_id",
     'true' as "is_active",
     '0' as "watch_count",
     '0' as "watch_pending"
-WHERE pgraft_is_leader();
+WHERE pgraft.is_leader();
 
 -- View that matches etcd cluster member details
 CREATE OR REPLACE VIEW pgraft.member_details AS
@@ -330,7 +330,7 @@ SELECT
     address || ':' || port::text as "ClientURLs",
     CASE WHEN is_leader THEN 'true' ELSE 'false' END as "IsLeader",
     CASE WHEN is_leader THEN 'true' ELSE 'false' END as "IsLearner"
-FROM pgraft_get_nodes()
+FROM pgraft.get_nodes()
 ORDER BY node_id;
 
 -- View for etcd-style authentication status
@@ -338,19 +338,19 @@ CREATE OR REPLACE VIEW pgraft.auth_status AS
 SELECT 
     'true' as "enabled",
     'false' as "revision"
-WHERE pgraft_is_leader();
+WHERE pgraft.is_leader();
 
 -- View for etcd-style alarm list
 CREATE OR REPLACE VIEW pgraft.alarm_list AS
 SELECT 
     'NONE' as "alarm",
     '0' as "memberID"
-WHERE pgraft_is_leader()
+WHERE pgraft.is_leader()
 UNION ALL
 SELECT 
     'NONE' as "alarm",
     node_id::text as "memberID"
-FROM pgraft_get_nodes()
+FROM pgraft.get_nodes()
 WHERE NOT is_leader;
 
 -- View for etcd-style snapshot status
@@ -361,7 +361,7 @@ SELECT
     '0' as "total_key",
     '0' as "total_size",
     'true' as "version"
-WHERE pgraft_is_leader();
+WHERE pgraft.is_leader();
 
 -- Grant permissions for all views
 GRANT SELECT ON pgraft.member_list TO PUBLIC;
@@ -379,7 +379,7 @@ GRANT SELECT ON pgraft.alarm_list TO PUBLIC;
 GRANT SELECT ON pgraft.snapshot_status TO PUBLIC;
 
 -- Command queue inspection function
-CREATE OR REPLACE FUNCTION pgraft_get_queue_status()
+CREATE OR REPLACE FUNCTION pgraft.get_queue_status()
 RETURNS TABLE(
     cmd_position integer,
     command_type integer,
@@ -392,7 +392,7 @@ LANGUAGE C
 AS 'pgraft', 'pgraft_get_queue_status';
 
 -- Core cluster state view (reads from shared memory)
-CREATE OR REPLACE VIEW pgraft_cluster_state AS
+CREATE OR REPLACE VIEW pgraft.cluster_state AS
 SELECT 
     c.leader_id,
     c.current_term,
@@ -407,12 +407,12 @@ SELECT
     w.worker_status,
     w.initialized,
     (c.leader_id = w.node_id) as is_leader
-FROM pgraft_get_cluster_status() c,
+FROM pgraft.get_cluster_status() c,
      LATERAL (
          SELECT 
-             pgraft_get_worker_state()::text as worker_status,
+             pgraft.get_worker_state()::text as worker_status,
              CASE 
-                 WHEN pgraft_get_worker_state() = 'RUNNING' THEN true
+                 WHEN pgraft.get_worker_state() = 'RUNNING' THEN true
                  ELSE false
              END as initialized,
              1 as node_id,  -- Current node ID (should be from config)
@@ -421,29 +421,29 @@ FROM pgraft_get_cluster_status() c,
      ) w;
 
 -- Background worker status view
-CREATE OR REPLACE VIEW pgraft_worker_status AS
+CREATE OR REPLACE VIEW pgraft.worker_status AS
 SELECT 
-    pgraft_get_worker_state() as worker_state,
+    pgraft.get_worker_state() as worker_state,
     CASE 
-        WHEN pgraft_get_worker_state() = 'RUNNING' THEN true
+        WHEN pgraft.get_worker_state() = 'RUNNING' THEN true
         ELSE false
     END as is_running;
 
 -- Cluster overview view combining worker and node status
-CREATE OR REPLACE VIEW pgraft_cluster_overview AS
+CREATE OR REPLACE VIEW pgraft.cluster_overview AS
 SELECT
-    pgraft_get_worker_state() as worker_state,
+    pgraft.get_worker_state() as worker_state,
     c.leader_id,
     c.current_term,
     c.state,
     (c.leader_id = 1) as is_leader,  -- Assuming node 1 is current node
     c.num_nodes,
     c.messages_processed
-FROM pgraft_cluster_state c
+FROM pgraft.cluster_state c
 LIMIT 1;
 
 -- Node information view
-CREATE OR REPLACE VIEW pgraft_nodes AS
+CREATE OR REPLACE VIEW pgraft.nodes AS
 SELECT 
     n.node_id,
     n.address,
@@ -451,11 +451,11 @@ SELECT
     n.is_leader,
     c.current_term,
     c.state
-FROM pgraft_get_nodes() n,
-     LATERAL (SELECT * FROM pgraft_cluster_state LIMIT 1) c;
+FROM pgraft.get_nodes() n,
+     LATERAL (SELECT * FROM pgraft.cluster_state LIMIT 1) c;
 
 -- Log replication status view (simplified)
-CREATE OR REPLACE VIEW pgraft_log_status AS
+CREATE OR REPLACE VIEW pgraft.log_status AS
 SELECT
     1 as node_id,
     0 as log_size,
@@ -474,37 +474,37 @@ SELECT
 -- ============================================================================
 
 -- PUT operation - store a key/value pair
-CREATE OR REPLACE FUNCTION pgraft_kv_put(key text, value text)
+CREATE OR REPLACE FUNCTION pgraft.kv_put(key text, value text)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_put_sql';
 
 -- GET operation - retrieve value for a key
-CREATE OR REPLACE FUNCTION pgraft_kv_get(key text)
+CREATE OR REPLACE FUNCTION pgraft.kv_get(key text)
 RETURNS text
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_get_sql';
 
 -- DELETE operation - delete a key
-CREATE OR REPLACE FUNCTION pgraft_kv_delete(key text)
+CREATE OR REPLACE FUNCTION pgraft.kv_delete(key text)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_delete_sql';
 
 -- EXISTS operation - check if key exists
-CREATE OR REPLACE FUNCTION pgraft_kv_exists(key text)
+CREATE OR REPLACE FUNCTION pgraft.kv_exists(key text)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_exists_sql';
 
 -- LIST_KEYS operation - list all keys as JSON array
-CREATE OR REPLACE FUNCTION pgraft_kv_list_keys()
+CREATE OR REPLACE FUNCTION pgraft.kv_list_keys()
 RETURNS text
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_list_keys_sql';
 
 -- Get key/value store statistics
-CREATE OR REPLACE FUNCTION pgraft_kv_get_stats()
+CREATE OR REPLACE FUNCTION pgraft.kv_get_stats()
 RETURNS TABLE(
     num_entries integer,
     total_operations bigint,
@@ -519,13 +519,13 @@ LANGUAGE C
 AS 'pgraft', 'pgraft_kv_get_stats_table';
 
 -- COMPACT operation - remove deleted entries and optimize storage
-CREATE OR REPLACE FUNCTION pgraft_kv_compact()
+CREATE OR REPLACE FUNCTION pgraft.kv_compact()
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_compact_sql';
 
 -- RESET operation - clear all data (use with caution!)
-CREATE OR REPLACE FUNCTION pgraft_kv_reset()
+CREATE OR REPLACE FUNCTION pgraft.kv_reset()
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_reset_sql';
@@ -535,7 +535,7 @@ AS 'pgraft', 'pgraft_kv_reset_sql';
 -- ============================================================================
 
 -- Key/Value store status view
-CREATE OR REPLACE VIEW pgraft_kv_status AS
+CREATE OR REPLACE VIEW pgraft.kv_store_status AS
 SELECT 
     s.num_entries,
     s.active_entries,
@@ -550,34 +550,34 @@ SELECT
         WHEN s.deleted_entries > s.active_entries THEN 'NEEDS_COMPACTION'
         ELSE 'HEALTHY'
     END as status
-FROM pgraft_kv_get_stats() s;
+FROM pgraft.kv_get_stats() s;
 
 
 
 -- Replicate a log entry via the Raft leader
-CREATE OR REPLACE FUNCTION pgraft_replicate_entry(entry_data text)
+CREATE OR REPLACE FUNCTION pgraft.replicate_entry(entry_data text)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_replicate_entry_func';
 
 -- Local KV operations (used by apply callback, no Raft replication)
-CREATE OR REPLACE FUNCTION pgraft_kv_put_local(key text, value text)
+CREATE OR REPLACE FUNCTION pgraft.kv_put_local(key text, value text)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_put_local_func';
 
-CREATE OR REPLACE FUNCTION pgraft_kv_delete_local(key text)
+CREATE OR REPLACE FUNCTION pgraft.kv_delete_local(key text)
 RETURNS boolean
 LANGUAGE C
 AS 'pgraft', 'pgraft_kv_delete_local_func';
 
 -- Applied index tracking functions
-CREATE OR REPLACE FUNCTION pgraft_get_applied_index()
+CREATE OR REPLACE FUNCTION pgraft.get_applied_index()
 RETURNS bigint
 LANGUAGE C
 AS 'pgraft', 'pgraft_get_applied_index_func';
 
-CREATE OR REPLACE FUNCTION pgraft_record_applied_index(index bigint)
+CREATE OR REPLACE FUNCTION pgraft.record_applied_index(index bigint)
 RETURNS void
 LANGUAGE C
 AS 'pgraft', 'pgraft_record_applied_index_func';
@@ -587,67 +587,67 @@ AS 'pgraft', 'pgraft_record_applied_index_func';
 --
 -- PostgreSQL grants EXECUTE on a new function to PUBLIC by default, which left
 -- every one of these callable by any logged-in role: cluster membership could
--- be rewritten with pgraft_remove_node(), arbitrary payloads pushed into the
--- replicated log with pgraft_replicate_entry(), and the key/value store
+-- be rewritten with pgraft.remove_node(), arbitrary payloads pushed into the
+-- replicated log with pgraft.replicate_entry(), and the key/value store
 -- rewritten at will.  Revoke the lot, then grant back only the read-only
 -- introspection functions.
 -- ---------------------------------------------------------------------------
 
-REVOKE ALL ON FUNCTION pgraft_init() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_add_node(integer, text, integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_remove_node(integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_set_debug(boolean) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_test() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_log_append(bigint, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_log_commit(bigint) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_log_apply(bigint) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_log_sync_with_leader() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_replicate_entry(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_put(text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_delete(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_put_local(text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_delete_local(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_compact() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_reset() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_record_applied_index(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.init() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.add_node(integer, text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.remove_node(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.set_debug(boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.test() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.log_append(bigint, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.log_commit(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.log_apply(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.log_sync_with_leader() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.replicate_entry(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_put(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_delete(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_put_local(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_delete_local(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_compact() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_reset() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.record_applied_index(bigint) FROM PUBLIC;
 
 -- Read-only introspection: revoke the default grant, then hand it back
 -- explicitly so the intent is recorded rather than inherited.
-REVOKE ALL ON FUNCTION pgraft_get_cluster_status() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_get_nodes() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_get_nodes_from_raft() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_is_leader() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_get_worker_state() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_get_version() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_get_leader() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_get_term() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_get_queue_status() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_get_applied_index() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_log_get_entry(bigint) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_log_get_stats() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_log_get_replication_status() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_get(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_exists(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_list_keys() FROM PUBLIC;
-REVOKE ALL ON FUNCTION pgraft_kv_get_stats() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_cluster_status() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_nodes() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_nodes_from_raft() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.is_leader() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_worker_state() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_version() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_leader() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_term() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_queue_status() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.get_applied_index() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.log_get_entry(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.log_get_stats() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.log_get_replication_status() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_get(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_exists(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_list_keys() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft.kv_get_stats() FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION pgraft_get_cluster_status() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_get_nodes() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_get_nodes_from_raft() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_is_leader() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_get_worker_state() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_get_version() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_get_leader() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_get_term() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_get_queue_status() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_get_applied_index() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_log_get_entry(bigint) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_log_get_stats() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_log_get_replication_status() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_kv_get(text) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_kv_exists(text) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_kv_list_keys() TO PUBLIC;
-GRANT EXECUTE ON FUNCTION pgraft_kv_get_stats() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_cluster_status() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_nodes() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_nodes_from_raft() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.is_leader() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_worker_state() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_version() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_leader() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_term() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_queue_status() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.get_applied_index() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.log_get_entry(bigint) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.log_get_stats() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.log_get_replication_status() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.kv_get(text) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.kv_exists(text) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.kv_list_keys() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft.kv_get_stats() TO PUBLIC;
 
 -- Reset search path
 SET search_path = public;

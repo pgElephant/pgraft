@@ -242,9 +242,9 @@ After starting PostgreSQL, verify your configuration:
 SELECT * FROM pg_extension WHERE extname = 'pgraft';
 
 -- Get current cluster configuration
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 
 -- Check worker status
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 ```
 
