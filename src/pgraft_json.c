@@ -186,7 +186,7 @@ pgraft_parse_kv_json_entry(const char *data, size_t len)
 
 		sql_len = strlen(quoted_key) + strlen(quoted_value) + 64;
 		sql_cmd = palloc(sql_len);
-		snprintf(sql_cmd, sql_len, "SELECT pgraft_kv_put_local(%s, %s)",
+		snprintf(sql_cmd, sql_len, "SELECT pgraft.kv_put_local(%s, %s)",
 				 quoted_key, quoted_value);
 
 		/* Set up entry */
@@ -225,7 +225,7 @@ pgraft_parse_kv_json_entry(const char *data, size_t len)
 
 		sql_len = strlen(quoted_key) + 64;
 		sql_cmd = palloc(sql_len);
-		snprintf(sql_cmd, sql_len, "SELECT pgraft_kv_delete_local(%s)", quoted_key);
+		snprintf(sql_cmd, sql_len, "SELECT pgraft.kv_delete_local(%s)", quoted_key);
 
 		/* Set up entry */
 		entry->op = 2; /* DELETE operation */

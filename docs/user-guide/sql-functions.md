@@ -42,11 +42,11 @@ Maps Raft log index to PostgreSQL operation for debugging/recovery.
 
 ## Cluster Management Functions
 
-### `pgraft_init()`
+### `pgraft.init()`
 Initialize pgraft using GUC variables from `postgresql.conf`.
 
 ```sql
-SELECT pgraft_init();
+SELECT pgraft.init();
 ```
 
 **Returns:** `boolean` - `true` on success
@@ -56,12 +56,12 @@ SELECT pgraft_init();
 
 ---
 
-### `pgraft_add_node(node_id integer, address text, port integer)`
+### `pgraft.add_node(node_id integer, address text, port integer)`
 Add a node to the Raft cluster.
 
 ```sql
 -- Must be called on the leader
-SELECT pgraft_add_node(2, '192.168.1.102', 7002);
+SELECT pgraft.add_node(2, '192.168.1.102', 7002);
 ```
 
 **Parameters:**
@@ -76,11 +76,11 @@ SELECT pgraft_add_node(2, '192.168.1.102', 7002);
 
 ---
 
-### `pgraft_remove_node(node_id integer)`
+### `pgraft.remove_node(node_id integer)`
 Remove a node from the Raft cluster.
 
 ```sql
-SELECT pgraft_remove_node(3);
+SELECT pgraft.remove_node(3);
 ```
 
 **Returns:** `boolean` - `true` on success
@@ -90,11 +90,11 @@ SELECT pgraft_remove_node(3);
 
 ---
 
-### `pgraft_get_cluster_status()`
+### `pgraft.get_cluster_status()`
 Get comprehensive cluster status information.
 
 ```sql
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 ```
 
 **Returns TABLE:**
@@ -112,11 +112,11 @@ SELECT * FROM pgraft_get_cluster_status();
 
 ---
 
-### `pgraft_get_nodes()`
+### `pgraft.get_nodes()`
 Get list of all nodes in the cluster.
 
 ```sql
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 **Returns TABLE:**
@@ -130,66 +130,66 @@ SELECT * FROM pgraft_get_nodes();
 
 ---
 
-### `pgraft_get_nodes_from_raft()`
+### `pgraft.get_nodes_from_raft()`
 Get nodes directly from Raft cluster state (works on replicas).
 
 ```sql
-SELECT pgraft_get_nodes_from_raft();
+SELECT pgraft.get_nodes_from_raft();
 ```
 
 **Returns:** `text` - JSON array of nodes
 
 ---
 
-### `pgraft_is_leader()`
+### `pgraft.is_leader()`
 Check if current node is the Raft leader.
 
 ```sql
-SELECT pgraft_is_leader();
+SELECT pgraft.is_leader();
 ```
 
 **Returns:** `boolean` - `true` if leader, `false` otherwise
 
 ---
 
-### `pgraft_get_leader()`
+### `pgraft.get_leader()`
 Get the current leader's node ID.
 
 ```sql
-SELECT pgraft_get_leader();
+SELECT pgraft.get_leader();
 ```
 
 **Returns:** `bigint` - Leader node ID (0 if no leader)
 
 ---
 
-### `pgraft_get_term()`
+### `pgraft.get_term()`
 Get the current Raft term.
 
 ```sql
-SELECT pgraft_get_term();
+SELECT pgraft.get_term();
 ```
 
 **Returns:** `bigint` - Current term number
 
 ---
 
-### `pgraft_get_worker_state()`
+### `pgraft.get_worker_state()`
 Get background worker status information.
 
 ```sql
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 ```
 
 **Returns:** `text` - JSON object with worker state
 
 ---
 
-### `pgraft_get_version()`
+### `pgraft.get_version()`
 Get pgraft extension version.
 
 ```sql
-SELECT pgraft_get_version();
+SELECT pgraft.get_version();
 ```
 
 **Returns:** `text` - Version string
@@ -198,22 +198,22 @@ SELECT pgraft_get_version();
 
 ## Diagnostic & Debug Functions
 
-### `pgraft_test()`
+### `pgraft.test()`
 Run internal diagnostic tests.
 
 ```sql
-SELECT pgraft_test();
+SELECT pgraft.test();
 ```
 
 **Returns:** `boolean` - Test result
 
 ---
 
-### `pgraft_set_debug(enabled boolean)`
+### `pgraft.set_debug(enabled boolean)`
 Enable or disable debug logging.
 
 ```sql
-SELECT pgraft_set_debug(true);
+SELECT pgraft.set_debug(true);
 ```
 
 **Returns:** `void`
@@ -222,91 +222,91 @@ SELECT pgraft_set_debug(true);
 
 ## Log Replication Functions
 
-### `pgraft_log_append(term bigint, data text)`
+### `pgraft.log_append(term bigint, data text)`
 Append an entry to the Raft log.
 
 ```sql
-SELECT pgraft_log_append(1, 'test data');
+SELECT pgraft.log_append(1, 'test data');
 ```
 
 **Returns:** `bigint` - Log index
 
 ---
 
-### `pgraft_log_commit(index bigint)`
+### `pgraft.log_commit(index bigint)`
 Mark a log entry as committed.
 
 ```sql
-SELECT pgraft_log_commit(100);
+SELECT pgraft.log_commit(100);
 ```
 
 **Returns:** `boolean`
 
 ---
 
-### `pgraft_log_apply(index bigint)`
+### `pgraft.log_apply(index bigint)`
 Apply a committed log entry.
 
 ```sql
-SELECT pgraft_log_apply(100);
+SELECT pgraft.log_apply(100);
 ```
 
 **Returns:** `boolean`
 
 ---
 
-### `pgraft_log_get_entry(index bigint)`
+### `pgraft.log_get_entry(index bigint)`
 Get a specific log entry.
 
 ```sql
-SELECT pgraft_log_get_entry(100);
+SELECT pgraft.log_get_entry(100);
 ```
 
 **Returns:** `text` - JSON object with entry data
 
 ---
 
-### `pgraft_log_get_stats()`
+### `pgraft.log_get_stats()`
 Get log replication statistics.
 
 ```sql
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 ```
 
 **Returns TABLE:**
 
-| Column           | Type   | Description              |
-|------------------|--------|--------------------------|
-| total_entries    | bigint | Total log entries        |
-| committed_index  | bigint | Last committed index     |
-| applied_index    | bigint | Last applied index       |
-| snapshot_index   | bigint | Last snapshot index      |
+| Column         | Type   | Description        |
+|----------------|--------|--------------------|
+| total_entries  | bigint | Total log entries  |
+| committed_index| bigint | Committed index    |
+| applied_index  | bigint | Applied index      |
+| snapshot_index | bigint | Last snapshot index|
 
 ---
 
-### `pgraft_log_get_replication_status()`
+### `pgraft.log_get_replication_status()`
 Get replication status for all nodes.
 
 ```sql
-SELECT * FROM pgraft_log_get_replication_status();
+SELECT * FROM pgraft.log_get_replication_status();
 ```
 
 **Returns TABLE:**
 
-| Column        | Type    | Description                  |
-|---------------|---------|------------------------------|
-| node_id       | integer | Node ID                      |
-| match_index   | bigint  | Highest replicated index     |
-| next_index    | bigint  | Next index to send           |
-| is_active     | boolean | Is node active?              |
+| Column      | Type    | Description              |
+|-------------|---------|--------------------------|
+| node_id     | integer | Node ID                  |
+| match_index | bigint  | Replicated index         |
+| next_index  | bigint  | Next index to send       |
+| is_active   | boolean | Is node active?          |
 
 ---
 
-### `pgraft_log_sync_with_leader()`
+### `pgraft.log_sync_with_leader()`
 Synchronize log with leader (follower only).
 
 ```sql
-SELECT pgraft_log_sync_with_leader();
+SELECT pgraft.log_sync_with_leader();
 ```
 
 **Returns:** `boolean`
@@ -315,11 +315,11 @@ SELECT pgraft_log_sync_with_leader();
 
 ## Key-Value Store Functions
 
-### `pgraft_kv_put(key text, value text)`
+### `pgraft.kv_put(key text, value text)`
 Store a key-value pair (Raft-replicated).
 
 ```sql
-SELECT pgraft_kv_put('config/setting', 'value123');
+SELECT pgraft.kv_put('config/setting', 'value123');
 ```
 
 **Returns:** `boolean` - `true` on success
@@ -329,22 +329,22 @@ SELECT pgraft_kv_put('config/setting', 'value123');
 
 ---
 
-### `pgraft_kv_get(key text)`
+### `pgraft.kv_get(key text)`
 Retrieve a value by key.
 
 ```sql
-SELECT pgraft_kv_get('config/setting');
+SELECT pgraft.kv_get('config/setting');
 ```
 
 **Returns:** `text` - Value or NULL if not found
 
 ---
 
-### `pgraft_kv_delete(key text)`
+### `pgraft.kv_delete(key text)`
 Delete a key-value pair (Raft-replicated).
 
 ```sql
-SELECT pgraft_kv_delete('config/setting');
+SELECT pgraft.kv_delete('config/setting');
 ```
 
 **Returns:** `boolean`
@@ -354,60 +354,60 @@ SELECT pgraft_kv_delete('config/setting');
 
 ---
 
-### `pgraft_kv_exists(key text)`
+### `pgraft.kv_exists(key text)`
 Check if a key exists.
 
 ```sql
-SELECT pgraft_kv_exists('config/setting');
+SELECT pgraft.kv_exists('config/setting');
 ```
 
 **Returns:** `boolean`
 
 ---
 
-### `pgraft_kv_list_keys()`
+### `pgraft.kv_list_keys()`
 List all keys in the store.
 
 ```sql
-SELECT pgraft_kv_list_keys();
+SELECT pgraft.kv_list_keys();
 ```
 
 **Returns:** `SETOF text` - List of keys
 
 ---
 
-### `pgraft_kv_get_stats()`
+### `pgraft.kv_get_stats()`
 Get key-value store statistics.
 
 ```sql
-SELECT * FROM pgraft_kv_get_stats();
+SELECT * FROM pgraft.kv_get_stats();
 ```
 
 **Returns TABLE:**
 
-| Column       | Type    | Description           |
-|--------------|---------|----------------------|
-| total_keys   | bigint  | Total keys           |
-| total_size   | bigint  | Total size in bytes  |
+| Column      | Type    | Description          |
+|-------------|---------|----------------------|
+| total_keys  | bigint  | Number of keys       |
+| total_size  | bigint  | Total size in bytes  |
 
 ---
 
-### `pgraft_kv_compact()`
+### `pgraft.kv_compact()`
 Compact the key-value store.
 
 ```sql
-SELECT pgraft_kv_compact();
+SELECT pgraft.kv_compact();
 ```
 
 **Returns:** `boolean`
 
 ---
 
-### `pgraft_kv_reset()`
+### `pgraft.kv_reset()`
 Reset/clear the key-value store.
 
 ```sql
-SELECT pgraft_kv_reset();
+SELECT pgraft.kv_reset();
 ```
 
 **Returns:** `boolean`
@@ -419,66 +419,66 @@ SELECT pgraft_kv_reset();
 
 ## Internal Functions
 
-### `pgraft_replicate_entry(entry_data text)`
+### `pgraft.replicate_entry(entry_data text)`
 Replicate a log entry (internal use).
 
 ```sql
-SELECT pgraft_replicate_entry('{"type":"config","data":"..."}');
+SELECT pgraft.replicate_entry('{"type":"config","data":"..."}');
 ```
 
 **Returns:** `boolean`
 
 ---
 
-### `pgraft_kv_put_local(key text, value text)`
+### `pgraft.kv_put_local(key text, value text)`
 Put key-value locally without replication (internal use).
 
 ```sql
-SELECT pgraft_kv_put_local('local/cache', 'value');
+SELECT pgraft.kv_put_local('local/cache', 'value');
 ```
 
 **Returns:** `void`
 
 ---
 
-### `pgraft_kv_delete_local(key text)`
+### `pgraft.kv_delete_local(key text)`
 Delete key locally without replication (internal use).
 
 ```sql
-SELECT pgraft_kv_delete_local('local/cache');
+SELECT pgraft.kv_delete_local('local/cache');
 ```
 
 **Returns:** `void`
 
 ---
 
-### `pgraft_get_applied_index()`
+### `pgraft.get_applied_index()`
 Get the last applied log index.
 
 ```sql
-SELECT pgraft_get_applied_index();
+SELECT pgraft.get_applied_index();
 ```
 
 **Returns:** `bigint`
 
 ---
 
-### `pgraft_record_applied_index(index bigint)`
+### `pgraft.record_applied_index(index bigint)`
 Record that a log index has been applied.
 
 ```sql
-SELECT pgraft_record_applied_index(100);
+SELECT pgraft.record_applied_index(100);
 ```
 
 **Returns:** `void`
 
 ---
 
-### `pgraft_get_queue_status()`
+### `pgraft.get_queue_status()`
 Get message queue status.
 
 ```sql
-SELECT * FROM pgraft_get_queue_status();
+SELECT * FROM pgraft.get_queue_status();
 ```
 
 **Returns TABLE:**
@@ -502,59 +502,59 @@ SELECT
     state,
     leader_id,
     num_nodes
-FROM pgraft_get_cluster_status();
+FROM pgraft.get_cluster_status();
 
 -- Verify all nodes are present
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 ### Store and Retrieve Data
 
 ```sql
 -- On leader: Store configuration
-SELECT pgraft_kv_put('app/config', '{"timeout":30,"retries":3}');
+SELECT pgraft.kv_put('app/config', '{"timeout":30,"retries":3}');
 
 -- On any node: Retrieve configuration
-SELECT pgraft_kv_get('app/config');
+SELECT pgraft.kv_get('app/config');
 ```
 
 ### Monitor Replication
 
 ```sql
 -- Check replication status
-SELECT * FROM pgraft_log_get_replication_status();
+SELECT * FROM pgraft.log_get_replication_status();
 
 -- View log statistics
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 ```
 
 ---
 
 ## Function Categories
 
-| Category             | Functions                                                          |
-|----------------------|--------------------------------------------------------------------|
-| Cluster Management   | `pgraft_init`, `pgraft_add_node`, `pgraft_remove_node`           |
-| Status & Monitoring  | `pgraft_get_cluster_status`, `pgraft_get_nodes`, `pgraft_is_leader` |
-| Log Replication      | `pgraft_log_*` functions                                           |
-| Key-Value Store      | `pgraft_kv_*` functions                                            |
-| Diagnostics          | `pgraft_test`, `pgraft_set_debug`, `pgraft_get_queue_status`     |
+| Category             | Functions                                                              |
+|----------------------|------------------------------------------------------------------------|
+| Cluster Management   | `pgraft.init`, `pgraft.add_node`, `pgraft.remove_node`                 |
+| Status & Monitoring  | `pgraft.get_cluster_status`, `pgraft.get_nodes`, `pgraft.is_leader`    |
+| Log Replication      | `pgraft.log_*` functions                                               |
+| Key-Value Store      | `pgraft.kv_*` functions                                                |
+| Diagnostics          | `pgraft.test`, `pgraft.set_debug`, `pgraft.get_queue_status`           |
 
 ---
 
 ## Best Practices
 
-1. **Leader-Only Operations**: Always check `pgraft_is_leader()` before calling functions that modify cluster state
+1. **Leader-Only Operations**: Always check `pgraft.is_leader()` before calling functions that modify cluster state
 2. **Read Operations**: Can be performed on any node (leader or follower)
 3. **Error Handling**: Wrap cluster operations in exception handlers
-4. **Monitoring**: Regularly check `pgraft_get_cluster_status()` and `pgraft_log_get_replication_status()`
+4. **Monitoring**: Regularly check `pgraft.get_cluster_status()` and `pgraft.log_get_replication_status()`
 
 ```sql
 -- Example: Safe node addition
 DO $$
 BEGIN
-    IF pgraft_is_leader() THEN
-        PERFORM pgraft_add_node(4, '192.168.1.104', 7004);
+    IF pgraft.is_leader() THEN
+        PERFORM pgraft.add_node(4, '192.168.1.104', 7004);
         RAISE NOTICE 'Node added successfully';
     ELSE
         RAISE EXCEPTION 'Must run on leader node';

@@ -191,12 +191,12 @@ You can verify split-brain protection yourself:
 # Block Node 3's network
 
 # On Node 1 or 2 (majority partition):
-psql -c "SELECT pgraft_is_leader();"  # One returns true
-psql -c "SELECT pgraft_add_node(4, '127.0.0.1', 7004);"  # Works!
+psql -c "SELECT pgraft.is_leader();"  # One returns true
+psql -c "SELECT pgraft.add_node(4, '127.0.0.1', 7004);"  # Works!
 
 # On Node 3 (minority):
-psql -c "SELECT pgraft_is_leader();"  # Returns false
-psql -c "SELECT pgraft_add_node(4, '127.0.0.1', 7004);"  # Fails!
+psql -c "SELECT pgraft.is_leader();"  # Returns false
+psql -c "SELECT pgraft.add_node(4, '127.0.0.1', 7004);"  # Fails!
 ```
 
 ### Test 2: Leader in Minority
@@ -272,7 +272,7 @@ Frequent term changes indicate problems:
 
 ```sql
 -- Monitor term changes
-SELECT pgraft_get_term();
+SELECT pgraft.get_term();
 
 -- If term increases rapidly:
 -- - Network instability

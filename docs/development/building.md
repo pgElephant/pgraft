@@ -105,7 +105,7 @@ ldd pgraft.so
 ```bash
 # Start PostgreSQL with extension
 psql -c "CREATE EXTENSION pgraft;"
-psql -c "SELECT pgraft_test();"
+psql -c "SELECT pgraft.test();"
 ```
 
 ## Development Workflow
@@ -126,7 +126,7 @@ make install
 pg_ctl restart -D /path/to/data
 
 # 5. Test
-psql -c "SELECT pgraft_test();"
+psql -c "SELECT pgraft.test();"
 ```
 
 ### Incremental Builds
@@ -246,13 +246,13 @@ cd examples
 
 ```sql
 -- Test basic functionality
-SELECT pgraft_test();
-SELECT pgraft_init();
-SELECT pgraft_is_leader();
+SELECT pgraft.test();
+SELECT pgraft.init();
+SELECT pgraft.is_leader();
 
 -- Test cluster operations
-SELECT pgraft_add_node(2, '127.0.0.1', 7002);
-SELECT * FROM pgraft_get_cluster_status();
+SELECT pgraft.add_node(2, '127.0.0.1', 7002);
+SELECT * FROM pgraft.get_cluster_status();
 ```
 
 ## Debugging
@@ -260,7 +260,7 @@ SELECT * FROM pgraft_get_cluster_status();
 ### Enable Debug Output
 
 ```sql
-SELECT pgraft_set_debug(true);
+SELECT pgraft.set_debug(true);
 ```
 
 ### Check Logs

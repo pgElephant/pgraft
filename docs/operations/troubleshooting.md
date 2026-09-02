@@ -7,7 +7,7 @@ This page covers common issues and their solutions.
 ### Symptom
 
 ```sql
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 -- Returns: STOPPED or ERROR
 ```
 
@@ -33,7 +33,7 @@ pg_ctl restart -D /path/to/data
 
 3. Verify:
 ```sql
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 -- Should return: RUNNING
 ```
 
@@ -44,7 +44,7 @@ SELECT pgraft_get_worker_state();
 ### Symptom
 
 ```sql
-SELECT pgraft_add_node(2, '127.0.0.1', 7002);
+SELECT pgraft.add_node(2, '127.0.0.1', 7002);
 -- Error: "Cannot add node - this node is not the leader"
 ```
 
@@ -56,13 +56,13 @@ You're trying to add a node on a follower. Only the leader can add nodes.
 
 1. Find the leader:
 ```sql
-SELECT pgraft_get_leader();  -- Returns leader node ID
+SELECT pgraft.get_leader();  -- Returns leader node ID
 ```
 
 2. Connect to the leader node and run the command there:
 ```bash
 # If node 1 is leader, connect to its PostgreSQL port
-psql -h 127.0.0.1 -p 5432 -c "SELECT pgraft_add_node(2, '127.0.0.1', 7002);"
+psql -h 127.0.0.1 -p 5432 -c "SELECT pgraft.add_node(2, '127.0.0.1', 7002);"
 ```
 
 ---
@@ -72,10 +72,10 @@ psql -h 127.0.0.1 -p 5432 -c "SELECT pgraft_add_node(2, '127.0.0.1', 7002);"
 ### Symptom
 
 ```sql
-SELECT pgraft_get_leader();
+SELECT pgraft.get_leader();
 -- Returns: 0 (no leader)
 
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 -- Shows term 0 or very low term
 ```
 
@@ -93,7 +93,7 @@ SELECT * FROM pgraft_get_cluster_status();
 ```bash
 # Wait 10 seconds and check again
 sleep 10
-psql -c "SELECT pgraft_get_leader();"
+psql -c "SELECT pgraft.get_leader();"
 ```
 
 #### 2. Check Network Connectivity
@@ -135,11 +135,11 @@ Look for errors like:
 
 ```sql
 -- Term keeps increasing rapidly
-SELECT pgraft_get_term();
+SELECT pgraft.get_term();
 -- Returns: 156 (very high)
 
 -- Different leader each time you check
-SELECT pgraft_get_leader();
+SELECT pgraft.get_leader();
 ```
 
 ### Possible Causes
@@ -186,10 +186,10 @@ vmstat 1 10
 
 ### Symptom
 
-Added node using `pgraft_add_node()` but node doesn't appear in cluster:
+Added node using `pgraft.add_node()` but node doesn't appear in cluster:
 
 ```sql
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 -- New node not listed
 ```
 
@@ -199,7 +199,7 @@ SELECT * FROM pgraft_get_nodes();
 
 ```bash
 # On the new node
-psql -c "SELECT pgraft_get_worker_state();"
+psql -c "SELECT pgraft.get_worker_state();"
 # Should be RUNNING
 ```
 
@@ -208,9 +208,9 @@ psql -c "SELECT pgraft_get_worker_state();"
 ```sql
 -- On the new node
 SHOW pgraft.cluster_id;  -- Must match existing cluster
-SHOW pgraft.node_id;     -- Must match ID used in pgraft_add_node()
-SHOW pgraft.address;     -- Must match address used in pgraft_add_node()
-SHOW pgraft.port;        -- Must match port used in pgraft_add_node()
+SHOW pgraft.node_id;     -- Must match ID used in pgraft.add_node()
+SHOW pgraft.address;     -- Must match address used in pgraft.add_node()
+SHOW pgraft.port;        -- Must match port used in pgraft.add_node()
 ```
 
 ### Solution
@@ -219,7 +219,7 @@ SHOW pgraft.port;        -- Must match port used in pgraft_add_node()
 ```sql
 -- On the new node
 CREATE EXTENSION IF NOT EXISTS pgraft;
-SELECT pgraft_init();
+SELECT pgraft.init();
 ```
 
 2. **Verify network connectivity:**
@@ -385,10 +385,10 @@ make PG_CONFIG=/path/to/pg_config
 
 ```sql
 -- Check log lag
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 
 -- Monitor replication
-SELECT * FROM pgraft_log_get_replication_status();
+SELECT * FROM pgraft.log_get_replication_status();
 ```
 
 ### Solution
@@ -436,18 +436,18 @@ iostat -x 1 10
 ```bash
 # In a 3-node cluster, isolate one node
 # On isolated node:
-psql -c "SELECT pgraft_is_leader();"  # Should be false
-psql -c "SELECT pgraft_add_node(4, '127.0.0.1', 7004);"  # Should fail
+psql -c "SELECT pgraft.is_leader();"  # Should be false
+psql -c "SELECT pgraft.add_node(4, '127.0.0.1', 7004);"  # Should fail
 
 # On majority partition (2 nodes):
-psql -c "SELECT pgraft_is_leader();"  # One should be true
-psql -c "SELECT pgraft_add_node(4, '127.0.0.1', 7004);"  # Should succeed
+psql -c "SELECT pgraft.is_leader();"  # One should be true
+psql -c "SELECT pgraft.add_node(4, '127.0.0.1', 7004);"  # Should succeed
 ```
 
 2. **Monitor term numbers:**
 ```sql
 -- Term should be stable during normal operation
-SELECT pgraft_get_term();
+SELECT pgraft.get_term();
 ```
 
 See [Split-Brain Protection](../concepts/split-brain.md) for detailed explanation.
@@ -459,7 +459,7 @@ See [Split-Brain Protection](../concepts/split-brain.md) for detailed explanatio
 ### Enable Debug Logging
 
 ```sql
-SELECT pgraft_set_debug(true);
+SELECT pgraft.set_debug(true);
 ```
 
 This will log detailed information about:
@@ -477,7 +477,7 @@ tail -f /path/to/postgresql/log/postgresql-*.log | grep "pgraft:"
 ### Disable Debug Logging
 
 ```sql
-SELECT pgraft_set_debug(false);
+SELECT pgraft.set_debug(false);
 ```
 
 ---
@@ -493,19 +493,19 @@ tail -100 /path/to/postgresql/log/postgresql-*.log | grep pgraft
 
 2. **Gather diagnostic information:**
 ```sql
-SELECT pgraft_get_version();
-SELECT * FROM pgraft_get_cluster_status();
-SELECT * FROM pgraft_get_nodes();
-SELECT * FROM pgraft_log_get_stats();
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_version();
+SELECT * FROM pgraft.get_cluster_status();
+SELECT * FROM pgraft.get_nodes();
+SELECT * FROM pgraft.log_get_stats();
+SELECT pgraft.get_worker_state();
 ```
 
 3. **Enable debug mode and reproduce the issue:**
 ```sql
-SELECT pgraft_set_debug(true);
+SELECT pgraft.set_debug(true);
 -- Reproduce the problem
 -- Copy relevant logs
-SELECT pgraft_set_debug(false);
+SELECT pgraft.set_debug(false);
 ```
 
 4. **Report the issue** on the GitHub repository with:

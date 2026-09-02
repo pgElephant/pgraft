@@ -187,8 +187,8 @@ psql -h 127.0.0.1 -p 5433 -U postgres
 CREATE EXTENSION IF NOT EXISTS pgraft;
 
 # Check the status
-SELECT pgraft_get_worker_state();
-SELECT * FROM pgraft_get_cluster_status();
+SELECT pgraft.get_worker_state();
+SELECT * FROM pgraft.get_cluster_status();
 
 # Exit
 \q
@@ -228,15 +228,15 @@ Check the cluster status to verify all nodes have joined:
 psql -h 127.0.0.1 -p 5433 -U postgres
 
 # Add Node 2 to the cluster
-SELECT pgraft_add_node(2, '127.0.0.1', 5434);
+SELECT pgraft.add_node(2, '127.0.0.1', 5434);
 
 # Add Node 3 to the cluster
-SELECT pgraft_add_node(3, '127.0.0.1', 5435);
+SELECT pgraft.add_node(3, '127.0.0.1', 5435);
 
 # Verify cluster formation
-SELECT * FROM pgraft_get_nodes();
-SELECT * FROM pgraft_get_cluster_status();
-SELECT pgraft_is_leader();
+SELECT * FROM pgraft.get_nodes();
+SELECT * FROM pgraft.get_cluster_status();
+SELECT pgraft.is_leader();
 
 # Exit
 \q
@@ -248,17 +248,17 @@ Check each node to ensure they're properly connected:
 
 ```bash
 # Check Node 1
-psql -h 127.0.0.1 -p 5433 -U postgres -c "SELECT pgraft_is_leader(), pgraft_get_term(), pgraft_get_leader();"
+psql -h 127.0.0.1 -p 5433 -U postgres -c "SELECT pgraft.is_leader(), pgraft.get_term(), pgraft.get_leader();"
 
 # Check Node 2
-psql -h 127.0.0.1 -p 5434 -U postgres -c "SELECT pgraft_is_leader(), pgraft_get_term(), pgraft_get_leader();"
+psql -h 127.0.0.1 -p 5434 -U postgres -c "SELECT pgraft.is_leader(), pgraft.get_term(), pgraft.get_leader();"
 
 # Check Node 3
-psql -h 127.0.0.1 -p 5435 -U postgres -c "SELECT pgraft_is_leader(), pgraft_get_term(), pgraft_get_leader();"
+psql -h 127.0.0.1 -p 5435 -U postgres -c "SELECT pgraft.is_leader(), pgraft.get_term(), pgraft.get_leader();"
 ```
 
 Expected output should show:
-- One node as leader (`pgraft_is_leader()` returns `true`)
+- One node as leader (`pgraft.is_leader()` returns `true`)
 - Same term number on all nodes
 - Same leader ID on all nodes
 
@@ -348,10 +348,10 @@ mkdir -p /data/node4
 psql -h 127.0.0.1 -p 5433 -U postgres
 
 -- Add the new node
-SELECT pgraft_add_node(4, '127.0.0.1', 5436);
+SELECT pgraft.add_node(4, '127.0.0.1', 5436);
 
 -- Verify
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 ### Removing a Node
@@ -361,10 +361,10 @@ SELECT * FROM pgraft_get_nodes();
 psql -h 127.0.0.1 -p 5433 -U postgres
 
 -- Remove the node
-SELECT pgraft_remove_node(4);
+SELECT pgraft.remove_node(4);
 
 -- Verify
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 ### Leader Election Testing
@@ -373,14 +373,14 @@ Test automatic leader election by stopping the current leader:
 
 ```bash
 # Find the current leader
-psql -h 127.0.0.1 -p 5433 -U postgres -c "SELECT pgraft_is_leader(), pgraft_get_leader();"
+psql -h 127.0.0.1 -p 5433 -U postgres -c "SELECT pgraft.is_leader(), pgraft.get_leader();"
 
 # Stop the leader (replace with actual port)
 /usr/local/pgsql.17/bin/pg_ctl -D /data/node1 stop
 
 # Wait a few seconds, then check remaining nodes
-psql -h 127.0.0.1 -p 5434 -U postgres -c "SELECT pgraft_is_leader(), pgraft_get_term();"
-psql -h 127.0.0.1 -p 5435 -U postgres -c "SELECT pgraft_is_leader(), pgraft_get_term();"
+psql -h 127.0.0.1 -p 5434 -U postgres -c "SELECT pgraft.is_leader(), pgraft.get_term();"
+psql -h 127.0.0.1 -p 5435 -U postgres -c "SELECT pgraft.is_leader(), pgraft.get_term();"
 
 # One should now be the leader with a higher term
 
@@ -436,9 +436,9 @@ for port in "${NODES[@]}"; do
         # Check pgraft status
         STATUS=$(psql -h 127.0.0.1 -p $port -U postgres -t -c "
             SELECT 
-                CASE WHEN pgraft_is_leader() THEN 'LEADER' ELSE 'FOLLOWER' END,
-                pgraft_get_term(),
-                pgraft_get_leader()
+                CASE WHEN pgraft.is_leader() THEN 'LEADER' ELSE 'FOLLOWER' END,
+                pgraft.get_term(),
+                pgraft.get_leader()
         " 2>/dev/null)
         
         if [ $? -eq 0 ]; then
@@ -456,7 +456,7 @@ done
 echo "--- Cluster Consistency ---"
 LEADERS=$(for port in "${NODES[@]}"; do
     if pg_isready -h 127.0.0.1 -p $port > /dev/null 2>&1; then
-        psql -h 127.0.0.1 -p $port -U postgres -t -c "SELECT pgraft_is_leader()::text" 2>/dev/null
+        psql -h 127.0.0.1 -p $port -U postgres -t -c "SELECT pgraft.is_leader()::text" 2>/dev/null
     fi
 done | grep -c true)
 
@@ -493,7 +493,7 @@ mkdir -p $BACKUP_DIR
 
 # Find the current leader
 LEADER_PORT=$(for port in 5433 5434 5435; do
-    if psql -h 127.0.0.1 -p $port -U postgres -t -c "SELECT pgraft_is_leader()" 2>/dev/null | grep -q true; then
+    if psql -h 127.0.0.1 -p $port -U postgres -t -c "SELECT pgraft.is_leader()" 2>/dev/null | grep -q true; then
         echo $port
         break
     fi
@@ -552,7 +552,7 @@ for port in 5433 5434 5435; do
                 messages_processed,
                 heartbeats_sent,
                 elections_triggered
-            FROM pgraft_get_cluster_status();
+            FROM pgraft.get_cluster_status();
         " 2>/dev/null
         
         # Get log statistics
@@ -566,7 +566,7 @@ for port in 5433 5434 5435; do
                 committed,
                 applied,
                 errors
-            FROM pgraft_log_get_stats();
+            FROM pgraft.log_get_stats();
         " 2>/dev/null
         
         echo ""
@@ -604,7 +604,7 @@ psql -c "SHOW shared_preload_libraries;"
 
 **Symptoms:**
 ```sql
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 -- Returns: "STOPPED"
 ```
 
@@ -644,7 +644,7 @@ netstat -tlnp | grep 543
 **Symptoms:**
 ```sql
 -- Multiple nodes think they're leader
-SELECT pgraft_is_leader() FROM (SELECT 5433 as port UNION SELECT 5434 UNION SELECT 5435) ports;
+SELECT pgraft.is_leader() FROM (SELECT 5433 as port UNION SELECT 5434 UNION SELECT 5435) ports;
 -- Returns multiple true values
 ```
 
@@ -671,14 +671,14 @@ Enable debug mode for troubleshooting:
 
 ```sql
 -- Enable debug logging
-SELECT pgraft_set_debug(true);
+SELECT pgraft.set_debug(true);
 
 -- Perform operations and check logs
-SELECT pgraft_get_worker_state();
-SELECT * FROM pgraft_get_queue_status();
+SELECT pgraft.get_worker_state();
+SELECT * FROM pgraft.get_queue_status();
 
 -- Disable debug logging
-SELECT pgraft_set_debug(false);
+SELECT pgraft.set_debug(false);
 ```
 
 ### Log Analysis

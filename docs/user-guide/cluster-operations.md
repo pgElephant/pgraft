@@ -36,7 +36,7 @@ pg_ctl restart -D $PGDATA
 
 # Initialize pgraft
 psql -c "CREATE EXTENSION pgraft;"
-psql -c "SELECT pgraft_init();"
+psql -c "SELECT pgraft.init();"
 ```
 
 **2. Add node from leader:**
@@ -44,15 +44,15 @@ psql -c "SELECT pgraft_init();"
 ```sql
 -- On the current leader
 -- First, verify you are the leader
-SELECT pgraft_is_leader();
+SELECT pgraft.is_leader();
 -- Should return: t
 
 -- Add the new node
-SELECT pgraft_add_node(4, '192.168.1.14', 7004);
+SELECT pgraft.add_node(4, '192.168.1.14', 7004);
 -- Should return: t
 
 -- Verify node was added
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 **3. Verify on all nodes:**
@@ -61,7 +61,7 @@ SELECT * FROM pgraft_get_nodes();
 # Check on all nodes that they see the new node
 for port in 5432 5433 5434; do
     echo "Node on port $port:"
-    psql -p $port -c "SELECT * FROM pgraft_get_nodes();"
+    psql -p $port -c "SELECT * FROM pgraft.get_nodes();"
 done
 ```
 
@@ -86,17 +86,17 @@ done
 **1. Identify the node to remove:**
 
 ```sql
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 **2. Remove from cluster (on leader):**
 
 ```sql
 -- Verify you are the leader
-SELECT pgraft_is_leader();
+SELECT pgraft.is_leader();
 
 -- Remove the node
-SELECT pgraft_remove_node(4);
+SELECT pgraft.remove_node(4);
 -- Should return: t
 ```
 
@@ -111,7 +111,7 @@ pg_ctl stop -D $PGDATA
 
 ```sql
 -- On any remaining node
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 -- Node 4 should not appear
 ```
 
@@ -135,13 +135,13 @@ Elections occur when:
 
 ```sql
 -- Check current term (increases on each election)
-SELECT pgraft_get_term();
+SELECT pgraft.get_term();
 
 -- Check who is leader
-SELECT pgraft_get_leader();
+SELECT pgraft.get_leader();
 
 -- Check if this node is leader
-SELECT pgraft_is_leader();
+SELECT pgraft.is_leader();
 ```
 
 ### Election Timeline
@@ -162,7 +162,7 @@ T+2.5s: New leader sends first heartbeat
 
 ```sql
 -- Check worker status on all nodes
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 
 -- Check network connectivity
 -- Ensure majority of nodes can communicate
@@ -172,7 +172,7 @@ SELECT pgraft_get_worker_state();
 
 ```sql
 -- Check term (if increasing rapidly)
-SELECT pgraft_get_term();
+SELECT pgraft.get_term();
 
 -- Possible causes:
 -- 1. Network instability
@@ -219,7 +219,7 @@ For maintenance requiring node restarts:
 
 ```bash
 # Identify followers
-psql -c "SELECT node_id, pgraft_is_leader() FROM pgraft_get_nodes();"
+psql -c "SELECT node_id, pgraft.is_leader() FROM pgraft.get_nodes();"
 
 # Restart followers one at a time
 # Wait for each to rejoin before restarting next
@@ -233,7 +233,7 @@ psql -c "SELECT node_id, pgraft_is_leader() FROM pgraft_get_nodes();"
 pg_ctl restart -D $PGDATA
 
 # Verify new leader elected
-psql -c "SELECT pgraft_get_leader();"
+psql -c "SELECT pgraft.get_leader();"
 ```
 
 ### Backup and Restore
@@ -286,16 +286,16 @@ pg_ctl start -D $PGDATA
 # Configure and start them (see "Adding Nodes" above)
 
 # 2. From leader, add node 4
-psql -c "SELECT pgraft_add_node(4, '192.168.1.14', 7004);"
+psql -c "SELECT pgraft.add_node(4, '192.168.1.14', 7004);"
 
 # 3. Wait for node 4 to sync
 sleep 5
 
 # 4. Add node 5
-psql -c "SELECT pgraft_add_node(5, '192.168.1.15', 7005);"
+psql -c "SELECT pgraft.add_node(5, '192.168.1.15', 7005);"
 
 # 5. Verify all 5 nodes
-psql -c "SELECT * FROM pgraft_get_nodes();"
+psql -c "SELECT * FROM pgraft.get_nodes();"
 ```
 
 ## Cluster Reduction
@@ -309,19 +309,19 @@ psql -c "SELECT * FROM pgraft_get_nodes();"
 
 ```bash
 # 1. From leader, remove node 5
-psql -c "SELECT pgraft_remove_node(5);"
+psql -c "SELECT pgraft.remove_node(5);"
 
 # 2. Shutdown node 5
 ssh node5 "pg_ctl stop -D $PGDATA"
 
 # 3. Remove node 4
-psql -c "SELECT pgraft_remove_node(4);"
+psql -c "SELECT pgraft.remove_node(4);"
 
 # 4. Shutdown node 4
 ssh node4 "pg_ctl stop -D $PGDATA"
 
 # 5. Verify 3 nodes remain
-psql -c "SELECT * FROM pgraft_get_nodes();"
+psql -c "SELECT * FROM pgraft.get_nodes();"
 ```
 
 ## Log Management
@@ -342,7 +342,7 @@ Currently automatic only. Future versions may support manual snapshots.
 ### Viewing Log Statistics
 
 ```sql
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 ```
 
 Output:
@@ -358,10 +358,10 @@ Output:
 
 ```sql
 -- Monitor replication to new node
-SELECT * FROM pgraft_log_get_replication_status();
+SELECT * FROM pgraft.log_get_replication_status();
 
 -- Check if new node caught up
-SELECT * FROM pgraft_log_get_stats();
+SELECT * FROM pgraft.log_get_stats();
 ```
 
 ### During Maintenance
@@ -369,10 +369,10 @@ SELECT * FROM pgraft_log_get_stats();
 ```sql
 -- Monitor cluster health
 SELECT 
-    pgraft_get_leader() as leader,
-    pgraft_get_term() as term,
+    pgraft.get_leader() as leader,
+    pgraft.get_term() as term,
     COUNT(*) as num_nodes
-FROM pgraft_get_nodes();
+FROM pgraft.get_nodes();
 ```
 
 ## Best Practices
@@ -416,8 +416,8 @@ pgraft prevents split-brain, but you can verify:
 ```bash
 # During partition, check both sides
 # Only one side will have a leader
-psql -h partition1_node -c "SELECT pgraft_is_leader();"
-psql -h partition2_node -c "SELECT pgraft_is_leader();"
+psql -h partition1_node -c "SELECT pgraft.is_leader();"
+psql -h partition2_node -c "SELECT pgraft.is_leader();"
 
 # Only one will return 't'
 ```
@@ -432,17 +432,17 @@ If all nodes crash:
 4. **Verify leader elected**
 
 ```sql
-SELECT pgraft_get_leader();
+SELECT pgraft.get_leader();
 ```
 
 ## Summary
 
 Key operations:
 
-- **Add node**: `pgraft_add_node()` on leader
-- **Remove node**: `pgraft_remove_node()` on leader
-- **Monitor**: `pgraft_get_cluster_status()`, `pgraft_get_nodes()`
-- **Verify leader**: `pgraft_is_leader()`, `pgraft_get_leader()`
+- **Add node**: `pgraft.add_node()` on leader
+- **Remove node**: `pgraft.remove_node()` on leader
+- **Monitor**: `pgraft.get_cluster_status()`, `pgraft.get_nodes()`
+- **Verify leader**: `pgraft.is_leader()`, `pgraft.get_leader()`
 
 Remember: All configuration changes happen on the leader and automatically replicate to followers!
 

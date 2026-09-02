@@ -161,13 +161,13 @@ Create the extension on each node — the cluster forms automatically from the
 CREATE EXTENSION pgraft;
 
 -- Cluster state, leadership, and membership
-SELECT * FROM pgraft_get_cluster_status();
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_cluster_status();
+SELECT * FROM pgraft.get_nodes();
 ```
 
 > [!NOTE]
 > Leader election completes within a few seconds of the cluster starting. Query
-> `pgraft_get_leader()` to confirm a leader has been elected before issuing
+> `pgraft.get_leader()` to confirm a leader has been elected before issuing
 > leader-only operations.
 
 Follow the [quick start guide](https://pgelephant.github.io/pgraft/getting-started/quick-start/)
@@ -182,9 +182,21 @@ the server so the C and Go libraries are reloaded together:
 ALTER EXTENSION pgraft UPDATE TO '2.0.0';
 ```
 
-2.0.0 changes no function signatures, but it does restrict them: functions that
-mutate cluster or key/value state are no longer executable by `PUBLIC`. Grant
-them explicitly to the roles that need them.
+Two things change, and both need attention before you upgrade.
+
+**Every object moved into the `pgraft` schema and lost its `pgraft_` prefix.**
+`pgraft_get_cluster_status()` is now `pgraft.get_cluster_status()`, and so on
+for all 34 functions and 19 views. The upgrade drops the old unqualified
+objects, so update your application first, or at least at the same time. It
+does not use `CASCADE`: if something of yours depends on an old function, the
+upgrade stops rather than dropping your object along with it.
+
+**Argument lists and result columns are unchanged**, so the rename is the only
+edit a caller needs.
+
+**Privileges are stricter.** Functions that mutate cluster or key/value state
+are no longer executable by `PUBLIC`. Grant them explicitly to the roles that
+need them.
 
 ---
 
@@ -193,35 +205,35 @@ them explicitly to the roles that need them.
 ### Cluster status and health
 
 ```sql
-SELECT pgraft_is_leader();                        -- is this node the leader?
-SELECT pgraft_get_leader();                        -- current leader id
-SELECT * FROM pgraft_get_cluster_status();         -- full status
-SELECT * FROM pgraft_get_nodes();                  -- all members
+SELECT pgraft.is_leader();                        -- is this node the leader?
+SELECT pgraft.get_leader();                        -- current leader id
+SELECT * FROM pgraft.get_cluster_status();         -- full status
+SELECT * FROM pgraft.get_nodes();                  -- all members
 
-SELECT * FROM pgraft_log_get_replication_status(); -- replication progress
-SELECT * FROM pgraft_log_get_stats();              -- log statistics
+SELECT * FROM pgraft.log_get_replication_status(); -- replication progress
+SELECT * FROM pgraft.log_get_stats();              -- log statistics
 ```
 
 ### Key/value store (etcd-compatible)
 
 ```sql
-SELECT pgraft_kv_put('app/config', '{"timeout":30,"retries":3}');  -- leader only
-SELECT pgraft_kv_get('app/config');                                -- any node
-SELECT pgraft_kv_list_keys();
-SELECT pgraft_kv_delete('app/config');                             -- leader only
+SELECT pgraft.kv_put('app/config', '{"timeout":30,"retries":3}');  -- leader only
+SELECT pgraft.kv_get('app/config');                                -- any node
+SELECT pgraft.kv_list_keys();
+SELECT pgraft.kv_delete('app/config');                             -- leader only
 ```
 
 ### Dynamic membership
 
 ```sql
-SELECT pgraft_add_node(4, '10.0.1.14', 7004);   -- leader only
-SELECT pgraft_remove_node(4);                     -- leader only
+SELECT pgraft.add_node(4, '10.0.1.14', 7004);   -- leader only
+SELECT pgraft.remove_node(4);                     -- leader only
 ```
 
 > [!WARNING]
-> Write operations — `pgraft_kv_put`, `pgraft_kv_delete`, `pgraft_add_node`, and
-> `pgraft_remove_node` — must be issued on the **leader**. Guard automated jobs
-> with `pgraft_is_leader()` to avoid errors on followers.
+> Write operations — `pgraft.kv_put`, `pgraft.kv_delete`, `pgraft.add_node` and
+> `pgraft.remove_node` — must be issued on the **leader**. Guard automated jobs
+> with `pgraft.is_leader()` to avoid errors on followers.
 
 See the [SQL function reference](https://pgelephant.github.io/pgraft/user-guide/sql-functions/)
 for the complete API.
@@ -341,7 +353,7 @@ SHOW shared_preload_libraries;   -- must include 'pgraft'
 <summary><strong>No leader elected</strong></summary>
 
 ```sql
-SELECT pgraft_get_leader(), pgraft_is_leader();
+SELECT pgraft.get_leader(), pgraft.is_leader();
 ```
 
 Allow a few seconds after cluster start. Confirm that `pgraft.initial_cluster`
@@ -366,7 +378,7 @@ that its `listen_peer_urls` endpoint is reachable from the other nodes.
 <summary><strong>High CPU usage</strong></summary>
 
 ```sql
-SELECT elections_triggered FROM pgraft_get_cluster_status();
+SELECT elections_triggered FROM pgraft.get_cluster_status();
 ```
 
 Repeated elections usually indicate network instability or an

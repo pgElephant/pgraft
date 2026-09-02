@@ -75,17 +75,17 @@ Wait a few seconds for leader election, then check the cluster status:
 
 ```sql
 -- Check cluster status
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 
 -- View all nodes (automatically discovered from initial_cluster)
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 
 -- Check if current node is leader
-SELECT pgraft_is_leader();
+SELECT pgraft.is_leader();
 ```
 
 !!! success "Automatic Node Discovery"
-    Nodes are automatically added to the cluster based on the `initial_cluster` configuration. No manual `pgraft_add_node()` calls are needed for initial setup!
+    Nodes are automatically added to the cluster based on the `initial_cluster` configuration. No manual `pgraft.add_node()` calls are needed for initial setup!
 
 ## Step 6: Verify Cluster Health
 
@@ -93,18 +93,18 @@ On any node, check the cluster status:
 
 ```sql
 -- Get cluster status
-SELECT * FROM pgraft_get_cluster_status();
+SELECT * FROM pgraft.get_cluster_status();
 
 -- Get all nodes
-SELECT * FROM pgraft_get_nodes();
+SELECT * FROM pgraft.get_nodes();
 
 -- Check worker status
-SELECT pgraft_get_worker_state();
+SELECT pgraft.get_worker_state();
 ```
 
 ??? success "Expected Output"
     ```sql
-    SELECT * FROM pgraft_get_nodes();
+    SELECT * FROM pgraft.get_nodes();
     
      node_id |   address   | port | is_leader 
     ---------+-------------+------+-----------
@@ -120,10 +120,10 @@ Run this query to quickly verify your cluster is healthy:
 
 ```sql
 SELECT 
-    pgraft_is_leader() as is_leader,
-    pgraft_get_term() as term,
-    pgraft_get_leader() as leader_id,
-    pgraft_get_worker_state() as worker;
+    pgraft.is_leader() as is_leader,
+    pgraft.get_term() as term,
+    pgraft.get_leader() as leader_id,
+    pgraft.get_worker_state() as worker;
 ```
 
 !!! success "Success"
