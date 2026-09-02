@@ -17,8 +17,8 @@ Welcome! This section will help you get up and running with **pgraft**.
 
 ## Prerequisites
 
-- **PostgreSQL 17 or 18** with development headers
-- **Go 1.21+** for building
+- **PostgreSQL 14 – 18** with development headers
+- **Go 1.23+** for building
 - **GCC** or compatible C compiler
 - **Basic knowledge** of PostgreSQL and distributed systems
 

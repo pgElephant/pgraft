@@ -51,8 +51,8 @@ cd examples
 ### Development Environment
 
 **Prerequisites:**
-- PostgreSQL 17 or 18 with development headers
-- Go 1.21+
+- PostgreSQL 14 – 18 with development headers
+- Go 1.23+
 - GCC or Clang
 - Make
 

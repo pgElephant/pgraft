@@ -5,7 +5,7 @@
 **Raft consensus for distributed PostgreSQL clusters**
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%20%E2%80%93%2018-336791.svg?logo=postgresql&logoColor=white)](https://postgresql.org/)
-[![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8.svg?logo=go&logoColor=white)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8.svg?logo=go&logoColor=white)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-336791.svg)](https://pgelephant.github.io/pgraft/)
 
@@ -46,8 +46,9 @@ native background worker — no external agents or dependencies.
 | macOS | 14 – 18 | Supported |
 
 > [!NOTE]
-> Official release packages are published for PostgreSQL 16, 17, and 18; the
-> extension also builds from source on PostgreSQL 14 and 15.
+> CI builds and smoke-tests every push against PostgreSQL 14 through 18.
+> Official release packages are published for 16, 17 and 18; 14 and 15 are
+> build-from-source.
 
 ---
 
@@ -57,7 +58,7 @@ native background worker — no external agents or dependencies.
 <summary><strong>From source</strong></summary>
 
 ```bash
-# Prerequisites: PostgreSQL 14+, Go 1.21+, json-c, pkg-config
+# Prerequisites: PostgreSQL 14+, Go 1.23+, json-c, pkg-config
 git clone https://github.com/pgelephant/pgraft.git
 cd pgraft
 make
