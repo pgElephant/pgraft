@@ -123,14 +123,14 @@ pgraft_go_load_library(void)
 	}
 
 	/* Determine library path with multiple fallbacks for cross-platform compatibility */
-	lib_path_to_load = go_library_path;
+	lib_path_to_load = pgraft_guc_go_library_path;
 	if (lib_path_to_load == NULL || strlen(lib_path_to_load) == 0)
 	{
 		/* Fallback to pkglibdir if GUC is not set */
 		static char default_path[MAXPGPATH];
 		snprintf(default_path, sizeof(default_path), "%s/%s", PKGLIBDIR, GO_LIB_NAME);
 		lib_path_to_load = default_path;
-		elog(LOG, "pgraft: pgraft.go_library_path GUC is empty, using default path: %s", lib_path_to_load);
+		elog(LOG, "pgraft: pgraft.go_library_path is empty, using default path: %s", lib_path_to_load);
 	}
 
 	/* Verify library exists, with fallback search paths */

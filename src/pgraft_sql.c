@@ -87,22 +87,22 @@ pgraft_init_from_gucs(void)
 	memset(&config, 0, sizeof(pgraft_go_config_t));
 	
 	/* Get basic configuration from etcd-compatible GUCs */
-	config.name = name;
-	config.initial_cluster_state = (strcmp(initial_cluster_state, "new") == 0) ? 1 : 0;
+	config.name = pgraft_guc_name;
+	config.initial_cluster_state = (strcmp(pgraft_guc_initial_cluster_state, "new") == 0) ? 1 : 0;
 	
-	/* Set node_id to 1 as default - the Go layer will assign proper Raft IDs based on initial_cluster order */
+	/* Set node_id to 1 as default - the Go layer will assign proper Raft IDs based on pgraft_guc_initial_cluster order */
 	config.node_id = 1;
 	
-	/* Parse initial_cluster into structured array */
-	elog(INFO, "pgraft_init: parsing initial_cluster='%s', name='%s'", 
-		 initial_cluster ? initial_cluster : "(null)", 
-		 name ? name : "(null)");
+	/* Parse pgraft_guc_initial_cluster into structured array */
+	elog(INFO, "pgraft_init: parsing pgraft_guc_initial_cluster='%s', pgraft_guc_name='%s'", 
+		 pgraft_guc_initial_cluster ? pgraft_guc_initial_cluster : "(null)", 
+		 pgraft_guc_name ? pgraft_guc_name : "(null)");
 	
-	pgraft_parse_initial_cluster(initial_cluster, &cluster_members, &cluster_member_count);
+	pgraft_parse_initial_cluster(pgraft_guc_initial_cluster, &cluster_members, &cluster_member_count);
 	
 	if (cluster_member_count == 0)
 	{
-		elog(ERROR, "pgraft: no cluster members found in initial_cluster");
+		elog(ERROR, "pgraft: no cluster members found in pgraft_guc_initial_cluster");
 		return -1;
 	}
 	
@@ -130,72 +130,72 @@ pgraft_init_from_gucs(void)
 	config.cluster_members = go_members;
 	config.cluster_member_count = cluster_member_count;
 	
-	/* Parse listen_peer_urls into host/port */
-	if (!pgraft_parse_url(listen_peer_urls, &config.listen_peer_host, &config.listen_peer_port))
+	/* Parse pgraft_guc_listen_peer_urls into host/port */
+	if (!pgraft_parse_url(pgraft_guc_listen_peer_urls, &config.listen_peer_host, &config.listen_peer_port))
 	{
-		elog(ERROR, "pgraft: failed to parse listen_peer_urls: %s", listen_peer_urls);
+		elog(ERROR, "pgraft: failed to parse pgraft_guc_listen_peer_urls: %s", pgraft_guc_listen_peer_urls);
 		return -1;
 	}
 	
-	/* Parse listen_client_urls into host/port */
-	if (listen_client_urls && strlen(listen_client_urls) > 0)
+	/* Parse pgraft_guc_listen_client_urls into host/port */
+	if (pgraft_guc_listen_client_urls && strlen(pgraft_guc_listen_client_urls) > 0)
 	{
-		if (!pgraft_parse_url(listen_client_urls, &config.listen_client_host, &config.listen_client_port))
+		if (!pgraft_parse_url(pgraft_guc_listen_client_urls, &config.listen_client_host, &config.listen_client_port))
 		{
-			elog(WARNING, "pgraft: failed to parse listen_client_urls: %s", listen_client_urls);
+			elog(WARNING, "pgraft: failed to parse pgraft_guc_listen_client_urls: %s", pgraft_guc_listen_client_urls);
 		}
 	}
 	
-	/* Parse advertise_client_urls into host/port */
-	if (advertise_client_urls && strlen(advertise_client_urls) > 0)
+	/* Parse pgraft_guc_advertise_client_urls into host/port */
+	if (pgraft_guc_advertise_client_urls && strlen(pgraft_guc_advertise_client_urls) > 0)
 	{
-		if (!pgraft_parse_url(advertise_client_urls, &config.advertise_client_host, &config.advertise_client_port))
+		if (!pgraft_parse_url(pgraft_guc_advertise_client_urls, &config.advertise_client_host, &config.advertise_client_port))
 		{
-			elog(WARNING, "pgraft: failed to parse advertise_client_urls: %s", advertise_client_urls);
+			elog(WARNING, "pgraft: failed to parse pgraft_guc_advertise_client_urls: %s", pgraft_guc_advertise_client_urls);
 		}
 	}
 	
-	/* Parse initial_advertise_peer_urls into host/port */
-	if (initial_advertise_peer_urls && strlen(initial_advertise_peer_urls) > 0)
+	/* Parse pgraft_guc_initial_advertise_peer_urls into host/port */
+	if (pgraft_guc_initial_advertise_peer_urls && strlen(pgraft_guc_initial_advertise_peer_urls) > 0)
 	{
-		if (!pgraft_parse_url(initial_advertise_peer_urls, &config.initial_advertise_peer_host, &config.initial_advertise_peer_port))
+		if (!pgraft_parse_url(pgraft_guc_initial_advertise_peer_urls, &config.initial_advertise_peer_host, &config.initial_advertise_peer_port))
 		{
-			elog(WARNING, "pgraft: failed to parse initial_advertise_peer_urls: %s", initial_advertise_peer_urls);
+			elog(WARNING, "pgraft: failed to parse pgraft_guc_initial_advertise_peer_urls: %s", pgraft_guc_initial_advertise_peer_urls);
 		}
 	}
 	
-	config.election_timeout = election_timeout;
-	config.heartbeat_interval = heartbeat_interval;
-	config.snapshot_interval = snapshot_count;
-	config.quota_backend_bytes = quota_backend_bytes;
-	config.max_request_bytes = max_request_bytes;
-	config.max_snapshots = max_snapshots;
-	config.max_wals = max_wals;
-	config.auto_compaction_retention = atoi(auto_compaction_retention);
-	config.auto_compaction_mode = (strcmp(auto_compaction_mode, "periodic") == 0) ? 1 : 0;
-	config.compaction_batch_limit = compaction_batch_limit;
+	config.election_timeout = pgraft_guc_election_timeout;
+	config.heartbeat_interval = pgraft_guc_heartbeat_interval;
+	config.snapshot_interval = pgraft_guc_snapshot_count;
+	config.quota_backend_bytes = pgraft_guc_quota_backend_bytes;
+	config.max_request_bytes = pgraft_guc_max_request_bytes;
+	config.max_snapshots = pgraft_guc_max_snapshots;
+	config.max_wals = pgraft_guc_max_wals;
+	config.auto_compaction_retention = atoi(pgraft_guc_auto_compaction_retention);
+	config.auto_compaction_mode = (strcmp(pgraft_guc_auto_compaction_mode, "periodic") == 0) ? 1 : 0;
+	config.compaction_batch_limit = pgraft_guc_compaction_batch_limit;
 	
-	config.log_level = log_level;
-	config.log_outputs = log_outputs;
-	config.log_package_levels = log_package_levels;
+	config.log_level = pgraft_guc_log_level;
+	config.log_outputs = pgraft_guc_log_outputs;
+	config.log_package_levels = pgraft_guc_log_package_levels;
 	
-	config.client_cert_auth = client_cert_auth ? 1 : 0;
-	config.trusted_ca_file = trusted_ca_file;
-	config.cert_file = cert_file;
-	config.key_file = key_file;
-	config.client_cert_file = client_cert_file;
-	config.client_key_file = client_key_file;
-	config.peer_trusted_ca_file = peer_trusted_ca_file;
-	config.peer_cert_file = peer_cert_file;
-	config.peer_key_file = peer_key_file;
-	config.peer_client_cert_auth = peer_client_cert_auth ? 1 : 0;
-	config.peer_cert_allowed_cn = peer_cert_allowed_cn;
-	config.peer_cert_allowed_hostname = peer_cert_allowed_hostname ? 1 : 0;
-	config.cipher_suites = cipher_suites;
-	config.cors = cors;
-	config.host_whitelist = host_whitelist;
-	config.listen_metrics_urls = listen_metrics_urls;
-	config.metrics = metrics;
+	config.client_cert_auth = pgraft_guc_client_cert_auth ? 1 : 0;
+	config.trusted_ca_file = pgraft_guc_trusted_ca_file;
+	config.cert_file = pgraft_guc_cert_file;
+	config.key_file = pgraft_guc_key_file;
+	config.client_cert_file = pgraft_guc_client_cert_file;
+	config.client_key_file = pgraft_guc_client_key_file;
+	config.peer_trusted_ca_file = pgraft_guc_peer_trusted_ca_file;
+	config.peer_cert_file = pgraft_guc_peer_cert_file;
+	config.peer_key_file = pgraft_guc_peer_key_file;
+	config.peer_client_cert_auth = pgraft_guc_peer_client_cert_auth ? 1 : 0;
+	config.peer_cert_allowed_cn = pgraft_guc_peer_cert_allowed_cn;
+	config.peer_cert_allowed_hostname = pgraft_guc_peer_cert_allowed_hostname ? 1 : 0;
+	config.cipher_suites = pgraft_guc_cipher_suites;
+	config.cors = pgraft_guc_cors;
+	config.host_whitelist = pgraft_guc_host_whitelist;
+	config.listen_metrics_urls = pgraft_guc_listen_metrics_urls;
+	config.metrics = pgraft_guc_metrics;
 	
 	
 	config.max_log_entries = pgraft_max_log_entries;
@@ -203,34 +203,34 @@ pgraft_init_from_gucs(void)
 	config.max_batch_delay = pgraft_max_batch_delay;
 	
 	/* Use etcd-compatible GUC variables */
-	cluster_id = initial_cluster_token;
+	cluster_id = pgraft_guc_initial_cluster_token;
 	if (!cluster_id || strlen(cluster_id) == 0) {
-		elog(ERROR, "pgraft: initial_cluster_token must be set");
+		elog(ERROR, "pgraft: pgraft_guc_initial_cluster_token must be set");
 		return -1;
 	}
 	config.cluster_id = cluster_id;
 	
 	/* Use etcd-compatible data directory */
-	if (!data_dir || strlen(data_dir) == 0)
+	if (!pgraft_guc_data_dir || strlen(pgraft_guc_data_dir) == 0)
 	{
-		/* Use node name for default data directory (etcd-style) */
-		config.data_dir = psprintf("/tmp/pgraft/%s", name ? name : "node");
+		/* Use node pgraft_guc_name for default data directory (etcd-style) */
+		config.data_dir = psprintf("/tmp/pgraft/%s", pgraft_guc_name ? pgraft_guc_name : "node");
 	}
 	else
 	{
-		config.data_dir = data_dir;
+		config.data_dir = pgraft_guc_data_dir;
 	}
 	
 	/* Validate that we have parsed peer URLs */
 	if (!config.listen_peer_host || strlen(config.listen_peer_host) == 0)
 	{
-		elog(ERROR, "pgraft: listen_peer_urls must be set and valid");
+		elog(ERROR, "pgraft: pgraft_guc_listen_peer_urls must be set and valid");
 		return -1;
 	}
 	
 	if (config.listen_peer_port < 1024 || config.listen_peer_port > 65535)
 	{
-		elog(ERROR, "pgraft: listen_peer_urls port must be between 1024 and 65535 (got %d)", config.listen_peer_port);
+		elog(ERROR, "pgraft: pgraft_guc_listen_peer_urls port must be between 1024 and 65535 (got %d)", config.listen_peer_port);
 		return -1;
 	}
 	
