@@ -268,21 +268,36 @@ pgraft_json_create_kv_operation(pgraft_kv_op_type_t op_type, const char *key, co
 	int64_t timestamp;
 	size_t json_len;
 	
+	/*
+	 * Report failures via the return value only.
+	 *
+	 * The background worker calls this from its command loop and deliberately
+	 * handles a -1 return as "fail just this command"; raising ERROR here
+	 * instead unwinds out of that loop and restarts the whole worker, which is
+	 * exactly what the caller is trying to avoid.  Note also that every error
+	 * path must release json_obj first - elog(ERROR) used to jump out before
+	 * the json_object_put(), leaking a json-c object off the palloc heap.
+	 */
+	if (!key) {
+		elog(WARNING, "pgraft_json: KV operation requires a key");
+		return -1;
+	}
+
 	/* Create JSON object */
 	json_obj = json_object_new_object();
 	if (!json_obj) {
-		elog(ERROR, "pgraft_json: failed to create JSON object");
+		elog(WARNING, "pgraft_json: failed to create JSON object");
 		return -1;
 	}
-	
+
 	/* Set operation type */
 	if (op_type == PGRAFT_KV_PUT) {
 		type_obj = json_object_new_string("kv_put");
 	} else if (op_type == PGRAFT_KV_DELETE) {
 		type_obj = json_object_new_string("kv_delete");
 	} else {
-		elog(ERROR, "pgraft_json: unknown KV operation type: %d", op_type);
 		json_object_put(json_obj);
+		elog(WARNING, "pgraft_json: unknown KV operation type: %d", op_type);
 		return -1;
 	}
 	json_object_object_add(json_obj, "type", type_obj);
@@ -303,23 +318,24 @@ pgraft_json_create_kv_operation(pgraft_kv_op_type_t op_type, const char *key, co
 	json_object_object_add(json_obj, "timestamp", timestamp_obj);
 	
 	/* Set client ID */
-	client_id_obj = json_object_new_string(client_id);
+	client_id_obj = json_object_new_string(client_id ? client_id : "");
 	json_object_object_add(json_obj, "client_id", client_id_obj);
 	
 	/* Convert to string */
 	json_string = json_object_to_json_string(json_obj);
 	
 	if (!json_string) {
-		elog(ERROR, "pgraft_json: failed to convert JSON to string");
 		json_object_put(json_obj);
+		elog(WARNING, "pgraft_json: failed to convert JSON to string");
 		return -1;
 	}
 	
 	/* Copy to buffer with bounds checking */
 	json_len = strlen(json_string);
 	if (json_len >= buffer_size) {
-		elog(ERROR, "pgraft_json: KV operation JSON string too long for buffer (len=%zu, max=%zu)", json_len, buffer_size - 1);
 		json_object_put(json_obj);
+		elog(WARNING, "pgraft_json: KV operation JSON string too long for buffer (len=%zu, max=%zu)",
+			 json_len, buffer_size - 1);
 		return -1;
 	}
 	strncpy(json_buffer, json_string, buffer_size - 1);
@@ -348,14 +364,14 @@ pgraft_json_parse_kv_operation(const char *json_data, size_t len, int *op_type, 
 	/* Parse JSON */
 	json_obj = json_tokener_parse(json_data);
 	if (!json_obj) {
-		elog(ERROR, "pgraft_json: failed to parse JSON");
+		elog(WARNING, "pgraft_json: failed to parse JSON");
 		return -1;
 	}
 	
 	/* Extract type */
 	if (!json_object_object_get_ex(json_obj, "type", &type_obj)) {
-		elog(ERROR, "pgraft_json: missing 'type' field in JSON");
 		json_object_put(json_obj);
+		elog(WARNING, "pgraft_json: missing 'type' field in JSON");
 		return -1;
 	}
 	type_str = json_object_get_string(type_obj);
@@ -367,8 +383,8 @@ pgraft_json_parse_kv_operation(const char *json_data, size_t len, int *op_type, 
 
 	/* Extract key */
 	if (!json_object_object_get_ex(json_obj, "key", &key_obj)) {
-		elog(ERROR, "pgraft_json: missing 'key' field in JSON");
 		json_object_put(json_obj);
+		elog(WARNING, "pgraft_json: missing 'key' field in JSON");
 		return -1;
 	}
 	key_str = json_object_get_string(key_obj);
@@ -384,8 +400,8 @@ pgraft_json_parse_kv_operation(const char *json_data, size_t len, int *op_type, 
 		
 		/* Extract value for PUT operations */
 		if (!json_object_object_get_ex(json_obj, "value", &value_obj)) {
-			elog(ERROR, "pgraft_json: missing 'value' field in PUT operation");
 			json_object_put(json_obj);
+			elog(WARNING, "pgraft_json: missing 'value' field in PUT operation");
 			return -1;
 		}
 		value_str = json_object_get_string(value_obj);
@@ -399,8 +415,8 @@ pgraft_json_parse_kv_operation(const char *json_data, size_t len, int *op_type, 
 		*op_type = PGRAFT_KV_DELETE;
 		*value = NULL; /* DELETE operations don't have values */
 	} else {
-		elog(ERROR, "pgraft_json: unknown operation type: %s", type_str);
 		json_object_put(json_obj);
+		elog(WARNING, "pgraft_json: unknown operation type: %s", type_str);
 		return -1;
 	}
 	
@@ -431,7 +447,7 @@ pgraft_json_create_kv_stats(pgraft_kv_store_t *stats, char *json_buffer, size_t 
 	/* Create JSON object */
 	json_obj = json_object_new_object();
 	if (!json_obj) {
-		elog(ERROR, "pgraft_json: failed to create JSON object");
+		elog(WARNING, "pgraft_json: failed to create JSON object");
 		return -1;
 	}
 	
@@ -457,15 +473,15 @@ pgraft_json_create_kv_stats(pgraft_kv_store_t *stats, char *json_buffer, size_t 
 	/* Convert to string */
 	json_string = json_object_to_json_string(json_obj);
 	if (!json_string) {
-		elog(ERROR, "pgraft_json: failed to convert JSON to string");
 		json_object_put(json_obj);
+		elog(WARNING, "pgraft_json: failed to convert JSON to string");
 		return -1;
 	}
 	
 	/* Copy to buffer */
 	if (strlen(json_string) >= buffer_size) {
-		elog(ERROR, "pgraft_json: JSON string too long for buffer");
 		json_object_put(json_obj);
+		elog(WARNING, "pgraft_json: JSON string too long for buffer");
 		return -1;
 	}
 	strcpy(json_buffer, json_string);
@@ -490,7 +506,7 @@ pgraft_json_create_key_list(pgraft_kv_store_t *store, char *json_buffer, size_t 
 	/* Create JSON array */
 	json_array = json_object_new_array();
 	if (!json_array) {
-		elog(ERROR, "pgraft_json: failed to create JSON array");
+		elog(WARNING, "pgraft_json: failed to create JSON array");
 		return -1;
 	}
 	
@@ -505,15 +521,15 @@ pgraft_json_create_key_list(pgraft_kv_store_t *store, char *json_buffer, size_t 
 	/* Convert to string */
 	json_string = json_object_to_json_string(json_array);
 	if (!json_string) {
-		elog(ERROR, "pgraft_json: failed to convert JSON array to string");
 		json_object_put(json_array);
+		elog(WARNING, "pgraft_json: failed to convert JSON array to string");
 		return -1;
 	}
 	
 	/* Copy to buffer */
 	if (strlen(json_string) >= buffer_size) {
-		elog(ERROR, "pgraft_json: JSON array too long for buffer");
 		json_object_put(json_array);
+		elog(WARNING, "pgraft_json: JSON array too long for buffer");
 		return -1;
 	}
 	strcpy(json_buffer, json_string);

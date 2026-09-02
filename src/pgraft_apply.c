@@ -49,13 +49,14 @@ pgraft_apply_entry_to_postgres(uint64 raft_index, const char *data, size_t len)
 	MemoryContext oldcontext;
 	MemoryContext apply_context;
 
-	elog(LOG, "pgraft: applying raft entry %lu to PostgreSQL (len=%zu)", raft_index, len);
+	elog(DEBUG1, "pgraft: applying raft entry " UINT64_FORMAT " to PostgreSQL (len=%zu)",
+		 raft_index, len);
 
 	/* Defensive: nothing to apply for empty/NULL payloads (e.g. Raft no-op
 	 * entries committed on leader election).  Avoid dereferencing data[0]. */
 	if (data == NULL || len == 0)
 	{
-		elog(DEBUG1, "pgraft: skipping empty raft entry %lu", raft_index);
+		elog(DEBUG1, "pgraft: skipping empty raft entry " UINT64_FORMAT, raft_index);
 		pgraft_record_applied_index(raft_index);
 		return 0;
 	}
@@ -82,17 +83,41 @@ pgraft_apply_entry_to_postgres(uint64 raft_index, const char *data, size_t len)
 		return ret;
 	}
 
-	/* Parse Raft entry for SQL operations */
-	entry = pgraft_parse_log_entry(data, len);
-	if (entry == NULL)
+	/*
+	 * Everything below replicates SQL through SPI, which requires a database
+	 * connection and an open transaction.  The pgraft background worker
+	 * registers with BGWORKER_SHMEM_ACCESS only - it never calls
+	 * BackgroundWorkerInitializeConnection() and never starts a transaction -
+	 * so GetTransactionSnapshot()/SPI_connect() below cannot legally run in
+	 * this process.  Refuse explicitly instead of crashing on the first
+	 * non-JSON entry that shows up.
+	 *
+	 * Note this is also the only reason arbitrary replicated SQL is not being
+	 * executed here; if SQL replication is ever wired up, the entry's origin
+	 * and the role it should run as both need to be established first.
+	 */
+	if (!IsTransactionState())
 	{
-		elog(WARNING, "pgraft: failed to parse raft entry %lu", raft_index);
+		elog(WARNING, "pgraft: cannot apply SQL raft entry " UINT64_FORMAT
+			 ": the pgraft worker has no database connection "
+			 "(only shared-memory key/value entries can be applied)",
+			 raft_index);
 		MemoryContextSwitchTo(oldcontext);
 		MemoryContextDelete(apply_context);
 		return -1;
 	}
 
-	elog(DEBUG1, "pgraft: parsed entry %lu: op=%d, sql='%s'",
+	/* Parse Raft entry for SQL operations */
+	entry = pgraft_parse_log_entry(data, len);
+	if (entry == NULL)
+	{
+		elog(WARNING, "pgraft: failed to parse raft entry " UINT64_FORMAT, raft_index);
+		MemoryContextSwitchTo(oldcontext);
+		MemoryContextDelete(apply_context);
+		return -1;
+	}
+
+	elog(DEBUG1, "pgraft: parsed entry " UINT64_FORMAT ": op=%d, sql='%s'",
 		 raft_index, entry->op, entry->sql);
 
 	/* Set up snapshot if needed (for consistency) */
@@ -105,7 +130,7 @@ pgraft_apply_entry_to_postgres(uint64 raft_index, const char *data, size_t len)
 	/* Connect to SPI */
 	if (SPI_connect() != SPI_OK_CONNECT)
 	{
-		elog(WARNING, "pgraft: SPI_connect failed for entry %lu", raft_index);
+		elog(WARNING, "pgraft: SPI_connect failed for entry " UINT64_FORMAT, raft_index);
 		if (push_active_snap)
 			PopActiveSnapshot();
 		MemoryContextSwitchTo(oldcontext);
@@ -118,7 +143,7 @@ pgraft_apply_entry_to_postgres(uint64 raft_index, const char *data, size_t len)
 
 	if (ret < 0)
 	{
-		elog(WARNING, "pgraft: SPI_execute failed for entry %lu: %s (ret=%d)",
+		elog(WARNING, "pgraft: SPI_execute failed for entry " UINT64_FORMAT ": %s (ret=%d)",
 			 raft_index, entry->sql, ret);
 		SPI_finish();
 		if (push_active_snap)
@@ -137,7 +162,7 @@ pgraft_apply_entry_to_postgres(uint64 raft_index, const char *data, size_t len)
 	if (push_active_snap)
 		PopActiveSnapshot();
 
-	elog(LOG, "pgraft: successfully applied entry %lu: %s (rows=%lu)",
+	elog(DEBUG1, "pgraft: applied entry " UINT64_FORMAT ": %s (rows=%lu)",
 		 raft_index, entry->sql, (unsigned long) SPI_processed);
 
 	/* Clean up memory context */
@@ -373,7 +398,7 @@ pgraft_apply_kv_operation(uint64 raft_index, const char *json_data, size_t len)
 	int op_type = -1;
 	int result = 0;
 	
-	elog(LOG, "pgraft: applying KV operation from JSON at index %lu", raft_index);
+	elog(DEBUG1, "pgraft: applying KV operation from raft entry " UINT64_FORMAT, raft_index);
 	
 	/* Parse JSON to extract operation details using json-c */
 	if (pgraft_json_parse_kv_operation(json_data, len, &op_type, &key, &value) != 0) {
