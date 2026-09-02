@@ -60,6 +60,10 @@ static pgraft_go_free_string_func pgraft_go_free_string_ptr = NULL;
 static pgraft_go_update_cluster_state_func pgraft_go_update_cluster_state_ptr = NULL;
 static pgraft_go_replicate_log_entry_func pgraft_go_replicate_log_entry_ptr = NULL;
 
+/* Resolved lazily on first tick; cleared by pgraft_go_reset_symbols(). */
+typedef int (*pgraft_go_tick_func) (void);
+static pgraft_go_tick_func pgraft_go_tick_ptr = NULL;
+
 /*
  * Reset every cached function pointer to NULL.
  *
@@ -93,6 +97,7 @@ pgraft_go_reset_symbols(void)
 	pgraft_go_free_string_ptr = NULL;
 	pgraft_go_update_cluster_state_ptr = NULL;
 	pgraft_go_replicate_log_entry_ptr = NULL;
+	pgraft_go_tick_ptr = NULL;
 }
 
 /*
@@ -475,19 +480,22 @@ pgraft_go_connect_to_peers(void)
 {
 	typedef int (*connect_peers_func)(void);
 	connect_peers_func func;
-	
+	char	   *error;
+
 	if (!pgraft_go_is_loaded()) {
 		elog(WARNING, "pgraft: go library not loaded, cannot connect to peers");
 		return -1;
 	}
-	
+
 	dlerror();  /* Clear any existing error */
 	func = (connect_peers_func) dlsym(go_lib_handle, "pgraft_go_connect_to_peers");
 	if (func == NULL) {
-		elog(WARNING, "pgraft: pgraft_go_connect_to_peers function not found: %s", dlerror());
+		error = dlerror();
+		elog(WARNING, "pgraft: pgraft_go_connect_to_peers function not found: %s",
+			 error ? error : "unknown error");
 		return -1;
 	}
-	
+
 	return func();
 }
 
@@ -766,36 +774,33 @@ pgraft_go_trigger_heartbeat(void)
 int
 pgraft_go_tick(void)
 {
-	typedef int (*pgraft_go_tick_func)(void);
-	static pgraft_go_tick_func tick_func = NULL;
-	static bool load_attempted = false;
-	char *error;
-	
+	char	   *error;
+
 	if (!pgraft_go_is_loaded())
-	{
 		return -1;
-	}
-	
-	if (tick_func == NULL && !load_attempted)
+
+	/*
+	 * Resolve once and cache in a file-scope pointer that
+	 * pgraft_go_reset_symbols() clears.  It used to be cached in a function
+	 * static, which unload/reload left dangling into the unmapped library -
+	 * and a one-shot "load_attempted" flag meant a single failed lookup
+	 * disabled ticking for the life of the process.
+	 */
+	if (pgraft_go_tick_ptr == NULL)
 	{
-		load_attempted = true;
 		dlerror();
-		tick_func = (pgraft_go_tick_func) dlsym(go_lib_handle, "pgraft_go_tick");
-		if (tick_func == NULL)
+		pgraft_go_tick_ptr = (pgraft_go_tick_func) dlsym(go_lib_handle, "pgraft_go_tick");
+		if (pgraft_go_tick_ptr == NULL)
 		{
 			error = dlerror();
-			elog(WARNING, "pgraft: failed to load pgraft_go_tick: %s", error ? error : "unknown error");
+			elog(WARNING, "pgraft: failed to load pgraft_go_tick: %s",
+				 error ? error : "unknown error");
 			return -1;
 		}
 		elog(LOG, "pgraft: pgraft_go_tick function loaded successfully");
 	}
-	
-	if (tick_func == NULL)
-	{
-		return -1;
-	}
-	
-	return tick_func();
+
+	return pgraft_go_tick_ptr();
 }
 
 int
