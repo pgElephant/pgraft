@@ -226,7 +226,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL);
 
-	DefineCustomIntVariable("quota_backend_bytes",
+	DefineCustomIntVariable("pgraft.quota_backend_bytes",
 							"Raise alarm when backend size exceeds the given quota (same as etcd quota-backend-bytes)",
 							"Soft limit for backend storage in bytes",
 							&quota_backend_bytes,
@@ -239,7 +239,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL);
 
-	DefineCustomIntVariable("max_request_bytes",
+	DefineCustomIntVariable("pgraft.max_request_bytes",
 							"Maximum client request size in bytes (same as etcd max-request-bytes)",
 							"Maximum size of request that server will accept",
 							&max_request_bytes,
@@ -268,7 +268,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL);
 
-	DefineCustomStringVariable("log_outputs",
+	DefineCustomStringVariable("pgraft.log_outputs",
 							   "Specify 'stdout' or 'stderr' to skip journald logging even when running under systemd (same as etcd log-outputs)",
 							   "Comma-separated list of log output targets",
 							   &log_outputs,
@@ -279,7 +279,7 @@ pgraft_register_guc_variables(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomStringVariable("log_package_levels",
+	DefineCustomStringVariable("pgraft.log_package_levels",
 							   "Specify a particular log level for each etcd package (same as etcd log-package-levels)",
 							   "Example: 'etcdmain=CRITICAL,etcdserver=DEBUG'",
 							   &log_package_levels,
@@ -295,7 +295,7 @@ pgraft_register_guc_variables(void)
 	 * Exact same parameter names and types as etcd
 	 * ======================================== */
 
-	DefineCustomIntVariable("max_snapshots",
+	DefineCustomIntVariable("pgraft.max_snapshots",
 							"Maximum number of snapshot files to retain (same as etcd max-snapshots)",
 							"Number of snapshot files to retain",
 							&max_snapshots,
@@ -308,7 +308,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL);
 
-	DefineCustomIntVariable("max_wals",
+	DefineCustomIntVariable("pgraft.max_wals",
 							"Maximum number of WAL files to retain (same as etcd max-wals)",
 							"Number of WAL files to retain",
 							&max_wals,
@@ -321,7 +321,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL);
 
-	DefineCustomStringVariable("auto_compaction_retention",
+	DefineCustomStringVariable("pgraft.auto_compaction_retention",
 							   "Auto compaction retention length (same as etcd auto-compaction-retention)",
 							   "Auto compaction retention length",
 							   &auto_compaction_retention,
@@ -332,7 +332,7 @@ pgraft_register_guc_variables(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomStringVariable("auto_compaction_mode",
+	DefineCustomStringVariable("pgraft.auto_compaction_mode",
 							   "Interpretation of 'auto-compaction-retention' (same as etcd auto-compaction-mode)",
 							   "Interpretation of auto-compaction-retention",
 							   &auto_compaction_mode,
@@ -343,7 +343,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							   NULL);
 
-	DefineCustomIntVariable("compaction_batch_limit",
+	DefineCustomIntVariable("pgraft.compaction_batch_limit",
 							"Maximum number of keys to compact in one batch (same as etcd experimental-compaction-batch-limit)",
 							"Maximum number of keys to compact in one batch",
 							&compaction_batch_limit,
@@ -357,7 +357,7 @@ pgraft_register_guc_variables(void)
 							NULL);
 
 	/* Security settings - exact etcd names */
-	DefineCustomBoolVariable("client_cert_auth",
+	DefineCustomBoolVariable("pgraft.client_cert_auth",
 							"Enable client cert authentication (same as etcd client-cert-auth)",
 							"Require authentication for cluster communication",
 							&client_cert_auth,
@@ -368,7 +368,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL);
 
-	DefineCustomStringVariable("trusted_ca_file",
+	DefineCustomStringVariable("pgraft.trusted_ca_file",
 							   "Path to the client server TLS CA file (same as etcd trusted-ca-file)",
 							   "Path to the client server TLS CA file",
 							   &trusted_ca_file,
@@ -379,7 +379,7 @@ pgraft_register_guc_variables(void)
                            NULL,
                            NULL);
 
-	DefineCustomStringVariable("cert_file",
+	DefineCustomStringVariable("pgraft.cert_file",
 							   "Path to the client server TLS cert file (same as etcd cert-file)",
 							   "Path to the client server TLS cert file",
 							   &cert_file,
@@ -390,7 +390,7 @@ pgraft_register_guc_variables(void)
                               NULL,
                               NULL);
 
-	DefineCustomStringVariable("key_file",
+	DefineCustomStringVariable("pgraft.key_file",
 							   "Path to the client server TLS key file (same as etcd key-file)",
 							   "Path to the client server TLS key file",
 							   &key_file,
@@ -401,7 +401,7 @@ pgraft_register_guc_variables(void)
                            NULL,
                            NULL);
 
-	DefineCustomStringVariable("client_cert_file",
+	DefineCustomStringVariable("pgraft.client_cert_file",
 							   "Path to the client server TLS cert file (same as etcd client-cert-file)",
 							   "Path to the client server TLS cert file",
 							   &client_cert_file,
@@ -412,7 +412,7 @@ pgraft_register_guc_variables(void)
                               NULL,
                               NULL);
 
-	DefineCustomStringVariable("client_key_file",
+	DefineCustomStringVariable("pgraft.client_key_file",
 							   "Path to the client server TLS key file (same as etcd client-key-file)",
 							   "Path to the client server TLS key file",
 							   &client_key_file,
@@ -423,7 +423,7 @@ pgraft_register_guc_variables(void)
                             NULL,
                             NULL);
 
-	DefineCustomStringVariable("peer_trusted_ca_file",
+	DefineCustomStringVariable("pgraft.peer_trusted_ca_file",
 							   "Path to the peer server TLS CA file (same as etcd peer-trusted-ca-file)",
 							   "Path to the peer server TLS CA file",
 							   &peer_trusted_ca_file,
@@ -434,7 +434,7 @@ pgraft_register_guc_variables(void)
                               NULL,
                               NULL);
 
-	DefineCustomStringVariable("peer_cert_file",
+	DefineCustomStringVariable("pgraft.peer_cert_file",
 							   "Path to the peer server TLS cert file (same as etcd peer-cert-file)",
 							   "Path to the peer server TLS cert file",
 							   &peer_cert_file,
@@ -445,7 +445,7 @@ pgraft_register_guc_variables(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomStringVariable("peer_key_file",
+	DefineCustomStringVariable("pgraft.peer_key_file",
 							   "Path to the peer server TLS key file (same as etcd peer-key-file)",
 							   "Path to the peer server TLS key file",
 							   &peer_key_file,
@@ -456,7 +456,7 @@ pgraft_register_guc_variables(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomBoolVariable("peer_client_cert_auth",
+	DefineCustomBoolVariable("pgraft.peer_client_cert_auth",
 							"Enable peer client cert authentication (same as etcd peer-client-cert-auth)",
 							"Require authentication for peer communication",
 							&peer_client_cert_auth,
@@ -467,7 +467,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL);
 
-	DefineCustomStringVariable("peer_cert_allowed_cn",
+	DefineCustomStringVariable("pgraft.peer_cert_allowed_cn",
 							   "Allowed CN for peer certs (same as etcd peer-cert-allowed-cn)",
 							   "Allowed CN for peer certs",
 							   &peer_cert_allowed_cn,
@@ -478,7 +478,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							   NULL);
 
-	DefineCustomBoolVariable("peer_cert_allowed_hostname",
+	DefineCustomBoolVariable("pgraft.peer_cert_allowed_hostname",
 							"Allowed hostname for peer certs (same as etcd peer-cert-allowed-hostname)",
 							"Allowed hostname for peer certs",
 							&peer_cert_allowed_hostname,
@@ -489,7 +489,7 @@ pgraft_register_guc_variables(void)
 							NULL,
 							NULL);
 
-	DefineCustomStringVariable("cipher_suites",
+	DefineCustomStringVariable("pgraft.cipher_suites",
 							   "Comma-separated list of supported cipher suites (same as etcd cipher-suites)",
 							   "Comma-separated list of supported cipher suites",
 							   &cipher_suites,
@@ -500,7 +500,7 @@ pgraft_register_guc_variables(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomStringVariable("cors",
+	DefineCustomStringVariable("pgraft.cors",
 							   "Comma-separated whitelist of origins for CORS (same as etcd cors)",
 							   "Comma-separated whitelist of origins for CORS",
 							   &cors,
@@ -511,7 +511,7 @@ pgraft_register_guc_variables(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomStringVariable("host_whitelist",
+	DefineCustomStringVariable("pgraft.host_whitelist",
 							   "Comma-separated whitelist of origins for CORS (same as etcd host-whitelist)",
 							   "Comma-separated whitelist of origins for CORS",
 							   &host_whitelist,
@@ -523,7 +523,7 @@ pgraft_register_guc_variables(void)
 							   NULL);
 
 	/* Monitoring settings - exact etcd names */
-	DefineCustomStringVariable("listen_metrics_urls",
+	DefineCustomStringVariable("pgraft.listen_metrics_urls",
 							   "List of URLs to listen on for metrics (same as etcd listen-metrics-urls)",
 							   "List of URLs to listen on for metrics",
 							   &listen_metrics_urls,
@@ -534,7 +534,7 @@ pgraft_register_guc_variables(void)
 							   NULL,
 							   NULL);
 
-	DefineCustomStringVariable("metrics",
+	DefineCustomStringVariable("pgraft.metrics",
 							   "Set of metrics to expose (same as etcd metrics)",
 							   "Set of metrics to expose",
 							   &metrics,
