@@ -273,13 +273,14 @@ pgraft_record_applied_index(uint64 index)
 		return;
 	}
 
-	/* Guard the worker-state field with the worker state's OWN mutex (not the
-	 * cluster mutex, which lives in a different shared-memory struct). */
-	SpinLockAcquire(&worker_state->mutex);
-	worker_state->last_applied_index = index;
-	SpinLockRelease(&worker_state->mutex);
+	/*
+	 * Plain atomic store: the field is not covered by the worker-state
+	 * spinlock (which guards the command/status queues), and a single 64-bit
+	 * counter needs no lock of its own.
+	 */
+	pg_atomic_write_u64(&worker_state->last_applied_index, index);
 
-	elog(DEBUG2, "pgraft: recorded applied index %lu in shared memory", index);
+	elog(DEBUG2, "pgraft: recorded applied index " UINT64_FORMAT " in shared memory", index);
 }
 
 /*
@@ -297,10 +298,7 @@ pgraft_get_applied_index(void)
 		return 0;
 	}
 
-	/* Guard with the worker state's own mutex (matches pgraft_record_applied_index). */
-	SpinLockAcquire(&worker_state->mutex);
-	last_applied = worker_state->last_applied_index;
-	SpinLockRelease(&worker_state->mutex);
+	last_applied = pg_atomic_read_u64(&worker_state->last_applied_index);
 
 	return last_applied;
 }

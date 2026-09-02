@@ -9,6 +9,8 @@
  */
 
 #include "postgres.h"
+#include "miscadmin.h"
+#include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
 #include "utils/elog.h"
@@ -29,7 +31,9 @@ void
 pgraft_log_init_shared_memory(void)
 {
 	bool		found;
-	
+
+	Assert(LWLockHeldByMe(AddinShmemInitLock));
+
 	elog(INFO, "pgraft: initializing log replication shared memory");
 	
 	/* Allocate shared memory */
@@ -71,11 +75,13 @@ pgraft_log_init_shared_memory(void)
 pgraft_log_state_t *
 pgraft_log_get_shared_memory(void)
 {
+	/* Pure attach; allocation happens once in the shmem startup hook. */
 	if (g_log_state == NULL)
-	{
-		/* Initialize shared memory when first accessed */
-		pgraft_log_init_shared_memory();
-	}
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pgraft shared memory is not initialized"),
+				 errhint("pgraft must be listed in shared_preload_libraries.")));
+
 	return g_log_state;
 }
 

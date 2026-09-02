@@ -71,6 +71,14 @@ static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
 /*
+ * Background worker state in shared memory.  Set once by
+ * pgraft_worker_init_shared_memory() from the shmem startup hook; inherited by
+ * every forked child, and re-established per backend under EXEC_BACKEND
+ * because the hook runs again there.
+ */
+static pgraft_worker_state_t *g_worker_state = NULL;
+
+/*
  * Shared memory request hook (PG15+)
  */
 #if PG_VERSION_NUM >= 150000
@@ -107,15 +115,39 @@ pgraft_shmem_request_hook(void)
 static void
 pgraft_shmem_startup_hook(void)
 {
+	/*
+	 * Chain to whoever installed a startup hook before us.  Without this,
+	 * every extension listed earlier in shared_preload_libraries silently
+	 * loses its shared memory initialization: our hook becomes the head of
+	 * the chain and theirs is never reached, so they go on to dereference
+	 * memory that was never set up.  The request hook above already chains;
+	 * this one must too, or the pair is asymmetric and the request half is
+	 * the only reason the segment is even the right size.
+	 */
+	if (prev_shmem_startup_hook)
+		prev_shmem_startup_hook();
+
 	elog(LOG, "pgraft: shared memory startup hook called");
-	
-	/* Initialize shared memory structures */
+
+	/*
+	 * Every ShmemInitStruct() below follows the "look it up, and initialize it
+	 * if we created it" pattern, which is only safe while AddinShmemInitLock
+	 * is held exclusively.  Without it two processes can race: one gets
+	 * found == false and starts initializing while the other gets
+	 * found == true and immediately uses a spinlock that SpinLockInit() has
+	 * not reached yet.
+	 */
+	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+
 	pgraft_core_init_shared_memory();
+	pgraft_state_init_shared_memory();
 	pgraft_go_init_shared_memory();
 	pgraft_log_init_shared_memory();
 	pgraft_kv_init_shared_memory();
 	pgraft_worker_init_shared_memory();
-	
+
+	LWLockRelease(AddinShmemInitLock);
+
 	elog(LOG, "pgraft: all shared memory structures initialized");
 }
 
@@ -304,21 +336,13 @@ pgraft_main(Datum main_arg)
 	}
 	elog(LOG, "pgraft: background worker peer connections initiated");
 	
-	BackgroundWorkerUnblockSignals();
-	elog(LOG, "pgraft: background worker signal handling set up");
-	
-	state = pgraft_worker_get_state();
-	if (state == NULL)
-	{
-		elog(ERROR, "pgraft: failed to get worker state in background worker");
-		return;
-	}
-	elog(LOG, "pgraft: worker state obtained successfully");
-
-	/* Populate worker state with node information from GUC settings */
+	/*
+	 * Populate worker state with node information from GUC settings.  The
+	 * address is filled in for real by pgraft_update_shared_memory_from_go();
+	 * pgraft.name is this member's name, not its address, so do not put it
+	 * here.
+	 */
 	state->node_id = 0; /* Will be set by pgraft_update_shared_memory_from_go */
-	strncpy(state->address, name ? name : "unknown", sizeof(state->address) - 1);
-	state->address[sizeof(state->address) - 1] = '\0';
 	state->port = 0; /* Will be populated from configuration */
 	state->status = WORKER_STATUS_RUNNING;
 	elog(LOG, "pgraft: worker status set to RUNNING");
@@ -635,45 +659,76 @@ pgraft_main(Datum main_arg)
 }
 
 /*
- * Get worker state from shared memory
+ * Allocate and initialize the background worker state in shared memory.
+ *
+ * Called from pgraft_shmem_startup_hook() with AddinShmemInitLock held.  This
+ * used to be a no-op stub, which meant the (multi-megabyte) worker state -
+ * including the command and apply queues - was never created at startup and
+ * instead got built lazily by whichever process happened to touch it first,
+ * with no lock and no ordering guarantees.
+ */
+void
+pgraft_worker_init_shared_memory(void)
+{
+	bool		found;
+
+	Assert(LWLockHeldByMe(AddinShmemInitLock));
+
+	g_worker_state = (pgraft_worker_state_t *) ShmemInitStruct("pgraft_worker_state",
+															   sizeof(pgraft_worker_state_t),
+															   &found);
+	if (!found)
+	{
+		memset(g_worker_state, 0, sizeof(pgraft_worker_state_t));
+
+		g_worker_state->node_id = 0;
+		g_worker_state->port = 0;
+		strlcpy(g_worker_state->address, "127.0.0.1", sizeof(g_worker_state->address));
+		g_worker_state->status = WORKER_STATUS_STOPPED;
+
+		/* Command/status queue spinlock and command id source */
+		SpinLockInit(&g_worker_state->mutex);
+		g_worker_state->next_command_id = 1;
+
+		g_worker_state->command_head = 0;
+		g_worker_state->command_tail = 0;
+		g_worker_state->command_count = 0;
+		g_worker_state->status_head = 0;
+		g_worker_state->status_tail = 0;
+		g_worker_state->status_count = 0;
+
+		/* Lock-free apply ring (see pgraft_core.h) */
+		pg_atomic_init_u64(&g_worker_state->apply_write, 0);
+		pg_atomic_init_u64(&g_worker_state->apply_read, 0);
+		pg_atomic_init_u64(&g_worker_state->apply_dropped_full, 0);
+		pg_atomic_init_u64(&g_worker_state->apply_dropped_size, 0);
+		pg_atomic_init_u64(&g_worker_state->apply_dropped_detached, 0);
+		pg_atomic_init_u64(&g_worker_state->last_applied_index, 0);
+
+		elog(LOG, "pgraft: worker state shared memory initialized");
+	}
+	else
+		elog(LOG, "pgraft: worker state shared memory already exists");
+}
+
+/*
+ * Get worker state from shared memory.
+ *
+ * Pure attach: the segment is created once, in the shmem startup hook.  If the
+ * pointer is unset the extension was not loaded via shared_preload_libraries,
+ * in which case there is no shared memory to attach to and nothing we can
+ * usefully allocate here.
  */
 pgraft_worker_state_t *
 pgraft_worker_get_state(void)
 {
-	static pgraft_worker_state_t *worker_state = NULL;
-	bool found;
-	
-	if (worker_state == NULL) {
-		worker_state = (pgraft_worker_state_t *) ShmemInitStruct("pgraft_worker_state",
-																 sizeof(pgraft_worker_state_t),
-																 &found);
-		if (!found) {
-			/* Initialize worker state */
-			worker_state->node_id = 0;
-			worker_state->port = 0;
-			strlcpy(worker_state->address, "127.0.0.1", sizeof(worker_state->address));
-			worker_state->status = WORKER_STATUS_STOPPED;
+	if (g_worker_state == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pgraft shared memory is not initialized"),
+				 errhint("pgraft must be listed in shared_preload_libraries.")));
 
-			/* Initialize the queue spinlock and command id source */
-			SpinLockInit(&worker_state->mutex);
-			worker_state->next_command_id = 1;
-
-			/* Initialize circular buffers */
-			worker_state->command_head = 0;
-			worker_state->command_tail = 0;
-			worker_state->command_count = 0;
-			worker_state->status_head = 0;
-			worker_state->status_tail = 0;
-			worker_state->status_count = 0;
-
-			/* Initialize apply queue */
-			worker_state->apply_head = 0;
-			worker_state->apply_tail = 0;
-			worker_state->apply_count = 0;
-			worker_state->last_applied_index = 0;
-		}
-	}
-	return worker_state;
+	return g_worker_state;
 }
 
 /*

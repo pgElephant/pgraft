@@ -90,7 +90,14 @@ extern int pgraft_apply_kv_operation(uint64 raft_index, const char *json_data, s
  * Callback from Go layer to enqueue entry for application
  * This is called by the Go Raft implementation when an entry is committed
  */
-extern int pgraft_enqueue_for_apply_from_go(unsigned long long raft_index, const char *data, unsigned long data_len);
+extern PGDLLEXPORT int pgraft_enqueue_for_apply_from_go(unsigned long long raft_index, const char *data, unsigned long data_len);
+
+/*
+ * Callback from the Go layer asking how far the local state machine has been
+ * advanced, so raft can be configured with Applied and skip redelivering
+ * already-applied history.
+ */
+extern PGDLLEXPORT unsigned long long pgraft_applied_index_from_go(void);
 
 /*
  * Note: Key-value operations (put/get/delete) are declared in pgraft_kv.h

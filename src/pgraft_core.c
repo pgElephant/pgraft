@@ -9,6 +9,8 @@
  */
 
 #include "postgres.h"
+#include "miscadmin.h"
+#include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
 #include "utils/elog.h"
@@ -17,6 +19,12 @@
 
 #include "../include/pgraft_core.h"
 #include "../include/pgraft_go.h"
+
+/*
+ * Cluster state in shared memory.  Established once by
+ * pgraft_core_init_shared_memory() from the shmem startup hook.
+ */
+static pgraft_cluster_t *g_cluster = NULL;
 
 /*
  * Initialize core consensus system
@@ -380,51 +388,39 @@ pgraft_core_cleanup(void)
 void
 pgraft_core_init_shared_memory(void)
 {
-	pgraft_cluster_t *cluster;
 	bool		found;
-	
+
+	Assert(LWLockHeldByMe(AddinShmemInitLock));
+
 	elog(INFO, "pgraft: initializing shared memory");
-	
-	/* Get the shared memory pointer (should already be allocated) */
-	cluster = (pgraft_cluster_t *) ShmemInitStruct("pgraft_cluster",
-												   sizeof(pgraft_cluster_t),
-												   &found);
-	
-	if (cluster)
+
+	g_cluster = (pgraft_cluster_t *) ShmemInitStruct("pgraft_cluster",
+													 sizeof(pgraft_cluster_t),
+													 &found);
+
+	if (!found)
 	{
-		if (!found)
-		{
-			elog(INFO, "pgraft: creating new shared memory");
-			
-			/* Initialize shared memory */
-			memset(cluster, 0, sizeof(pgraft_cluster_t));
-			
-			/* Initialize mutex */
-			SpinLockInit(&cluster->mutex);
-			
-			/* Initialize default values */
-			cluster->initialized = false;
-			cluster->node_id = -1;
-			cluster->current_term = 0;
-			cluster->leader_id = -1;
-			strncpy(cluster->state, "stopped", sizeof(cluster->state) - 1);
-			cluster->state[sizeof(cluster->state) - 1] = '\0';
-			cluster->num_nodes = 0;
-			cluster->messages_processed = 0;
-			cluster->heartbeats_sent = 0;
-			cluster->elections_triggered = 0;
-			
-			elog(INFO, "pgraft: shared memory initialized");
-		}
-		else
-		{
-			elog(INFO, "pgraft: shared memory already exists");
-		}
+		elog(INFO, "pgraft: creating new shared memory");
+
+		memset(g_cluster, 0, sizeof(pgraft_cluster_t));
+
+		SpinLockInit(&g_cluster->mutex);
+
+		g_cluster->initialized = false;
+		g_cluster->node_id = -1;
+		g_cluster->current_term = 0;
+		g_cluster->leader_id = -1;
+		strncpy(g_cluster->state, "stopped", sizeof(g_cluster->state) - 1);
+		g_cluster->state[sizeof(g_cluster->state) - 1] = '\0';
+		g_cluster->num_nodes = 0;
+		g_cluster->messages_processed = 0;
+		g_cluster->heartbeats_sent = 0;
+		g_cluster->elections_triggered = 0;
+
+		elog(INFO, "pgraft: shared memory initialized");
 	}
 	else
-	{
-		elog(ERROR, "pgraft: failed to get shared memory pointer");
-	}
+		elog(INFO, "pgraft: shared memory already exists");
 }
 
 /*
@@ -433,36 +429,18 @@ pgraft_core_init_shared_memory(void)
 pgraft_cluster_t *
 pgraft_core_get_shared_memory(void)
 {
-	static pgraft_cluster_t *cluster = NULL;
-	bool		found;
-	
-	if (cluster == NULL)
-	{
-		/* Get the shared memory pointer */
-		cluster = (pgraft_cluster_t *) ShmemInitStruct("pgraft_cluster",
-													   sizeof(pgraft_cluster_t),
-													   &found);
-		if (!found && cluster)
-		{
-			/*
-			 * We are the first to touch the segment.  Initialize it in place.
-			 * Do NOT delegate to pgraft_core_init_shared_memory() here: that
-			 * would call ShmemInitStruct() a second time, observe found==true,
-			 * and skip SpinLockInit(), leaving the mutex uninitialized.
-			 */
-			memset(cluster, 0, sizeof(pgraft_cluster_t));
-			SpinLockInit(&cluster->mutex);
-			cluster->initialized = false;
-			cluster->node_id = -1;
-			cluster->current_term = 0;
-			cluster->leader_id = -1;
-			strncpy(cluster->state, "stopped", sizeof(cluster->state) - 1);
-			cluster->state[sizeof(cluster->state) - 1] = '\0';
-			cluster->num_nodes = 0;
-			cluster->messages_processed = 0;
-			cluster->heartbeats_sent = 0;
-			cluster->elections_triggered = 0;
-		}
-	}
-	return cluster;
+	/*
+	 * Pure attach.  Creating the segment on first touch (as this used to do)
+	 * races: a second process can observe found == true and start using
+	 * ->mutex before the creator reaches SpinLockInit().  Allocation now
+	 * happens exactly once, in the shmem startup hook, under
+	 * AddinShmemInitLock.
+	 */
+	if (g_cluster == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pgraft shared memory is not initialized"),
+				 errhint("pgraft must be listed in shared_preload_libraries.")));
+
+	return g_cluster;
 }

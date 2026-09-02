@@ -2,6 +2,7 @@
 #define PGRAFT_CORE_H
 
 #include "postgres.h"
+#include "port/atomics.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
 
@@ -81,10 +82,13 @@ typedef struct
 	WORKER_STATUS status;
 
 	/*
-	 * Protects the command/status/apply circular buffers and their
+	 * Protects the command and status circular buffers and their
 	 * head/tail/count indices below.  Client backends (producers) and the
 	 * background worker (consumer) mutate these concurrently, so every
 	 * head/tail/count update must be done while holding this spinlock.
+	 *
+	 * NOTE: this lock deliberately does NOT cover the apply queue further
+	 * down; see the comment there.
 	 */
 	slock_t		mutex;
 
@@ -105,13 +109,33 @@ typedef struct
 	int			status_tail;		/* Index of next slot to write */
 	int			status_count;		/* Number of status entries */
 
-	/* Fixed-size circular buffer for Raft log entries to apply */
+	/*
+	 * Single-producer/single-consumer ring of Raft entries awaiting local
+	 * application.
+	 *
+	 * The producer is the Go raft goroutine, which reaches this queue through
+	 * pgraft_enqueue_for_apply_from_go().  That thread is NOT a PostgreSQL
+	 * backend thread: it must never acquire a PostgreSQL lock, call elog(),
+	 * or run ShmemInitStruct().  So this queue is deliberately NOT covered by
+	 * "mutex" above.  Instead apply_write/apply_read are monotonically
+	 * increasing atomic counters (slot = counter % MAX_APPLY_ENTRIES), written
+	 * only by the producer and the consumer respectively, which makes the
+	 * whole enqueue path lock-free and elog-free.
+	 *
+	 * Entries the producer had to discard are counted rather than logged; the
+	 * background worker reports the counters from its own (safe) context.
+	 */
 	pgraft_apply_entry_t apply_queue[MAX_APPLY_ENTRIES];
-	int			apply_head;			/* Index of next entry to apply */
-	int			apply_tail;			/* Index of next slot to write */
-	int			apply_count;		/* Number of entries to apply */
-	uint64		last_applied_index; /* Last Raft index applied to PostgreSQL */
+	pg_atomic_uint64 apply_write;	/* entries ever enqueued (producer only) */
+	pg_atomic_uint64 apply_read;	/* entries ever dequeued (consumer only) */
+	pg_atomic_uint64 apply_dropped_full;	/* discarded: ring was full */
+	pg_atomic_uint64 apply_dropped_size;	/* discarded: payload too large */
+	pg_atomic_uint64 apply_dropped_detached;	/* discarded: no consumer yet */
+	pg_atomic_uint64 last_applied_index;	/* last Raft index applied here */
 }			pgraft_worker_state_t;
+
+/* Maximum cluster members tracked in shared memory */
+#define PGRAFT_MAX_NODES 16
 
 /* Core consensus types */
 typedef struct pgraft_node
@@ -183,6 +207,17 @@ bool		pgraft_enqueue_apply_entry(uint64 raft_index, const char *data, size_t dat
 bool		pgraft_dequeue_apply_entry(pgraft_apply_entry_t *entry);
 bool		pgraft_apply_queue_is_empty(void);
 int			pgraft_get_apply_queue_count(void);
+
+/*
+ * Publish the worker state to the lock-free producer path.  MUST be called by
+ * the background worker (from its own process, on its own thread) before the
+ * Go library is started, because pgraft_enqueue_apply_entry() may then be
+ * called from a Go thread that cannot safely resolve shared memory itself.
+ */
+void		pgraft_apply_queue_attach(pgraft_worker_state_t *state);
+
+/* Drain and report producer-side drop counters (worker context only). */
+void		pgraft_apply_queue_report_drops(void);
 
 /* Update cluster state from Go layer */
 void		pgraft_update_shared_memory_from_go(void);

@@ -413,111 +413,160 @@ pgraft_remove_completed_commands(void)
 }
 
 /*
- * Enqueue a Raft log entry for application to PostgreSQL
- * Called from Go applyEntry() when a Raft entry is committed
+ * Enqueue a Raft log entry for application to PostgreSQL.
+ *
+ * CALLED FROM A GO THREAD.  This is the producer half of the single-producer/
+ * single-consumer ring described in pgraft_core.h, and it runs on the Go raft
+ * goroutine rather than on a PostgreSQL backend thread.  It therefore must
+ * not do any of the following, all of which are unsafe off the main thread:
+ *
+ *   - call elog()/ereport() at any level (elog(ERROR) siglongjmps into the
+ *     main thread's exception stack; even elog(LOG) touches process-global
+ *     error state and the log pipe),
+ *   - call ShmemInitStruct() or otherwise take an LWLock (they touch MyProc),
+ *   - acquire the worker state spinlock (shared with backend producers).
+ *
+ * So it uses only the pointer published by pgraft_apply_queue_attach() and
+ * plain atomics, and it reports failures through counters that the background
+ * worker drains from its own context.  Keep it that way.
  */
+static pgraft_worker_state_t *volatile apply_queue_state = NULL;
+
+void
+pgraft_apply_queue_attach(pgraft_worker_state_t *state)
+{
+	/*
+	 * Publish the queue only once the struct is fully initialized: the
+	 * barrier keeps the producer from observing the pointer before the
+	 * counters it is about to read.
+	 */
+	pg_write_barrier();
+	apply_queue_state = state;
+}
+
 bool
 pgraft_enqueue_apply_entry(uint64 raft_index, const char *data, size_t data_len)
 {
-	pgraft_worker_state_t *state;
+	pgraft_worker_state_t *state = apply_queue_state;
 	pgraft_apply_entry_t *entry;
-	int			apply_count;
+	uint64		write_pos;
+	uint64		read_pos;
 
-	state = pgraft_worker_get_state();
-	if (state == NULL) {
-		elog(ERROR, "pgraft: failed to get worker state in pgraft_enqueue_apply_entry");
+	/*
+	 * No consumer has attached yet (worker not started, or already exited).
+	 * Count and drop; there is nobody to apply the entry locally.
+	 */
+	if (state == NULL)
 		return false;
-	}
 
 	/*
 	 * Reject payloads that would not leave room for a NUL terminator.  The
 	 * data is later treated as a C string (data[0] == '{' checks, json-c
 	 * parsing), so it must be terminated; use '>=' against the buffer size.
 	 */
-	if (data_len >= sizeof(((pgraft_apply_entry_t *) 0)->data)) {
-		elog(WARNING, "pgraft: entry data too large (%zu bytes, max %zu), index %lu",
-			 data_len, sizeof(((pgraft_apply_entry_t *) 0)->data) - 1, (unsigned long) raft_index);
+	if (data_len >= sizeof(entry->data))
+	{
+		pg_atomic_fetch_add_u64(&state->apply_dropped_size, 1);
 		return false;
 	}
 
-	SpinLockAcquire(&state->mutex);
+	/* Producer owns apply_write; it only needs to observe the consumer's
+	 * progress in apply_read. */
+	write_pos = pg_atomic_read_u64(&state->apply_write);
+	read_pos = pg_atomic_read_u64(&state->apply_read);
 
-	/* Check if queue is full */
-	if (state->apply_count >= MAX_APPLY_ENTRIES) {
-		SpinLockRelease(&state->mutex);
-		elog(WARNING, "pgraft: apply queue is full (%d entries), cannot enqueue index %lu",
-			 MAX_APPLY_ENTRIES, (unsigned long) raft_index);
+	if (write_pos - read_pos >= (uint64) MAX_APPLY_ENTRIES)
+	{
+		pg_atomic_fetch_add_u64(&state->apply_dropped_full, 1);
 		return false;
 	}
 
-	/* Get pointer to next slot in circular buffer */
-	entry = &state->apply_queue[state->apply_tail];
-
-	/* Initialize entry (always NUL-terminate so downstream C-string use is safe) */
+	entry = &state->apply_queue[write_pos % MAX_APPLY_ENTRIES];
 	entry->raft_index = raft_index;
 	entry->data_len = data_len;
-	if (data && data_len > 0) {
+	if (data != NULL && data_len > 0)
 		memcpy(entry->data, data, data_len);
-	}
+	/* Always NUL-terminate so downstream C-string use is safe. */
 	entry->data[data_len] = '\0';
 	entry->applied = false;
 
-	/* Update circular buffer pointers */
-	state->apply_tail = (state->apply_tail + 1) % MAX_APPLY_ENTRIES;
-	apply_count = ++state->apply_count;
-
-	SpinLockRelease(&state->mutex);
-
-	elog(DEBUG1, "pgraft: enqueued apply entry %lu (count=%d)",
-		 (unsigned long) raft_index, apply_count);
+	/*
+	 * Publish the slot contents before publishing the new write position, so
+	 * the consumer can never observe an index it is allowed to read while the
+	 * payload is still being written.
+	 */
+	pg_write_barrier();
+	pg_atomic_write_u64(&state->apply_write, write_pos + 1);
 
 	return true;
 }
 
 /*
- * Dequeue a Raft log entry for application to PostgreSQL
- * Called from background worker to apply entries
+ * Dequeue a Raft log entry for application to PostgreSQL.
+ *
+ * Consumer half of the ring; called only from the background worker's main
+ * thread, which is the sole owner of apply_read.
  */
 bool
 pgraft_dequeue_apply_entry(pgraft_apply_entry_t *entry)
 {
 	pgraft_worker_state_t *state;
-	pgraft_apply_entry_t *queued_entry;
-	int			apply_count;
+	uint64		read_pos;
+	uint64		write_pos;
 
-	if (entry == NULL) {
+	if (entry == NULL)
 		return false;
-	}
-	
+
 	state = pgraft_worker_get_state();
-	if (state == NULL) {
+	if (state == NULL)
 		return false;
-	}
 
-	SpinLockAcquire(&state->mutex);
+	read_pos = pg_atomic_read_u64(&state->apply_read);
+	write_pos = pg_atomic_read_u64(&state->apply_write);
 
-	/* Check if queue is empty */
-	if (state->apply_count == 0) {
-		SpinLockRelease(&state->mutex);
-		return false;
-	}
+	if (read_pos == write_pos)
+		return false;			/* empty */
 
-	/* Get pointer to next entry in circular buffer */
-	queued_entry = &state->apply_queue[state->apply_head];
+	/* Pair with the producer's write barrier: do not read the slot before we
+	 * have observed the published write position. */
+	pg_read_barrier();
 
-	/* Copy entry data */
-	*entry = *queued_entry;
+	*entry = state->apply_queue[read_pos % MAX_APPLY_ENTRIES];
 
-	/* Update circular buffer pointers */
-	state->apply_head = (state->apply_head + 1) % MAX_APPLY_ENTRIES;
-	apply_count = --state->apply_count;
-
-	SpinLockRelease(&state->mutex);
-
-	elog(DEBUG2, "pgraft: dequeued apply entry %lu (count=%d)",
-		 (unsigned long) entry->raft_index, apply_count);
+	/* Release the slot only after the copy is complete. */
+	pg_write_barrier();
+	pg_atomic_write_u64(&state->apply_read, read_pos + 1);
 
 	return true;
+}
+
+/*
+ * Report and reset the producer-side drop counters.
+ *
+ * The producer cannot log (see pgraft_enqueue_apply_entry), so the worker
+ * surfaces its counters here, from a context where elog() is safe.
+ */
+void
+pgraft_apply_queue_report_drops(void)
+{
+	pgraft_worker_state_t *state;
+	uint64		full;
+	uint64		size;
+
+	state = pgraft_worker_get_state();
+	if (state == NULL)
+		return;
+
+	full = pg_atomic_exchange_u64(&state->apply_dropped_full, 0);
+	size = pg_atomic_exchange_u64(&state->apply_dropped_size, 0);
+
+	if (full > 0)
+		elog(WARNING, "pgraft: apply queue full, dropped " UINT64_FORMAT
+			 " committed entries (queue capacity %d)", full, MAX_APPLY_ENTRIES);
+	if (size > 0)
+		elog(WARNING, "pgraft: dropped " UINT64_FORMAT
+			 " committed entries whose payload exceeded %zu bytes",
+			 size, sizeof(state->apply_queue[0].data) - 1);
 }
 
 /*
@@ -527,13 +576,13 @@ bool
 pgraft_apply_queue_is_empty(void)
 {
 	pgraft_worker_state_t *state;
-	
+
 	state = pgraft_worker_get_state();
-	if (state == NULL) {
+	if (state == NULL)
 		return true;
-	}
-	
-	return (state->apply_count == 0);
+
+	return pg_atomic_read_u64(&state->apply_read) ==
+		pg_atomic_read_u64(&state->apply_write);
 }
 
 /*
@@ -543,11 +592,16 @@ int
 pgraft_get_apply_queue_count(void)
 {
 	pgraft_worker_state_t *state;
-	
+	uint64		pending;
+
 	state = pgraft_worker_get_state();
-	if (state == NULL) {
+	if (state == NULL)
 		return 0;
-	}
-	
-	return state->apply_count;
+
+	/* Read write before read so a concurrent dequeue can only make this
+	 * estimate smaller, never negative. */
+	pending = pg_atomic_read_u64(&state->apply_write) -
+		pg_atomic_read_u64(&state->apply_read);
+
+	return (int) Min(pending, (uint64) MAX_APPLY_ENTRIES);
 }

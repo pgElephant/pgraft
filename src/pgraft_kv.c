@@ -19,6 +19,7 @@
 #include "miscadmin.h"
 #include "storage/ipc.h"
 #include "../include/pgraft_go.h"
+#include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
 #include "utils/elog.h"
@@ -135,7 +136,9 @@ void
 pgraft_kv_init_shared_memory(void)
 {
 	bool		found;
-	
+
+	Assert(LWLockHeldByMe(AddinShmemInitLock));
+
 	elog(INFO, "pgraft: initializing key/value store shared memory");
 	
 	/* Allocate shared memory */

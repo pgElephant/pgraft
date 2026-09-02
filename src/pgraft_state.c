@@ -9,6 +9,8 @@
  */
 
 #include "postgres.h"
+#include "miscadmin.h"
+#include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
 #include "utils/elog.h"
@@ -27,9 +29,11 @@ void
 pgraft_state_init_shared_memory(void)
 {
 	bool		found;
-	
+
+	Assert(LWLockHeldByMe(AddinShmemInitLock));
+
 	elog(INFO, "pgraft: initializing Go state shared memory");
-	
+
 	/* Allocate shared memory */
 	g_go_state = (pgraft_go_state_t *) ShmemInitStruct("pgraft_go_state",
 													   sizeof(pgraft_go_state_t),
@@ -83,11 +87,17 @@ pgraft_state_init_shared_memory(void)
 pgraft_go_state_t *
 pgraft_state_get_shared_memory(void)
 {
+	/*
+	 * Pure attach.  The segment is created once, from the shmem startup hook
+	 * under AddinShmemInitLock; initializing it lazily from an arbitrary
+	 * process races with every other process doing the same.
+	 */
 	if (g_go_state == NULL)
-	{
-		/* Initialize shared memory when first accessed */
-		pgraft_state_init_shared_memory();
-	}
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("pgraft shared memory is not initialized"),
+				 errhint("pgraft must be listed in shared_preload_libraries.")));
+
 	return g_go_state;
 }
 
@@ -389,11 +399,6 @@ void pgraft_state_set_go_running(bool running) {
 }
 
 /*
- * Initialize shared memory for worker state
+ * Note: pgraft_worker_init_shared_memory() lives in pgraft.c, next to
+ * pgraft_worker_get_state() and the worker itself.
  */
-void
-pgraft_worker_init_shared_memory(void)
-{
-	/* Worker state is managed in pgraft_core.c */
-	elog(LOG, "pgraft: worker shared memory initialization completed");
-}
