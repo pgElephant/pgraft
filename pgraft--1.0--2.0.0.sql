@@ -2,8 +2,15 @@
 -- Upgrade pgraft from 1.0 to 2.0.0
 --
 -- 2.0.0 changes no SQL signatures, so this script only needs to
---   * re-apply every function and view definition, all of which are
---     CREATE OR REPLACE so that re-running them is harmless.
+--   * re-apply every function and view definition (all CREATE OR REPLACE, so
+--     re-running them is harmless), and
+--   * apply the new privilege model.
+--
+-- The privilege change is the substantive one: in 1.0 every function was
+-- executable by PUBLIC because that is PostgreSQL's default for a new
+-- function, which let any logged-in role rewrite cluster membership, push
+-- entries into the replicated log, or reset the key/value store.  2.0.0
+-- revokes those and grants back only read-only introspection.
 
 \echo Use "ALTER EXTENSION pgraft UPDATE TO '2.0.0'" to load this file. \quit
 
@@ -573,6 +580,73 @@ CREATE OR REPLACE FUNCTION pgraft_record_applied_index(index bigint)
 RETURNS void
 LANGUAGE C
 AS 'pgraft', 'pgraft_record_applied_index_func';
+
+-- ---------------------------------------------------------------------------
+-- Privileges
+--
+-- PostgreSQL grants EXECUTE on a new function to PUBLIC by default, which left
+-- every one of these callable by any logged-in role: cluster membership could
+-- be rewritten with pgraft_remove_node(), arbitrary payloads pushed into the
+-- replicated log with pgraft_replicate_entry(), and the key/value store
+-- rewritten at will.  Revoke the lot, then grant back only the read-only
+-- introspection functions.
+-- ---------------------------------------------------------------------------
+
+REVOKE ALL ON FUNCTION pgraft_init() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_add_node(integer, text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_remove_node(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_set_debug(boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_test() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_log_append(bigint, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_log_commit(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_log_apply(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_log_sync_with_leader() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_replicate_entry(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_put(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_delete(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_put_local(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_delete_local(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_compact() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_reset() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_record_applied_index(bigint) FROM PUBLIC;
+
+-- Read-only introspection: revoke the default grant, then hand it back
+-- explicitly so the intent is recorded rather than inherited.
+REVOKE ALL ON FUNCTION pgraft_get_cluster_status() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_get_nodes() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_get_nodes_from_raft() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_is_leader() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_get_worker_state() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_get_version() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_get_leader() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_get_term() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_get_queue_status() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_get_applied_index() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_log_get_entry(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_log_get_stats() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_log_get_replication_status() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_get(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_exists(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_list_keys() FROM PUBLIC;
+REVOKE ALL ON FUNCTION pgraft_kv_get_stats() FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION pgraft_get_cluster_status() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_get_nodes() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_get_nodes_from_raft() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_is_leader() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_get_worker_state() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_get_version() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_get_leader() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_get_term() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_get_queue_status() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_get_applied_index() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_log_get_entry(bigint) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_log_get_stats() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_log_get_replication_status() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_kv_get(text) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_kv_exists(text) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_kv_list_keys() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION pgraft_kv_get_stats() TO PUBLIC;
 
 -- Reset search path
 SET search_path = public;
