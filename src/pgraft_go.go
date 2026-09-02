@@ -104,6 +104,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -296,22 +297,49 @@ func (ps *PersistentStorage) loadFromDisk() error {
 		return fmt.Errorf("failed to unmarshal state: %v", err)
 	}
 
-	// Restore HardState with validation
+	// Restore the snapshot FIRST: it establishes the log's lower bound, and the
+	// HardState validation below needs to know about it. (Doing this after
+	// SetHardState also risks ApplySnapshot resetting state we just restored.)
+	snapshotIndex := uint64(0)
+	if state.Snapshot != nil && !raft.IsEmptySnap(*state.Snapshot) {
+		if err := ps.MemoryStorage.ApplySnapshot(*state.Snapshot); err != nil {
+			return fmt.Errorf("failed to apply snapshot: %v", err)
+		}
+		snapshotIndex = state.Snapshot.Metadata.Index
+		logInfo("restored snapshot for node %d: index=%d, term=%d",
+			ps.nodeID, snapshotIndex, state.Snapshot.Metadata.Term)
+	}
+
+	// Restore log entries before HardState, so the commit validation can see
+	// the real upper bound of the log.
+	if len(state.Entries) > 0 {
+		if err := ps.MemoryStorage.Append(state.Entries); err != nil {
+			return fmt.Errorf("failed to append entries: %v", err)
+		}
+		logInfo("Restored %d log entries for node %d", len(state.Entries), ps.nodeID)
+	}
+
+	// Restore HardState, clamping Commit only to a genuinely higher bound.
+	//
+	// Commit must never be lowered below what is already durable: a snapshot at
+	// index N means everything through N is committed even with no entries in
+	// the log, so the old "no entries, so reset Commit to 0" rule un-committed
+	// committed data. Only clamp downward when Commit really does exceed
+	// everything we hold.
 	if !raft.IsEmptyHardState(state.HardState) {
-		// Validate commit index before restoring
 		validatedHardState := state.HardState
+
+		maxIndex := snapshotIndex
 		if len(state.Entries) > 0 {
-			maxEntryIndex := state.Entries[len(state.Entries)-1].Index
-			if validatedHardState.Commit > maxEntryIndex {
-				logWarning("WARNING: HardState.Commit (%d) exceeds max entry index (%d), clamping to %d",
-					validatedHardState.Commit, maxEntryIndex, maxEntryIndex)
-				validatedHardState.Commit = maxEntryIndex
+			if last := state.Entries[len(state.Entries)-1].Index; last > maxIndex {
+				maxIndex = last
 			}
-		} else if validatedHardState.Commit > 0 {
-			// No entries but commit > 0, reset to 0
-			logWarning("WARNING: HardState.Commit (%d) but no entries, resetting to 0",
-				validatedHardState.Commit)
-			validatedHardState.Commit = 0
+		}
+
+		if validatedHardState.Commit > maxIndex {
+			logWarning("HardState.Commit (%d) exceeds highest known index (%d), clamping",
+				validatedHardState.Commit, maxIndex)
+			validatedHardState.Commit = maxIndex
 		}
 
 		if err := ps.MemoryStorage.SetHardState(validatedHardState); err != nil {
@@ -321,67 +349,113 @@ func (ps *PersistentStorage) loadFromDisk() error {
 			ps.nodeID, validatedHardState.Term, validatedHardState.Vote, validatedHardState.Commit)
 	}
 
-	// Restore Snapshot if present
-	if state.Snapshot != nil && !raft.IsEmptySnap(*state.Snapshot) {
-		if err := ps.MemoryStorage.ApplySnapshot(*state.Snapshot); err != nil {
-			return fmt.Errorf("failed to apply snapshot: %v", err)
-		}
-		logInfo("restored snapshot for node %d: index=%d, term=%d",
-			ps.nodeID, state.Snapshot.Metadata.Index, state.Snapshot.Metadata.Term)
-	}
-
-	// Restore log entries
-	if len(state.Entries) > 0 {
-		if err := ps.MemoryStorage.Append(state.Entries); err != nil {
-			return fmt.Errorf("failed to append entries: %v", err)
-		}
-		logInfo("Restored %d log entries for node %d", len(state.Entries), ps.nodeID)
-	}
-
 	return nil
 }
 
-// Global persistence failure tracking (FIX #3: Monitoring)
+// Global persistence failure tracking. lastPersistenceError/Time are plain
+// (non-atomic) values read and written from several goroutines, so they need
+// their own mutex; the counter is atomic.
 var (
 	persistenceFailureCount int64
+	persistenceMutex        sync.Mutex
 	lastPersistenceError    string
 	lastPersistenceTime     time.Time
 )
 
-// saveToDisk saves the current state to disk
+func recordPersistenceFailure(err error) {
+	count := atomic.AddInt64(&persistenceFailureCount, 1)
+
+	persistenceMutex.Lock()
+	lastPersistenceError = err.Error()
+	persistenceMutex.Unlock()
+
+	logError("persistence failure #%d: %v", count, err)
+}
+
+// writeFileSync writes data to path and fsyncs it before returning, so that a
+// subsequent rename really does publish durable bytes.
+func writeFileSync(path string, data []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+
+	// The whole point of this function: without Sync the bytes may sit in the
+	// page cache, and a crash can lose HardState (term/vote) or log entries
+	// that raft has already been told are durable.
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+
+	return f.Close()
+}
+
+// syncDir fsyncs a directory so that a rename within it is itself durable.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	if err := d.Sync(); err != nil {
+		d.Close()
+		return err
+	}
+	return d.Close()
+}
+
+// saveToDisk saves the current state to disk.
+//
+// Takes the write lock, not a read lock: this function is the sole writer of
+// the state file, and two concurrent callers would race on the single
+// "<state>.tmp" path and publish an interleaved, corrupt file.
 func (ps *PersistentStorage) saveToDisk() error {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 
 	// Get current state from memory storage
 	hardState, _, err := ps.MemoryStorage.InitialState()
 	if err != nil {
-		atomic.AddInt64(&persistenceFailureCount, 1)
-		lastPersistenceError = err.Error()
+		recordPersistenceFailure(err)
 		return fmt.Errorf("failed to get initial state: %v", err)
 	}
 
 	firstIndex, err := ps.MemoryStorage.FirstIndex()
 	if err != nil {
-		atomic.AddInt64(&persistenceFailureCount, 1)
-		lastPersistenceError = err.Error()
+		recordPersistenceFailure(err)
 		return fmt.Errorf("failed to get first index: %v", err)
 	}
 
 	lastIndex, err := ps.MemoryStorage.LastIndex()
 	if err != nil {
-		atomic.AddInt64(&persistenceFailureCount, 1)
-		lastPersistenceError = err.Error()
+		recordPersistenceFailure(err)
 		return fmt.Errorf("failed to get last index: %v", err)
 	}
 
 	var entries []raftpb.Entry
 	if lastIndex >= firstIndex {
-		entries, err = ps.MemoryStorage.Entries(firstIndex, lastIndex+1, 0)
+		// maxSize MUST be unbounded here.
+		//
+		// Entries() runs its result through limitSize(), which stops as soon as
+		// the accumulated size exceeds maxSize but always keeps at least the
+		// first entry. Passing 0 therefore returned exactly ONE entry, so every
+		// copy of the log written to disk held only entry firstIndex - the rest
+		// was silently dropped on every save, and a restart recovered a
+		// one-entry log with a commit index far past it.
+		entries, err = ps.MemoryStorage.Entries(firstIndex, lastIndex+1, math.MaxUint64)
 		if err != nil {
-			atomic.AddInt64(&persistenceFailureCount, 1)
-			lastPersistenceError = err.Error()
+			recordPersistenceFailure(err)
 			return fmt.Errorf("failed to get entries: %v", err)
+		}
+
+		if want := int(lastIndex - firstIndex + 1); len(entries) != want {
+			logWarning("persisting %d of %d log entries (%d..%d)",
+				len(entries), want, firstIndex, lastIndex)
 		}
 	}
 
@@ -409,33 +483,34 @@ func (ps *PersistentStorage) saveToDisk() error {
 
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		atomic.AddInt64(&persistenceFailureCount, 1)
-		lastPersistenceError = err.Error()
+		recordPersistenceFailure(err)
 		return fmt.Errorf("failed to marshal state: %v", err)
 	}
 
 	statePath := ps.getStatePath()
 	tmpPath := statePath + ".tmp"
 
-	// Write to temporary file first, then rename for atomic update
-	if err := ioutil.WriteFile(tmpPath, data, 0644); err != nil {
-		atomic.AddInt64(&persistenceFailureCount, 1)
-		lastPersistenceError = err.Error()
-		logError("persistence failure #%d: %v",
-			atomic.LoadInt64(&persistenceFailureCount), err)
+	// Write to a temporary file, fsync it, rename, then fsync the directory.
+	// Every step is required for the rename to leave durable state behind.
+	if err := writeFileSync(tmpPath, data, 0644); err != nil {
+		recordPersistenceFailure(err)
 		return fmt.Errorf("failed to write temporary state file: %v", err)
 	}
 
 	if err := os.Rename(tmpPath, statePath); err != nil {
-		atomic.AddInt64(&persistenceFailureCount, 1)
-		lastPersistenceError = err.Error()
-		logError("persistence failure #%d: %v",
-			atomic.LoadInt64(&persistenceFailureCount), err)
+		recordPersistenceFailure(err)
 		return fmt.Errorf("failed to rename state file: %v", err)
 	}
 
-	// FIX #3: Track successful persistence
+	if err := syncDir(ps.dataDir); err != nil {
+		recordPersistenceFailure(err)
+		return fmt.Errorf("failed to sync data directory: %v", err)
+	}
+
+	persistenceMutex.Lock()
 	lastPersistenceTime = time.Now()
+	persistenceMutex.Unlock()
+
 	if atomic.LoadInt64(&persistenceFailureCount) > 0 {
 		logInfo("persistence recovered after %d failures",
 			atomic.LoadInt64(&persistenceFailureCount))
@@ -445,37 +520,35 @@ func (ps *PersistentStorage) saveToDisk() error {
 	return nil
 }
 
-// SetHardState sets the hard state and persists it
+// SetHardState sets the hard state and persists it.
+//
+// The persistence error is returned, NOT swallowed. HardState carries the term
+// and the vote; if it is not durable and we report success anyway, raft goes on
+// to send messages and Advance() believing a vote is recorded that a crash will
+// erase - which is exactly how one term ends up with two leaders.
 func (ps *PersistentStorage) SetHardState(hs raftpb.HardState) error {
 	if err := ps.MemoryStorage.SetHardState(hs); err != nil {
 		return err
 	}
 
-	// FIX #3: Persist to disk with monitoring
 	if err := ps.saveToDisk(); err != nil {
-		logError("failed to persist hard state: %v", err)
-		logWarning("continuing with in-memory state only (persistence failure count: %d)",
-			atomic.LoadInt64(&persistenceFailureCount))
-		// Don't return error here as the memory operation succeeded
-		// But failures are now tracked and logged
+		return fmt.Errorf("failed to persist hard state: %w", err)
 	}
 
 	return nil
 }
 
-// Append appends entries and persists them
+// Append appends entries and persists them.
+//
+// As with SetHardState, a persistence failure is returned rather than logged
+// and ignored: acknowledging entries that are not on disk loses committed data.
 func (ps *PersistentStorage) Append(entries []raftpb.Entry) error {
 	if err := ps.MemoryStorage.Append(entries); err != nil {
 		return err
 	}
 
-	// FIX #3: Persist to disk with monitoring
 	if err := ps.saveToDisk(); err != nil {
-		logError("failed to persist entries: %v", err)
-		logWarning("continuing with in-memory entries only (persistence failure count: %d)",
-			atomic.LoadInt64(&persistenceFailureCount))
-		// Don't return error here as the memory operation succeeded
-		// But failures are now tracked and logged
+		return fmt.Errorf("failed to persist %d entries: %w", len(entries), err)
 	}
 
 	return nil
@@ -489,8 +562,7 @@ func (ps *PersistentStorage) ApplySnapshot(snapshot raftpb.Snapshot) error {
 
 	// Persist to disk
 	if err := ps.saveToDisk(); err != nil {
-		logError("failed to persist snapshot: %v", err)
-		// Don't return error here as the memory operation succeeded
+		return fmt.Errorf("failed to persist snapshot: %w", err)
 	}
 
 	return nil
@@ -504,8 +576,7 @@ func (ps *PersistentStorage) Compact(compactIndex uint64) error {
 
 	// Persist to disk
 	if err := ps.saveToDisk(); err != nil {
-		logError("failed to persist after compaction: %v", err)
-		// Don't return error here as the memory operation succeeded
+		return fmt.Errorf("failed to persist after compaction: %w", err)
 	}
 
 	return nil
@@ -1823,25 +1894,38 @@ func processReady(rd raft.Ready) {
 	// raft is told the snapshot is durable while it is not, and appliedIndex
 	// can be clobbered by committed entries.
 
+	// A persistence failure in any of steps 1-3 means we must NOT continue to
+	// steps 4-6: sending messages or calling Advance() would tell the cluster
+	// (and raft itself) that state is durable when it is not. Returning
+	// without Advance() leaves this same Ready to be redelivered, so the write
+	// is retried rather than silently skipped.
+	//
 	// 1. Persist snapshot to storage first (before appending entries).
 	if !raft.IsEmptySnap(rd.Snapshot) {
 		logInfo("Applying snapshot at index %d, term %d to storage", rd.Snapshot.Metadata.Index, rd.Snapshot.Metadata.Term)
 		if err := raftStorage.ApplySnapshot(rd.Snapshot); err != nil {
-			logError("Failed to apply snapshot to storage: %v", err)
+			logError("not advancing raft: failed to persist snapshot: %v", err)
+			return
 		}
 	}
 
 	// 2. Persist entries BEFORE HardState so HardState.Commit never references
 	//    entries that are not yet on disk.
 	if len(rd.Entries) > 0 {
-		logInfo("About to persist %d entries...", len(rd.Entries))
-		raftStorage.Append(rd.Entries)
+		if err := raftStorage.Append(rd.Entries); err != nil {
+			logError("not advancing raft: failed to persist %d entries: %v", len(rd.Entries), err)
+			return
+		}
 		logInfo("Persisted %d entries", len(rd.Entries))
 	}
 
 	// 3. Persist HardState after entries are safely on disk.
 	if !raft.IsEmptyHardState(rd.HardState) {
-		raftStorage.SetHardState(rd.HardState)
+		if err := raftStorage.SetHardState(rd.HardState); err != nil {
+			logError("not advancing raft: failed to persist HardState (term=%d, vote=%d): %v",
+				rd.HardState.Term, rd.HardState.Vote, err)
+			return
+		}
 		// Maintain committedIndex from the authoritative commit index. This
 		// is now done here because this is the single Ready consumer.
 		atomic.StoreUint64(&committedIndex, rd.HardState.Commit)
