@@ -216,7 +216,7 @@ Enable or disable debug logging.
 SELECT pgraft.set_debug(true);
 ```
 
-**Returns:** `void`
+**Returns:** `boolean` — the setting now in effect.
 
 ---
 
@@ -229,7 +229,7 @@ Append an entry to the Raft log.
 SELECT pgraft.log_append(1, 'test data');
 ```
 
-**Returns:** `bigint` - Log index
+**Returns:** `boolean` - Log index
 
 ---
 
@@ -275,12 +275,16 @@ SELECT * FROM pgraft.log_get_stats();
 
 **Returns TABLE:**
 
-| Column         | Type   | Description        |
-|----------------|--------|--------------------|
-| total_entries  | bigint | Total log entries  |
-| committed_index| bigint | Committed index    |
-| applied_index  | bigint | Applied index      |
-| snapshot_index | bigint | Last snapshot index|
+| Column        | Type   | Description                              |
+|---------------|--------|------------------------------------------|
+| log_size      | bigint | Entries currently in the log             |
+| last_index    | bigint | Index of the newest entry                |
+| commit_index  | bigint | Highest index known to be committed      |
+| last_applied  | bigint | Highest index applied to PostgreSQL      |
+| replicated    | bigint | Entries replicated to followers          |
+| committed     | bigint | Entries committed                        |
+| applied       | bigint | Entries applied                          |
+| errors        | bigint | Errors encountered while applying        |
 
 ---
 
@@ -293,12 +297,16 @@ SELECT * FROM pgraft.log_get_replication_status();
 
 **Returns TABLE:**
 
-| Column      | Type    | Description              |
-|-------------|---------|--------------------------|
-| node_id     | integer | Node ID                  |
-| match_index | bigint  | Replicated index         |
-| next_index  | bigint  | Next index to send       |
-| is_active   | boolean | Is node active?          |
+| Column        | Type   | Description                              |
+|---------------|--------|------------------------------------------|
+| log_size      | bigint | Entries currently in the log             |
+| last_index    | bigint | Index of the newest entry                |
+| commit_index  | bigint | Highest index known to be committed      |
+| last_applied  | bigint | Highest index applied to PostgreSQL      |
+| replicated    | bigint | Entries replicated to followers          |
+| committed     | bigint | Entries committed                        |
+| applied       | bigint | Entries applied                          |
+| errors        | bigint | Errors encountered while applying        |
 
 ---
 
@@ -372,7 +380,7 @@ List all keys in the store.
 SELECT pgraft.kv_list_keys();
 ```
 
-**Returns:** `SETOF text` - List of keys
+**Returns:** `text` — a JSON array of keys. - List of keys
 
 ---
 
@@ -385,10 +393,16 @@ SELECT * FROM pgraft.kv_get_stats();
 
 **Returns TABLE:**
 
-| Column      | Type    | Description          |
-|-------------|---------|----------------------|
-| total_keys  | bigint  | Number of keys       |
-| total_size  | bigint  | Total size in bytes  |
+| Column             | Type    | Description                             |
+|--------------------|---------|-----------------------------------------|
+| num_entries        | integer | Entries in the store, live and deleted  |
+| total_operations   | bigint  | Operations served since startup         |
+| last_applied_index | bigint  | Raft index of the last applied write    |
+| puts               | bigint  | Puts served                             |
+| deletes            | bigint  | Deletes served                          |
+| gets               | bigint  | Gets served                             |
+| active_entries     | integer | Live entries                            |
+| deleted_entries    | integer | Entries tombstoned, awaiting compaction |
 
 ---
 
@@ -437,7 +451,7 @@ Put key-value locally without replication (internal use).
 SELECT pgraft.kv_put_local('local/cache', 'value');
 ```
 
-**Returns:** `void`
+**Returns:** `boolean`
 
 ---
 
@@ -448,7 +462,7 @@ Delete key locally without replication (internal use).
 SELECT pgraft.kv_delete_local('local/cache');
 ```
 
-**Returns:** `void`
+**Returns:** `boolean`
 
 ---
 
@@ -483,11 +497,77 @@ SELECT * FROM pgraft.get_queue_status();
 
 **Returns TABLE:**
 
-| Column         | Type    | Description              |
-|----------------|---------|--------------------------|
-| pending_msgs   | integer | Pending messages         |
-| processed_msgs | bigint  | Processed messages       |
-| queue_full     | boolean | Is queue full?           |
+| Column       | Type    | Description                                  |
+|--------------|---------|----------------------------------------------|
+| cmd_position | integer | Position of the command in the queue          |
+| command_type | integer | Command kind (add node, remove node, log)     |
+| node_id      | integer | Node the command refers to, if any            |
+| address      | text    | Node address, for membership commands         |
+| port         | integer | Node port, for membership commands            |
+| log_data     | text    | Payload, for log commands                     |
+
+---
+
+## Views
+
+Every view lives in the `pgraft` schema and is readable by any role.
+
+### etcd-compatible
+
+These present the cluster in the shape `etcdctl` reports it, so tooling written
+against etcd needs little or no translation.
+
+| View | Corresponds to |
+|---|---|
+| `pgraft.member_list` | `etcdctl member list` — one row per member, marked `leader`, `follower` or `unavailable` |
+| `pgraft.member_list_legacy` | the same listing, built from `pgraft.get_nodes()` rather than the Raft state file |
+| `pgraft.member_details` | per-member detail: id, name, peer and client URLs, leader and learner flags |
+| `pgraft.endpoint_status` | `etcdctl endpoint status` |
+| `pgraft.endpoint_health` | `etcdctl endpoint health` |
+| `pgraft.endpoint_hashkv` | `etcdctl endpoint hashkv` |
+| `pgraft.cluster_health` | `etcdctl cluster-health` |
+| `pgraft.cluster_info` | cluster identity, member count and current leader |
+| `pgraft.alarm_list` | `etcdctl alarm list` |
+| `pgraft.auth_status` | `etcdctl auth status` |
+| `pgraft.kv_status` | a one-row key/value summary |
+| `pgraft.watch_status` | watcher summary |
+| `pgraft.snapshot_status` | snapshot summary |
+
+```sql
+SELECT * FROM pgraft.member_list;
+
+ memberID |    peerURLs     |   clientURLs    |  status
+----------+-----------------+-----------------+----------
+ 1        | 10.0.0.1:7001   | 10.0.0.1:7001   | follower
+ 2        | 10.0.0.2:7002   | 10.0.0.2:7002   | leader
+ 3        | 10.0.0.3:7003   | 10.0.0.3:7003   | unavailable
+```
+
+### Cluster state
+
+Built directly on the status functions above, for monitoring queries that want
+a single row rather than a function call.
+
+| View | Contents |
+|---|---|
+| `pgraft.cluster_state` | `pgraft.get_cluster_status()` joined with this node's address and worker state |
+| `pgraft.cluster_overview` | the same, trimmed to what a dashboard needs |
+| `pgraft.worker_status` | `worker_state`, `is_running` |
+| `pgraft.nodes` | `pgraft.get_nodes()` plus the current term and state |
+| `pgraft.log_status` | log size and the commit/applied indexes |
+| `pgraft.kv_store_status` | key/value store health, derived from `pgraft.kv_get_stats()` |
+
+```sql
+-- Is this node healthy and following a leader?
+SELECT worker_state, is_running FROM pgraft.worker_status;
+
+-- One row summarising the cluster
+SELECT * FROM pgraft.cluster_overview;
+```
+
+!!! note "`pgraft.nodes` and `pgraft.kv_status`"
+    `pgraft.nodes` is a view; `pgraft.kv_status` is the etcd-style summary,
+    while the key/value store's own health view is `pgraft.kv_store_status`.
 
 ---
 

@@ -4,7 +4,7 @@
 <div align="center">
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-blue.svg)](https://postgresql.org/)
-[![Go](https://img.shields.io/badge/Go-1.15+-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8.svg)](https://golang.org/)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)]()
 
 **Distributed consensus for PostgreSQL using the Raft algorithm**

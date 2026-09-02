@@ -106,7 +106,7 @@ sudo yum install postgresql17-devel
 Ensure Go is installed and in your PATH:
 
 ```bash
-go version  # Should show Go 1.21 or higher
+go version  # Should show Go 1.23 or higher
 ```
 
 ### Permission Denied
