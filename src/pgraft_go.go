@@ -208,6 +208,22 @@ type StorageState struct {
 	Snapshot  *raftpb.Snapshot `json:"snapshot,omitempty"`
 }
 
+// maxRaftMessageBytes caps the size of a single length-prefixed frame read
+// from a peer.  The length prefix is attacker-controlled - the listener has no
+// authentication, so anything that can reach the peer port can send one - and
+// an unbounded make([]byte, msgLen) on a uint32 lets a single frame request up
+// to 4 GiB.  This is comfortably above MaxSizePerMsg (1 MiB) plus protobuf
+// overhead.
+const maxRaftMessageBytes = 64 << 20 // 64 MiB
+
+// Deadlines for peer I/O.  A write with no deadline blocks the single Ready
+// consumer indefinitely when a peer is partitioned but its socket never
+// errors, which stalls the whole node.
+const (
+	peerWriteTimeout = 5 * time.Second
+	peerReadTimeout  = 2 * time.Second
+)
+
 // Global state following etcd-io/raft patterns
 var (
 	raftNode    raft.Node
@@ -1510,6 +1526,15 @@ func pgraft_go_add_peer(nodeID C.int, address *C.char, port C.int) C.int {
 
 //export pgraft_go_remove_peer
 func pgraft_go_remove_peer(nodeID C.int) C.int {
+	// A panic here would propagate out through cgo and take down the
+	// PostgreSQL background worker process, so recover like the other
+	// exported entry points do.
+	defer func() {
+		if r := recover(); r != nil {
+			logError("panic in pgraft_go_remove_peer: %v", r)
+		}
+	}()
+
 	raftMutex.Lock()
 	defer raftMutex.Unlock()
 
@@ -1517,28 +1542,43 @@ func pgraft_go_remove_peer(nodeID C.int) C.int {
 		return -1 // Not running
 	}
 
-	// Close connection
-	connMutex.Lock()
-	if conn, exists := connections[uint64(nodeID)]; exists {
-		conn.Conn.Close()
-		delete(connections, uint64(nodeID))
+	if raftNode == nil {
+		logError("cannot remove peer %d: raftNode is nil", int(nodeID))
+		return -1
 	}
-	connMutex.Unlock()
 
-	// Remove from our node map with proper mutex protection
-	nodesMutex.Lock()
-	delete(nodes, uint64(nodeID))
-	nodesMutex.Unlock()
-
-	// Propose configuration change
+	// Propose the configuration change BEFORE forgetting the node's address.
+	// The removal is not effective until the entry commits, and dropping the
+	// address first leaves sendMessage() unable to reach the node in the
+	// meantime.
 	cc := raftpb.ConfChange{
 		Type:   raftpb.ConfChangeRemoveNode,
 		NodeID: uint64(nodeID),
 	}
 
-	raftNode.ProposeConfChange(raftCtx, cc)
+	ctx, cancel := context.WithTimeout(raftCtx, 30*time.Second)
+	defer cancel()
 
-	logInfo("removed peer node %d", nodeID)
+	if err := raftNode.ProposeConfChange(ctx, cc); err != nil {
+		logError("failed to propose removal of peer %d: %v", int(nodeID), err)
+		return -1
+	}
+
+	// Now drop the connection and the address.
+	connMutex.Lock()
+	if conn, exists := connections[uint64(nodeID)]; exists {
+		if conn.Conn != nil {
+			conn.Conn.Close()
+		}
+		delete(connections, uint64(nodeID))
+	}
+	connMutex.Unlock()
+
+	nodesMutex.Lock()
+	delete(nodes, uint64(nodeID))
+	nodesMutex.Unlock()
+
+	logInfo("removed peer node %d", int(nodeID))
 
 	return 0
 }
@@ -2441,11 +2481,26 @@ func handleConnectionMessages(nodeID uint64, conn net.Conn) {
 			return
 		default:
 			// Set aggressive read timeout to detect dead connections faster
-			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			if err := conn.SetReadDeadline(time.Now().Add(peerReadTimeout)); err != nil {
+				logWarning("could not set read deadline for node %d: %v", nodeID, err)
+			}
 
 			// Read message length
 			var msgLen uint32
-			if err := readUint32(conn, &msgLen); err != nil {
+			if err := readUint32(conn, &msgLen); err == nil && msgLen > maxRaftMessageBytes {
+				// Refuse the frame rather than allocating whatever the peer
+				// asked for.  The stream is unframed from here on, so the
+				// connection has to go.
+				logWarning("node %d announced a %d byte frame (max %d), dropping connection",
+					nodeID, msgLen, maxRaftMessageBytes)
+				connMutex.Lock()
+				if existingConn, ok := connections[nodeID]; ok && existingConn.Conn == conn {
+					existingConn.Conn.Close()
+					delete(connections, nodeID)
+				}
+				connMutex.Unlock()
+				return
+			} else if err != nil {
 				connectionErrors++
 				if connectionErrors >= maxConsecutiveErrors {
 					logWarning("Connection to node %d failed after %d errors, closing: %v", nodeID, connectionErrors, err)
@@ -3270,6 +3325,13 @@ func sendMessage(msg raftpb.Message) {
 
 	managedConn.Mutex.Lock() // Protect writes to this specific connection
 	defer managedConn.Mutex.Unlock()
+
+	// Bound the write.  sendMessage is called synchronously from processReady,
+	// so a peer that has gone away without closing its socket would otherwise
+	// block the Ready loop - and therefore all Raft progress - forever.
+	if err := managedConn.Conn.SetWriteDeadline(time.Now().Add(peerWriteTimeout)); err != nil {
+		logWarning("could not set write deadline for node %d: %v", msg.To, err)
+	}
 
 	// Send message length first (4 bytes, big-endian)
 	if err := writeUint32(managedConn.Conn, uint32(len(data))); err != nil {
