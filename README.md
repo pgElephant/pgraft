@@ -173,6 +173,19 @@ SELECT * FROM pgraft_get_nodes();
 Follow the [quick start guide](https://pgelephant.github.io/pgraft/getting-started/quick-start/)
 for a complete walkthrough.
 
+### Upgrading from 1.0
+
+Install the new files, then update the extension in each database and restart
+the server so the C and Go libraries are reloaded together:
+
+```sql
+ALTER EXTENSION pgraft UPDATE TO '2.0.0';
+```
+
+2.0.0 changes no function signatures, but it does restrict them: functions that
+mutate cluster or key/value state are no longer executable by `PUBLIC`. Grant
+them explicitly to the roles that need them.
+
 ---
 
 ## Usage
