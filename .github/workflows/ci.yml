@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MkDocs
+        run: pip install -r docs-requirements.txt
+
+      - name: Build the site
+        run: mkdocs build --strict
+
+  build-and-test:
+    name: PostgreSQL ${{ matrix.pgversion }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pgversion: [14, 15, 16, 17, 18]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: src/go.sum
+
+      - name: Install PostgreSQL ${{ matrix.pgversion }} and build deps
+        run: |
+          sudo apt-get update
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-${{ matrix.pgversion }} \
+            postgresql-server-dev-${{ matrix.pgversion }} \
+            libjson-c-dev gcc make
+
+      - name: Build
+        run: make PG_CONFIG=/usr/lib/postgresql/${{ matrix.pgversion }}/bin/pg_config
+
+      - name: Install
+        run: sudo make install PG_CONFIG=/usr/lib/postgresql/${{ matrix.pgversion }}/bin/pg_config
+
+      # Catches what a compile cannot: a typo in the SQL script, an object left
+      # outside the schema, a view that no longer selects.
+      - name: Smoke test the extension
+        run: |
+          export PATH=/usr/lib/postgresql/${{ matrix.pgversion }}/bin:$PATH
+          sudo chmod o+rwx .
+          initdb -D "$PWD/ci_data" -U postgres --no-sync
+          mkdir -p "$PWD/ci_state"
+          cat >> "$PWD/ci_data/postgresql.conf" <<EOF
+          port = 55432
+          listen_addresses = 'localhost'
+          shared_preload_libraries = 'pgraft'
+          pgraft.data_dir = '$PWD/ci_state'
+          pgraft.name = 'ci'
+          EOF
+          pg_ctl -D "$PWD/ci_data" -l "$PWD/ci_pg.log" -w start
+          psql -h localhost -p 55432 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION pgraft;" \
+            -c "SELECT pgraft.get_version();"
+
+          echo "-- every object must live in the pgraft schema"
+          out=$(psql -h localhost -p 55432 -U postgres -d postgres -At -c "
+            SELECT count(*) FROM pg_depend d
+              JOIN pg_extension e ON e.oid = d.refobjid AND e.extname = 'pgraft'
+              JOIN pg_class c ON c.oid = d.objid
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE d.deptype = 'e' AND n.nspname <> 'pgraft'")
+          test "$out" = "0" || { echo "objects outside the pgraft schema: $out"; exit 1; }
+
+          echo "-- every view must be selectable"
+          for v in $(psql -h localhost -p 55432 -U postgres -d postgres -At -c "
+              SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'pgraft' AND c.relkind = 'v' ORDER BY 1"); do
+            psql -h localhost -p 55432 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+              -qc "SELECT * FROM pgraft.$v LIMIT 1" >/dev/null
+          done
+
+          pg_ctl -D "$PWD/ci_data" -m immediate stop
+
+      - name: Server log on failure
+        if: failure()
+        run: cat ci_pg.log || true

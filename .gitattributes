@@ -1,0 +1,25 @@
+# Normalise line endings so a Windows checkout does not rewrite the tree.
+* text=auto eol=lf
+
+*.c      text diff=cpp
+*.h      text diff=cpp
+*.go     text diff=golang
+*.sql    text
+*.py     text diff=python
+*.sh     text eol=lf
+Makefile* text
+
+*.png    binary
+*.jpg    binary
+*.so     binary
+*.dylib  binary
+
+# The cgo-generated header is not ours to diff.
+src/pgraft_go.h linguist-generated
+
+# Keep noise out of release tarballs and language statistics.
+docs/**        linguist-documentation
+.github/**     export-ignore
+.gitattributes export-ignore
+.gitignore     export-ignore
+.editorconfig  export-ignore

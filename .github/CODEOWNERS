@@ -1,0 +1,11 @@
+# Default owners for everything in the repository.
+*                       @pgElephant/maintainers
+
+# The consensus core and the C/Go boundary deserve a careful read.
+/src/                   @pgElephant/maintainers
+/include/               @pgElephant/maintainers
+/pgraft--*.sql          @pgElephant/maintainers
+
+# Packaging and CI.
+/packaging/             @pgElephant/maintainers
+/.github/workflows/     @pgElephant/maintainers
