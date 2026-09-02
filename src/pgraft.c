@@ -1200,7 +1200,8 @@ pgraft_kv_put_local_func(PG_FUNCTION_ARGS)
 	key = text_to_cstring(key_text);
 	value = text_to_cstring(value_text);
 	
-	result = pgraft_kv_put_local(key, value);
+	/* Local, unreplicated write: no Raft index to record. */
+	result = pgraft_kv_put_local(key, value, 0);
 	
 	PG_RETURN_BOOL(result == 0);
 }
@@ -1218,7 +1219,8 @@ pgraft_kv_delete_local_func(PG_FUNCTION_ARGS)
 	
 	key = text_to_cstring(key_text);
 	
-	result = pgraft_kv_delete_local(key);
+	/* Local, unreplicated write: no Raft index to record. */
+	result = pgraft_kv_delete_local(key, 0);
 	
 	PG_RETURN_BOOL(result == 0);
 }

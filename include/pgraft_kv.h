@@ -88,7 +88,14 @@ int			pgraft_kv_replicate_delete(const char *key, const char *client_id);
 int			pgraft_kv_queue_operation(pgraft_kv_op_type_t op_type, const char *key, const char *value, const char *client_id);
 
 /* Local KV operations (for apply callback) */
-int			pgraft_kv_put_local(const char *key, const char *value);
-int			pgraft_kv_delete_local(const char *key);
+int			pgraft_kv_put_local(const char *key, const char *value, int64_t raft_index);
+int			pgraft_kv_delete_local(const char *key, int64_t raft_index);
+
+/*
+ * Highest Raft index reflected in the persisted key/value store.  This is the
+ * durable record of how far the local state machine has been advanced, and is
+ * what the Go layer configures raft's Applied from after a restart.
+ */
+int64_t		pgraft_kv_get_last_applied_index(void);
 
 #endif

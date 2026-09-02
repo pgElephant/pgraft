@@ -342,36 +342,47 @@ pgraft_apply_kv_operation(uint64 raft_index, const char *json_data, size_t len)
 		return -1;
 	}
 	
-	/* Apply the operation to the local KV store with error handling */
+	/*
+	 * Apply the operation to the local KV store.
+	 *
+	 * Failures are reported as WARNING plus a -1 return, never as ERROR: this
+	 * runs inside the background worker's apply loop, and an ERROR unwinds out
+	 * of it.  (It also made the `result = -1; break;` lines below unreachable
+	 * and leaked the key/value strings.)
+	 */
 	switch (op_type) {
 		case PGRAFT_KV_PUT:
 			if (!key || !value) {
-				elog(ERROR, "pgraft: invalid PUT operation parameters (key=%p, value=%p)", key, value);
+				elog(WARNING, "pgraft: invalid PUT operation in raft entry " UINT64_FORMAT
+					 " (key %s, value %s)", raft_index,
+					 key ? "present" : "missing", value ? "present" : "missing");
 				result = -1;
 				break;
 			}
-			result = pgraft_kv_put_local(key, value);
-			if (result == 0) {
-				elog(LOG, "pgraft: applied KV PUT operation: key='%s', value='%s'", key, value);
-			} else {
-				elog(ERROR, "pgraft: failed to apply KV PUT operation: key='%s', value='%s', error=%d", key, value, result);
-			}
+			result = pgraft_kv_put_local(key, value, (int64_t) raft_index);
+			if (result == 0)
+				elog(DEBUG1, "pgraft: applied KV PUT for key '%s'", key);
+			else
+				elog(WARNING, "pgraft: failed to apply KV PUT for key '%s' (error %d)",
+					 key, result);
 			break;
 		case PGRAFT_KV_DELETE:
 			if (!key) {
-				elog(ERROR, "pgraft: invalid DELETE operation parameters (key=%p)", key);
+				elog(WARNING, "pgraft: invalid DELETE operation in raft entry " UINT64_FORMAT
+					 " (missing key)", raft_index);
 				result = -1;
 				break;
 			}
-			result = pgraft_kv_delete_local(key);
-			if (result == 0) {
-				elog(LOG, "pgraft: applied KV DELETE operation: key='%s'", key);
-			} else {
-				elog(ERROR, "pgraft: failed to apply KV DELETE operation: key='%s', error=%d", key, result);
-			}
+			result = pgraft_kv_delete_local(key, (int64_t) raft_index);
+			if (result == 0)
+				elog(DEBUG1, "pgraft: applied KV DELETE for key '%s'", key);
+			else
+				elog(WARNING, "pgraft: failed to apply KV DELETE for key '%s' (error %d)",
+					 key, result);
 			break;
 		default:
-			elog(ERROR, "pgraft: unsupported KV operation type: %d", op_type);
+			elog(WARNING, "pgraft: unsupported KV operation type %d in raft entry "
+				 UINT64_FORMAT, op_type, raft_index);
 			result = -1;
 			break;
 	}

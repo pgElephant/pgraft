@@ -26,6 +26,10 @@ package main
 // resolved from the globally-loaded pgraft extension at dlopen time.
 extern int pgraft_enqueue_for_apply_from_go(unsigned long long raft_index, const char *data, unsigned long data_len);
 
+// Read back the highest Raft index the C layer has already applied locally, so
+// raft can be configured with Applied and skip redelivering that history.
+extern unsigned long long pgraft_applied_index_from_go(void);
+
 typedef struct pgraft_go_cluster_member {
 	char   *name;
 	char   *peer_host;
@@ -1011,6 +1015,17 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	logInfo("using etcd-style configuration: election_timeout=%dms, heartbeat_interval=%dms, snapshot_interval=%d, data_dir=%s",
 		electionTimeout, heartbeatInterval, snapshotInterval, dataDir)
 
+	// snapshot_interval is the number of applied entries between snapshots.
+	// It was previously read from the config and then never used, so the log
+	// was never compacted at all.
+	if snapshotInterval > 0 {
+		snapshotThreshold = uint64(snapshotInterval)
+	} else {
+		snapshotThreshold = defaultSnapshotThreshold
+		logWarning("pgraft.snapshot_count not set, using default snapshot interval of %d entries",
+			snapshotThreshold)
+	}
+
 	logInfo("==== LOADED %d cluster members from parsed configuration ====", len(clusterMembers))
 
 	// Store initial cluster members globally so they're accessible from all nodes
@@ -1120,21 +1135,56 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 	raftStorage = persistentStorage
 	logInfo("Persistent storage initialized at %s with Raft ID %d", dataDir, thisNodeRaftID)
 
+	// Check if this is a restart by looking at persistent state
+	hardState, confState, err := raftStorage.InitialState()
+	isRestart := err == nil && (!raft.IsEmptyHardState(hardState) || len(confState.Voters) > 0)
+
+	// Seed the tracked configuration from whatever storage recovered.
+	latestConfState = confState
+
+	// Determine where the state machine already is, so raft does not redeliver
+	// entries we have already applied.
+	//
+	// Leaving Applied at 0 (as this used to) makes raft redeliver EVERY
+	// committed entry in the log on every restart, re-running the whole
+	// history against the local state machine. The applied index recorded by
+	// the C layer is the authority for how far we actually got.
+	startApplied := recoverAppliedIndex()
+
+	if startApplied > hardState.Commit && hardState.Commit > 0 {
+		// Never claim to have applied more than is committed.
+		startApplied = hardState.Commit
+	}
+
+	// Critical exception: skipping replay is only safe once the configuration
+	// can be recovered from somewhere other than the log itself.
+	//
+	// With no snapshot, the voter set exists ONLY as the bootstrap ConfChange
+	// entries near the head of the log, and raft rebuilds it by redelivering
+	// them. Setting Applied past those entries would leave this node with an
+	// empty configuration, unable to vote or be counted - so in that case
+	// replay from the beginning, exactly as before.
+	if len(confState.Voters) == 0 && startApplied > 0 {
+		logInfo("no snapshot to recover the configuration from; replaying the log "+
+			"from the start instead of resuming at applied index %d", startApplied)
+		startApplied = 0
+	}
+
+	atomic.StoreUint64(&appliedIndex, startApplied)
+	logInfo("state machine resuming at applied index %d (commit=%d)", startApplied, hardState.Commit)
+
 	// NOW create the Raft configuration with the correct ID and storage
 	raftConfig = &raft.Config{
 		ID:              thisNodeRaftID,
 		ElectionTick:    electionTick,
 		HeartbeatTick:   heartbeatTick,
 		Storage:         raftStorage,
+		Applied:         startApplied,
 		MaxInflightMsgs: 256,
 		MaxSizePerMsg:   1024 * 1024, // 1MB
 		PreVote:         true,        // Enable PreVote for better elections (etcd best practice)
 	}
-	logInfo("Raft configuration created with ID=%d", thisNodeRaftID)
-
-	// Check if this is a restart by looking at persistent state
-	hardState, confState, err := raftStorage.InitialState()
-	isRestart := err == nil && (!raft.IsEmptyHardState(hardState) || len(confState.Voters) > 0)
+	logInfo("Raft configuration created with ID=%d, Applied=%d", thisNodeRaftID, startApplied)
 
 	var peers []raft.Peer
 	if isRestart {
@@ -1166,9 +1216,8 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 
 	logInfo("Bootstrap node %d created with %d initial peers", nodeID, len(peers))
 
-	// Initialize applied and committed indices
-	atomic.StoreUint64(&appliedIndex, 0)
-	atomic.StoreUint64(&committedIndex, 0)
+	// appliedIndex was set above from recovered state; do not zero it here.
+	atomic.StoreUint64(&committedIndex, hardState.Commit)
 
 	logInfo("INFO - Raft node initialized, goroutines will be started separately via pgraft_go_start()")
 
@@ -1963,6 +2012,15 @@ func processReady(rd raft.Ready) {
 
 	// 6. After all local processing, advance the Raft node.
 	raftNode.Advance()
+
+	// 7. Snapshot and compact once enough entries have accumulated.
+	//
+	// Nothing used to call CreateSnapshot() or Compact() on the live path, so
+	// the log grew without bound - and because saveToDisk() rewrites the whole
+	// log as indented JSON on every append, that made each write progressively
+	// more expensive. Truncating behind the applied index keeps both the file
+	// and the per-write cost bounded.
+	maybeCompactLog()
 	status = raftNode.Status() // Get updated status after Advance
 	logInfo("post-advance raft status: state=%s, term=%d, lead=%d",
 		status.RaftState.String(), status.Term, status.Lead)
@@ -2023,42 +2081,10 @@ func messageReceiver() {
 	}
 }
 
-// Handle incoming message from a specific connection
-func handleIncomingMessage(nodeID uint64, conn net.Conn) {
-	// Set read timeout
-	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-
-	// Read message length first
-	var msgLen uint32
-	// Use io.ReadFull to ensure all 4 bytes are read
-	buf := make([]byte, 4)
-	if _, err := io.ReadFull(conn, buf); err != nil {
-		if err != io.EOF && !strings.Contains(err.Error(), "use of closed network connection") {
-			logWarning("Failed to read message length from node %d: %v", nodeID, err)
-		}
-		return // No message or timeout, or connection closed
-	}
-	msgLen = binary.BigEndian.Uint32(buf)
-
-	// Read message data
-	msgData := make([]byte, msgLen)
-	if _, err := io.ReadFull(conn, msgData); err != nil {
-		if err != io.EOF && !strings.Contains(err.Error(), "use of closed network connection") {
-			logWarning("Failed to read message data from node %d: %v", nodeID, err)
-		}
-		return
-	}
-
-	// Parse as raftpb.Message
-	var msg raftpb.Message
-	if err := msg.Unmarshal(msgData); err != nil {
-		logInfo("failed to unmarshal incoming message: %v", err)
-		return
-	}
-
-	// Step the message
-	raftNode.Step(raftCtx, msg)
-	atomic.AddInt64(&messagesProcessed, 1)
+// recoverAppliedIndex returns the highest Raft index the local state machine
+// has already applied, as recorded by the C layer.
+func recoverAppliedIndex() uint64 {
+	return uint64(C.pgraft_applied_index_from_go())
 }
 
 // Apply committed entry to state machine
@@ -2122,11 +2148,12 @@ func applyConfChange(cc raftpb.ConfChange) {
 
 	// CRITICAL: Actually apply the configuration change to the Raft node
 	if raftNode != nil {
-		logInfo("Applying ConfChange to Raft node")
-		raftNode.ApplyConfChange(cc)
-		logInfo("ConfChange applied to Raft node successfully")
+		if cs := raftNode.ApplyConfChange(cc); cs != nil {
+			latestConfState = *cs
+		}
+		logInfo("ConfChange applied to Raft node, voters=%v", latestConfState.Voters)
 	} else {
-		logInfo("ERROR - Raft node is nil, cannot apply ConfChange")
+		logError("Raft node is nil, cannot apply ConfChange")
 		return
 	}
 
@@ -2216,7 +2243,9 @@ func applyConfChangeV2(cc raftpb.ConfChangeV2) {
 	// CRITICAL: Actually apply the configuration change to the Raft node
 	if raftNode != nil {
 		logInfo("Applying ConfChangeV2 to Raft node")
-		raftNode.ApplyConfChange(cc)
+		if cs := raftNode.ApplyConfChange(cc); cs != nil {
+			latestConfState = *cs
+		}
 		logInfo("ConfChangeV2 applied to Raft node successfully")
 	} else {
 		logInfo("ERROR - Raft node is nil, cannot apply ConfChangeV2")
@@ -2763,6 +2792,94 @@ func pgraft_go_get_replication_status() *C.char {
 	return C.CString(string(jsonData))
 }
 
+// snapshotThreshold is how many applied entries may accumulate past the last
+// snapshot before we take a new one and compact the log behind it. Set from
+// pgraft.snapshot_count at init.
+var snapshotThreshold uint64 = defaultSnapshotThreshold
+
+const defaultSnapshotThreshold = 10000
+
+// snapshotLastIndex is the index of the most recent snapshot we created.
+var snapshotLastIndex uint64
+
+// latestConfState is the configuration raft currently holds, captured from the
+// *raftpb.ConfState that ApplyConfChange returns.
+//
+// A snapshot MUST record the real voter set: once the log behind it is
+// compacted, snapshot metadata is the only place a restarting node can recover
+// the configuration from. Snapshotting with an empty ConfState would leave the
+// node with no voters and no way to rejoin.
+//
+// Only ever touched from the Ready-processing goroutine.
+var latestConfState raftpb.ConfState
+
+// currentConfState returns the best configuration we know, preferring what
+// raft handed us over what storage reports.
+func currentConfState() (raftpb.ConfState, bool) {
+	if len(latestConfState.Voters) > 0 {
+		return latestConfState, true
+	}
+
+	_, confState, err := raftStorage.InitialState()
+	if err != nil {
+		logError("failed to read conf state from storage: %v", err)
+		return raftpb.ConfState{}, false
+	}
+
+	return confState, len(confState.Voters) > 0
+}
+
+// maybeCompactLog snapshots the state machine and truncates the log behind it
+// once snapshotThreshold entries have been applied since the last snapshot.
+//
+// Called only from processReady (the single Ready consumer), so it needs no
+// locking of its own beyond what the storage provides.
+func maybeCompactLog() {
+	applied := atomic.LoadUint64(&appliedIndex)
+
+	if snapshotThreshold == 0 || applied < snapshotLastIndex+snapshotThreshold {
+		return
+	}
+
+	confState, ok := currentConfState()
+	if !ok {
+		logWarning("skipping snapshot at index %d: no configuration known yet", applied)
+		return
+	}
+
+	snapshot, err := raftStorage.CreateSnapshot(applied, &confState, nil)
+	if err != nil {
+		if err == raft.ErrSnapOutOfDate {
+			return
+		}
+		logError("failed to create snapshot at index %d: %v", applied, err)
+		return
+	}
+
+	snapshotLastIndex = snapshot.Metadata.Index
+
+	replicationState.replicationMutex.Lock()
+	replicationState.lastSnapshotIndex = snapshot.Metadata.Index
+	replicationState.replicationMutex.Unlock()
+
+	// Keep a small tail of entries so a slightly lagging follower can still be
+	// caught up with an append rather than a full snapshot transfer.
+	const keepEntries = 1000
+
+	if snapshot.Metadata.Index > keepEntries {
+		compactIndex := snapshot.Metadata.Index - keepEntries
+		if err := raftStorage.Compact(compactIndex); err != nil &&
+			err != raft.ErrCompacted {
+			logError("failed to compact log to index %d: %v", compactIndex, err)
+			return
+		}
+		logInfo("snapshotted at index %d and compacted log to %d",
+			snapshot.Metadata.Index, compactIndex)
+	} else {
+		logInfo("snapshotted at index %d", snapshot.Metadata.Index)
+	}
+}
+
 //export pgraft_go_create_snapshot
 func pgraft_go_create_snapshot() *C.char {
 	raftMutex.RLock()
@@ -2772,10 +2889,18 @@ func pgraft_go_create_snapshot() *C.char {
 		return C.CString("")
 	}
 
-	// Create snapshot using etcd-io/raft
-	snapshot, err := raftStorage.CreateSnapshot(committedIndex, &raftpb.ConfState{
-		Voters: getClusterNodes(),
-	}, []byte("pgraft_snapshot_data"))
+	// Snapshot at the applied index with the configuration raft actually holds.
+	// Using committedIndex (read non-atomically) and a hand-built voter list
+	// from getClusterNodes() could both claim to have applied entries we have
+	// not, and record a voter set that does not match reality.
+	confState, ok := currentConfState()
+	if !ok {
+		recordError(fmt.Errorf("cannot snapshot: no configuration known yet"))
+		return C.CString("")
+	}
+
+	snapshot, err := raftStorage.CreateSnapshot(atomic.LoadUint64(&appliedIndex),
+		&confState, nil)
 
 	if err != nil {
 		recordError(fmt.Errorf("failed to create snapshot: %w", err))

@@ -188,6 +188,25 @@ pgraft_kv_get_store(void)
 }
 
 /*
+ * Highest Raft index reflected in the persisted store.
+ */
+int64_t
+pgraft_kv_get_last_applied_index(void)
+{
+	pgraft_kv_store_t *store = pgraft_kv_get_store();
+	int64_t		last_applied;
+
+	if (!store)
+		return 0;
+
+	SpinLockAcquire(&store->mutex);
+	last_applied = store->last_applied_index;
+	SpinLockRelease(&store->mutex);
+
+	return last_applied;
+}
+
+/*
  * Find entry index by key
  */
 static int
@@ -285,7 +304,13 @@ pgraft_kv_put(const char *key, const char *value, int64_t log_index)
 	
 	store->puts++;
 	store->total_operations++;
-	store->last_applied_index = log_index;
+	/*
+	 * Only ever advance.  This value is persisted with the store and is what
+	 * we recover the state machine's position from after a restart, so a local
+	 * (unreplicated) operation passing log_index = 0 must not erase it.
+	 */
+	if ((uint64) log_index > (uint64) store->last_applied_index)
+		store->last_applied_index = log_index;
 	
 	SpinLockRelease(&store->mutex);
 	
@@ -378,7 +403,9 @@ pgraft_kv_delete(const char *key, int64_t log_index)
 	
 	store->deletes++;
 	store->total_operations++;
-	store->last_applied_index = log_index;
+	/* Advance only; see the matching comment in pgraft_kv_put(). */
+	if ((uint64) log_index > (uint64) store->last_applied_index)
+		store->last_applied_index = log_index;
 	
 	SpinLockRelease(&store->mutex);
 	
@@ -689,13 +716,13 @@ pgraft_kv_queue_operation(pgraft_kv_op_type_t op_type, const char *key, const ch
  * These are used by the apply callback to apply replicated operations
  */
 int
-pgraft_kv_put_local(const char *key, const char *value)
+pgraft_kv_put_local(const char *key, const char *value, int64_t raft_index)
 {
-	return pgraft_kv_put(key, value, 0); /* Skip replication flag */
+	return pgraft_kv_put(key, value, raft_index); /* Skip replication flag */
 }
 
 int
-pgraft_kv_delete_local(const char *key)
+pgraft_kv_delete_local(const char *key, int64_t raft_index)
 {
-	return pgraft_kv_delete(key, 0); /* Skip replication flag */
+	return pgraft_kv_delete(key, raft_index); /* Skip replication flag */
 }
