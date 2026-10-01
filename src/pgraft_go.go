@@ -864,9 +864,13 @@ func pgraft_go_get_nodes() *C.char {
 		isLeader = (status.RaftState == raft.StateLeader)
 
 		if isLeader {
-			// Leader tracks active nodes via Progress map
-			for id := range status.Progress {
-				activeNodes[id] = true
+			// The leader tracks each follower's activity: RecentActive is
+			// set when a message arrives from the follower and cleared at
+			// every election timeout by CheckQuorum, so it says whether the
+			// follower has been heard from within the last timeout.  The
+			// leader itself is always active.
+			for id, pr := range status.Progress {
+				activeNodes[id] = pr.RecentActive || id == status.ID
 			}
 		} else {
 			// Followers: can't use Progress (only leaders track that)
@@ -1199,6 +1203,12 @@ func pgraft_go_init_config(config *C.struct_pgraft_go_config) C.int {
 		MaxInflightMsgs: 256,
 		MaxSizePerMsg:   1024 * 1024, // 1MB
 		PreVote:         true,        // Enable PreVote for better elections (etcd best practice)
+		// A leader that cannot hear from a majority within an election
+		// timeout steps down, so an isolated leader stops reporting itself
+		// as leader instead of doing so indefinitely.  This is also what
+		// makes Progress.RecentActive meaningful: without it the flag is
+		// never cleared.
+		CheckQuorum: true,
 	}
 	logInfo("Raft configuration created with ID=%d, Applied=%d", thisNodeRaftID, startApplied)
 
@@ -1331,6 +1341,7 @@ func pgraft_go_init(nodeID C.int, address *C.char, port C.int) C.int {
 		MaxInflightMsgs: 256,
 		MaxSizePerMsg:   1024 * 1024, // 1MB
 		PreVote:         true,        // Enable PreVote for better elections
+		CheckQuorum:     true,        // See the comment on the main config above
 	}
 	logInfo("DEBUG - Raft configuration created")
 	logInfo("Go library version: %s", C.GoString(pgraft_go_version()))

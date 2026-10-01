@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Raft `CheckQuorum` is enabled.  A leader that cannot hear from a majority
+  within an election timeout steps down, instead of reporting itself as
+  leader indefinitely while isolated.
+- `pgraft.get_nodes_from_raft()` reports each follower's `active` flag from
+  raft's `Progress.RecentActive` on the leader, so it says whether the
+  follower has been heard from within the last election timeout.  It used
+  to mark every configured member active.
+
 ## [2.0.0] - 2026-09-02
 
 Correctness and security release, with one breaking change: every SQL object
